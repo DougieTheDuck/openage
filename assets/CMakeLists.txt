@@ -1,6 +1,7 @@
 # Copyright 2014-2017 the openage authors. See copying.md for legal info.
 
 add_subdirectory(logo/)
+add_subdirectory(fvd/)
 add_subdirectory(shaders/)
 add_subdirectory(test/)
 add_subdirectory(textures/)

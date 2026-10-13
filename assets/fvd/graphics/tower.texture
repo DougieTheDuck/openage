@@ -1,0 +1,12 @@
+# Copyright 2026-2026 the openage authors. See copying.md for legal info.
+# openage texture definition file
+
+version 1
+
+imagefile "tower.png"
+
+size 512 512
+
+pxformat rgba8 cbits=False
+
+subtex 0 0 512 512 256 500
