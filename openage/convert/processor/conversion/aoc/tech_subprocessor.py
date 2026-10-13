@@ -27,6 +27,7 @@ from .upgrade_resource_subprocessor import AoCUpgradeResourceSubprocessor
 
 if typing.TYPE_CHECKING:
     from openage.convert.entity_object.conversion.aoc.genie_effect import GenieEffectObject
+    from openage.convert.entity_object.conversion.aoc.genie_unit import GenieGameEntityGroup, GenieUnitObject
     from openage.convert.entity_object.conversion.converter_object import ConverterObjectGroup
 
 
@@ -298,10 +299,7 @@ class AoCTechSubprocessor:
         Creates the patches for upgrading entities in a line.
         """
         patches = []
-        tech_id = converter_group.get_id()
         dataset = converter_group.data
-
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
 
         upgrade_source_id = effect["attr_a"].value
         upgrade_target_id = effect["attr_b"].value
@@ -335,7 +333,29 @@ class AoCTechSubprocessor:
 
         upgrade_source = line.line[upgrade_source_pos]
         upgrade_target = line.line[upgrade_target_pos]
-        tech_name = tech_lookup_dict[tech_id][0]
+
+        return AoCTechSubprocessor.create_unit_upgrade_patches(
+            converter_group, line, upgrade_source, upgrade_target
+        )
+
+    @staticmethod
+    def create_unit_upgrade_patches(
+        converter_group: ConverterObjectGroup,
+        line: GenieGameEntityGroup,
+        upgrade_source: GenieUnitObject,
+        upgrade_target: GenieUnitObject,
+    ) -> list[ForwardRef]:
+        """
+        Create ability patches from the difference between two unit definitions.
+        """
+        patches = []
+        dataset = converter_group.data
+        obj_id = converter_group.get_id()
+        if isinstance(converter_group, GenieTechEffectBundleGroup):
+            lookup = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        else:
+            lookup = internal_name_lookups.get_civ_lookups(dataset.game_version)
+        tech_name = lookup[obj_id][0]
 
         diff = upgrade_source.diff(upgrade_target)
 

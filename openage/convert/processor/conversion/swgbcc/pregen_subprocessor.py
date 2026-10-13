@@ -41,7 +41,7 @@ class SWGBCCPregenSubprocessor:
         AoCPregenSubprocessor.generate_activities(full_data_set, pregen_converter_group)
         AoCPregenSubprocessor.generate_attributes(full_data_set, pregen_converter_group)
         AoCPregenSubprocessor.generate_diplomatic_stances(full_data_set, pregen_converter_group)
-        AoCPregenSubprocessor.generate_team_property(full_data_set, pregen_converter_group)
+        AoCPregenSubprocessor.generate_diplomatic_patch_properties(full_data_set, pregen_converter_group)
         AoCPregenSubprocessor.generate_entity_types(full_data_set, pregen_converter_group)
         cls.generate_effect_types(full_data_set, pregen_converter_group)
         cls.generate_exchange_objects(full_data_set, pregen_converter_group)

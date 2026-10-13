@@ -33,6 +33,9 @@ def tests_py():
     yield ("openage.testing.misc_cpp.enum", "tests the interface for C++'s util::Enum class")
     yield ("openage.util.fslike.test.test", "test the filesystem abstraction subsystem")
     yield "openage.util.threading.test_concurrent_chain"
+    yield "openage.nyan.tests.object_reference_members"
+    yield "openage.convert.processor.conversion.de2.tests.diplomatic_effects"
+    yield "openage.convert.processor.conversion.de2.tests.branching_upgrade_techs"
 
 
 def demos_py():

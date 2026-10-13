@@ -13,6 +13,7 @@ import typing
 from .....log import warn
 from .....nyan.nyan_structs import MemberOperator
 from ....entity_object.conversion.aoc.genie_tech import CivBonus, CivTeamBonus, GenieTechEffectBundleGroup
+from ....value_object.conversion.forward_ref import ForwardRef
 from ..aoc.tech_subprocessor import AoCTechSubprocessor
 from ..aoc.upgrade_attribute_subprocessor import AoCUpgradeAttributeSubprocessor
 from ..aoc.upgrade_resource_subprocessor import AoCUpgradeResourceSubprocessor
@@ -21,8 +22,8 @@ from .upgrade_resource_subprocessor import DE2UpgradeResourceSubprocessor
 
 if typing.TYPE_CHECKING:
     from openage.convert.entity_object.conversion.aoc.genie_effect import GenieEffectObject
+    from openage.convert.entity_object.conversion.aoc.genie_object_container import GenieObjectContainer
     from openage.convert.entity_object.conversion.converter_object import ConverterObjectGroup
-    from openage.convert.value_object.conversion.forward_ref import ForwardRef
 
 
 class DE2TechSubprocessor:
@@ -180,6 +181,7 @@ class DE2TechSubprocessor:
         patches = []
         dataset = converter_group.data
         team_bonus = False
+        source_group_id = converter_group.get_id()
 
         if isinstance(converter_group, CivTeamBonus):
             effects = converter_group.get_effects()
@@ -200,44 +202,131 @@ class DE2TechSubprocessor:
             assert isinstance(converter_group, GenieTechEffectBundleGroup)
             effects = converter_group.get_effects()
 
-        team_effect = False
         for effect in effects:
-            type_id = effect.get_type()
+            effect_type = effect.get_type()
+            type_id = cls.get_base_effect_type(effect_type)
+            recipient = "Team" if team_bonus else None
+            if type_id != effect_type:
+                recipient = {1: "Team", 2: "Enemy", 3: "Neutral", 4: "Gaia"}[effect_type // 10]
 
-            if team_bonus or type_id in (10, 11, 12, 13, 14, 15, 16):
-                team_effect = True
-                type_id -= 10
+            effect_patches = []
 
             if type_id in (0, 4, 5):
-                patches.extend(cls.attribute_modify_effect(converter_group, effect, team=team_effect))
+                effect_patches = cls.attribute_modify_effect(converter_group, effect)
 
             elif type_id in (1, 6):
-                patches.extend(cls.resource_modify_effect(converter_group, effect, team=team_effect))
+                effect_patches = cls.resource_modify_effect(converter_group, effect)
 
             elif type_id == 2:
                 # Enabling/disabling units: Handled in creatable conditions
                 pass
 
             elif type_id == 3:
-                patches.extend(AoCTechSubprocessor.upgrade_unit_effect(converter_group, effect))
+                effect_patches = cls.upgrade_unit_effect(converter_group, effect)
 
             elif type_id == 101:
-                patches.extend(
-                    AoCTechSubprocessor.tech_cost_modify_effect(converter_group, effect, team=team_effect)
-                )
+                effect_patches = AoCTechSubprocessor.tech_cost_modify_effect(converter_group, effect)
 
             elif type_id == 102:
                 # Tech disable: Only used for civ tech tree
                 pass
 
             elif type_id == 103:
-                patches.extend(
-                    AoCTechSubprocessor.tech_time_modify_effect(converter_group, effect, team=team_effect)
-                )
+                effect_patches = AoCTechSubprocessor.tech_time_modify_effect(converter_group, effect)
 
-            team_effect = False
+            # One technology can change the same target for several recipients.
+            # Keep each effect's objects distinct before adding diplomatic properties.
+            for patch in effect_patches:
+                group = patch.group_object
+                old_ref = patch.raw_api_object_ref
+                suffix = f"{recipient or 'Self'}Effect{source_group_id}_{effect.bundle_id}_{effect.get_id()}"
+                new_ref = old_ref + suffix
+                references = {
+                    reference: new_ref + reference[len(old_ref) :]
+                    for reference in group.get_raw_api_objects()
+                    if reference == old_ref or reference.startswith(old_ref + ".")
+                }
+                group.rename_raw_api_objects(references)
+
+            if recipient and effect_patches:
+                property_type = dataset.nyan_api_objects["engine.util.patch.property.type.Diplomatic"]
+                property_object = dataset.pregen_nyan_objects[
+                    f"util.patch.property.types.{recipient}"
+                ].get_nyan_object()
+                for patch in effect_patches:
+                    patch.resolve_raw().add_raw_member(
+                        "properties", {property_type: property_object}, "engine.util.patch.Patch"
+                    )
+
+            patches.extend(effect_patches)
 
         return patches
+
+    @staticmethod
+    def get_branch_upgrade_source_position(
+        dataset: GenieObjectContainer, effect: GenieEffectObject
+    ) -> int | None:
+        """
+        Select the latest source stage for an upgrade into a separate unit line.
+
+        Genie can list the same branch upgrade for multiple earlier stages.
+        Only the final source delta may be applied to the shared nyan definition.
+        """
+        source_id = effect["attr_a"].value
+        target_id = effect["attr_b"].value
+        line = dataset.unit_ref[source_id]
+        bundle = dataset.genie_effect_bundles[effect.bundle_id]
+        source_positions = [
+            line.get_unit_position(candidate["attr_a"].value)
+            for candidate in bundle.get_effects()
+            if candidate.get_type() == effect.get_type()
+            and candidate["attr_b"].value == target_id
+            and line.contains_entity(candidate["attr_a"].value)
+        ]
+        source_position = line.get_unit_position(source_id)
+        if source_position != max(source_positions):
+            return None
+
+        return source_position
+
+    @staticmethod
+    def upgrade_unit_effect(
+        converter_group: ConverterObjectGroup, effect: GenieEffectObject
+    ) -> list[ForwardRef]:
+        """
+        Convert ordinary and same-class branching unit upgrades in DE.
+        """
+        dataset = converter_group.data
+        source_id = effect["attr_a"].value
+        target_id = effect["attr_b"].value
+        if source_id not in dataset.unit_ref or target_id not in dataset.unit_ref:
+            return AoCTechSubprocessor.upgrade_unit_effect(converter_group, effect)
+
+        source_line = dataset.unit_ref[source_id]
+        target_line = dataset.unit_ref[target_id]
+        if source_line is target_line:
+            return AoCTechSubprocessor.upgrade_unit_effect(converter_group, effect)
+
+        if source_line.get_class_id() != target_line.get_class_id():
+            raise NotImplementedError(f"Branch upgrade changes unit class: {source_id} to {target_id}")
+
+        source_position = DE2TechSubprocessor.get_branch_upgrade_source_position(dataset, effect)
+        if source_position is None:
+            return []
+
+        return AoCTechSubprocessor.create_unit_upgrade_patches(
+            converter_group, source_line, source_line.line[source_position], dataset.genie_units[target_id]
+        )
+
+    @staticmethod
+    def get_base_effect_type(effect_type: int) -> int:
+        """
+        Return the operation shared by self, team, enemy, neutral and Gaia effects.
+        """
+        if 10 <= effect_type <= 46 and effect_type % 10 <= 6:
+            return effect_type % 10
+
+        return effect_type
 
     @staticmethod
     def attribute_modify_effect(
@@ -249,15 +338,15 @@ class DE2TechSubprocessor:
         patches = []
         dataset = converter_group.data
 
-        effect_type = effect.get_type()
+        effect_type = DE2TechSubprocessor.get_base_effect_type(effect.get_type())
         operator = None
-        if effect_type in (0, 10):
+        if effect_type == 0:
             operator = MemberOperator.ASSIGN
 
-        elif effect_type in (4, 14):
+        elif effect_type == 4:
             operator = MemberOperator.ADD
 
-        elif effect_type in (5, 15):
+        elif effect_type == 5:
             operator = MemberOperator.MULTIPLY
 
         else:
@@ -321,9 +410,9 @@ class DE2TechSubprocessor:
         """
         patches = []
 
-        effect_type = effect.get_type()
+        effect_type = DE2TechSubprocessor.get_base_effect_type(effect.get_type())
         operator = None
-        if effect_type in (1, 11):
+        if effect_type == 1:
             mode = effect["attr_b"].value
 
             if mode == 0:
@@ -332,7 +421,7 @@ class DE2TechSubprocessor:
             else:
                 operator = MemberOperator.ADD
 
-        elif effect_type in (6, 16):
+        elif effect_type == 6:
             operator = MemberOperator.MULTIPLY
 
         else:

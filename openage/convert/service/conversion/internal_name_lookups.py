@@ -22,7 +22,28 @@ import openage.convert.value_object.conversion.swgb.internal_nyan_names as swgb_
 if typing.TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from openage.convert.entity_object.conversion.converter_object import ConverterObjectGroup
     from openage.convert.value_object.init.game_version import GameVersion
+
+
+def get_group_lookups(
+    group: ConverterObjectGroup,
+) -> Mapping[int, tuple[str, str] | tuple[str, str, tuple[int, ...], str]]:
+    """
+    Return names for the tech, civilization or variant receiving upgrade objects.
+    """
+    from ...entity_object.conversion.aoc.genie_civ import GenieCivilizationGroup
+    from ...entity_object.conversion.aoc.genie_tech import GenieTechEffectBundleGroup
+    from ...entity_object.conversion.aoc.genie_unit import GenieVariantGroup
+
+    if isinstance(group, GenieCivilizationGroup):
+        return get_civ_lookups(group.data.game_version)
+    if isinstance(group, GenieTechEffectBundleGroup):
+        return get_tech_lookups(group.data.game_version)
+    if isinstance(group, GenieVariantGroup):
+        return get_entity_lookups(group.data.game_version)
+
+    raise TypeError(f"Unsupported upgrade container: {group!r}")
 
 
 @cache

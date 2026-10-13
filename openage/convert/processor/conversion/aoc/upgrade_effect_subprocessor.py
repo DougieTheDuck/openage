@@ -22,9 +22,11 @@ from ....value_object.conversion.forward_ref import ForwardRef
 from ....value_object.read.value_members import LeftMissingMember, NoDiffMember, RightMissingMember
 
 if typing.TYPE_CHECKING:
-    from openage.convert.entity_object.conversion.aoc.genie_tech import GenieTechEffectBundleGroup
     from openage.convert.entity_object.conversion.aoc.genie_unit import GenieGameEntityGroup
-    from openage.convert.entity_object.conversion.converter_object import ConverterObject
+    from openage.convert.entity_object.conversion.converter_object import (
+        ConverterObject,
+        ConverterObjectGroup,
+    )
 
 
 class AoCUpgradeEffectSubprocessor:
@@ -34,7 +36,7 @@ class AoCUpgradeEffectSubprocessor:
 
     @staticmethod
     def get_attack_effects(
-        tech_group: GenieTechEffectBundleGroup,
+        tech_group: ConverterObjectGroup,
         line: GenieGameEntityGroup,
         diff: ConverterObject,
         ability_ref: str,
@@ -61,7 +63,7 @@ class AoCUpgradeEffectSubprocessor:
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
         armor_lookup_dict = internal_name_lookups.get_armor_class_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(tech_group)
 
         tech_name = tech_lookup_dict[tech_id][0]
 
@@ -297,7 +299,7 @@ class AoCUpgradeEffectSubprocessor:
 
     @staticmethod
     def get_attack_resistances(
-        tech_group: GenieTechEffectBundleGroup,
+        tech_group: ConverterObjectGroup,
         line: GenieGameEntityGroup,
         diff: ConverterObject,
         ability_ref: str,
@@ -324,7 +326,7 @@ class AoCUpgradeEffectSubprocessor:
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
         armor_lookup_dict = internal_name_lookups.get_armor_class_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(tech_group)
 
         tech_name = tech_lookup_dict[tech_id][0]
 

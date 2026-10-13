@@ -7,6 +7,7 @@ add_py_modules(
 	nyan_subprocessor.py
 	processor.py
 	tech_subprocessor.py
+	tests.py
 	upgrade_attribute_subprocessor.py
 	upgrade_resource_subprocessor.py
 )

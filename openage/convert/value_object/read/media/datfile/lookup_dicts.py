@@ -330,6 +330,22 @@ EFFECT_APPLY_TYPE = {
     24: "ENEMY_ATTRIBUTE_RELSET",
     25: "ENEMY_ATTRIBUTE_MUL",
     26: "ENEMY_RESOURCE_MUL",
+    # same as 0-6 but applied to neutral players
+    30: "NEUTRAL_ATTRIBUTE_ABSSET",
+    31: "NEUTRAL_RESOURCE_MODIFY",
+    32: "NEUTRAL_UNIT_ENABLED",
+    33: "NEUTRAL_UNIT_UPGRADE",
+    34: "NEUTRAL_ATTRIBUTE_RELSET",
+    35: "NEUTRAL_ATTRIBUTE_MUL",
+    36: "NEUTRAL_RESOURCE_MUL",
+    # same as 0-6 but applied to Gaia
+    40: "GAIA_ATTRIBUTE_ABSSET",
+    41: "GAIA_RESOURCE_MODIFY",
+    42: "GAIA_UNIT_ENABLED",
+    43: "GAIA_UNIT_UPGRADE",
+    44: "GAIA_ATTRIBUTE_RELSET",
+    45: "GAIA_ATTRIBUTE_MUL",
+    46: "GAIA_RESOURCE_MUL",
     # these are only used in technology trees, 103 even requires
     # one
     # a == research_id, b == resource_id, if c == 0: d==absval
@@ -342,7 +358,6 @@ EFFECT_APPLY_TYPE = {
     200: "UNKNOWN",
     201: "UNKNOWN",
     # unknown
-    40: "UNKNOWN",
     202: "UNKNOWN",
     204: "UNKNOWN",
     # attribute_id:

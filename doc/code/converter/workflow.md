@@ -85,6 +85,12 @@ allows us to skip unused media which results in a faster overall conversion time
 
 ### Game Data
 
+DE2 diplomatic attribute, resource and unit-upgrade effects use patches with receiver-specific diplomatic properties.
+Patches from different effects and civilization bonuses remain distinct even when they modify the same target.
+References to these patches remain valid across converter object groups.
+Known researchable DE2 technologies are registered even when their research IDs are absent from the legacy connection tables.
+Same-class branching unit upgrades use the latest matching source stage for each recipient, so repeated source commands do not apply the upgrade delta more than once.
+
 Game data for the Genie Engine is stored in the `.dat` file format. The `.dat` file
 format contains only attribute values with no additional hints about their data type.
 In addition to this, the `.dat` format can have a slightly different structure for

@@ -39,7 +39,7 @@ class AoCPregenSubprocessor:
         cls.generate_activities(full_data_set, pregen_converter_group)
         cls.generate_attributes(full_data_set, pregen_converter_group)
         cls.generate_diplomatic_stances(full_data_set, pregen_converter_group)
-        cls.generate_team_property(full_data_set, pregen_converter_group)
+        cls.generate_diplomatic_patch_properties(full_data_set, pregen_converter_group)
         cls.generate_entity_types(full_data_set, pregen_converter_group)
         cls.generate_effect_types(full_data_set, pregen_converter_group)
         cls.generate_exchange_objects(full_data_set, pregen_converter_group)
@@ -482,11 +482,11 @@ class AoCPregenSubprocessor:
         pregen_nyan_objects.update({gaia_ref_in_modpack: gaia_raw_api_object})
 
     @staticmethod
-    def generate_team_property(
+    def generate_diplomatic_patch_properties(
         full_data_set: GenieObjectContainer, pregen_converter_group: ConverterObjectGroup
     ) -> None:
         """
-        Generate the property used in team patches objects.
+        Generate properties selecting the recipients of diplomatic patches.
 
         :param full_data_set: GenieObjectContainer instance that
                               contains all relevant data for the conversion
@@ -500,21 +500,31 @@ class AoCPregenSubprocessor:
         pregen_nyan_objects = full_data_set.pregen_nyan_objects
         api_objects = full_data_set.nyan_api_objects
 
-        prop_ref_in_modpack = "util.patch.property.types.Team"
-        prop_raw_api_object = RawAPIObject(
-            prop_ref_in_modpack, "Team", api_objects, "data/util/patch/property/"
-        )
-        prop_raw_api_object.set_filename("types")
-        prop_raw_api_object.add_raw_parent("engine.util.patch.property.type.Diplomatic")
+        properties = {
+            "Team": [
+                api_objects["engine.util.diplomatic_stance.type.Self"],
+                ForwardRef(pregen_converter_group, "util.diplomatic_stance.types.Friendly"),
+            ],
+        }
+        if full_data_set.game_version.edition.game_id == "AOE2DE":
+            for stance in ("Enemy", "Neutral", "Gaia"):
+                properties[stance] = [
+                    ForwardRef(pregen_converter_group, f"util.diplomatic_stance.types.{stance}"),
+                ]
 
-        pregen_converter_group.add_raw_api_object(prop_raw_api_object)
-        pregen_nyan_objects.update({prop_ref_in_modpack: prop_raw_api_object})
+        for name, stances in properties.items():
+            prop_ref_in_modpack = f"util.patch.property.types.{name}"
+            prop_raw_api_object = RawAPIObject(
+                prop_ref_in_modpack, name, api_objects, "data/util/patch/property/"
+            )
+            prop_raw_api_object.set_filename("types")
+            prop_raw_api_object.add_raw_parent("engine.util.patch.property.type.Diplomatic")
+            prop_raw_api_object.add_raw_member(
+                "stances", stances, "engine.util.patch.property.type.Diplomatic"
+            )
 
-        stances = [
-            full_data_set.nyan_api_objects["engine.util.diplomatic_stance.type.Self"],
-            ForwardRef(pregen_converter_group, "util.diplomatic_stance.types.Friendly"),
-        ]
-        prop_raw_api_object.add_raw_member("stances", stances, "engine.util.patch.property.type.Diplomatic")
+            pregen_converter_group.add_raw_api_object(prop_raw_api_object)
+            pregen_nyan_objects[prop_ref_in_modpack] = prop_raw_api_object
 
     @staticmethod
     def generate_entity_types(

@@ -21,7 +21,7 @@ class ForwardRef:
     Declares a forward reference to a RawAPIObject.
     """
 
-    __slots__ = ("group_object", "raw_api_object_ref")
+    __slots__ = ("__weakref__", "group_object", "raw_api_object_ref")
 
     def __init__(self, converter_object_group: ConverterObjectGroup, raw_api_object_ref: str):
         """
@@ -37,6 +37,7 @@ class ForwardRef:
 
         self.group_object = converter_object_group
         self.raw_api_object_ref = raw_api_object_ref
+        converter_object_group.register_forward_ref(self)
 
     def resolve(self) -> NyanObject:
         """

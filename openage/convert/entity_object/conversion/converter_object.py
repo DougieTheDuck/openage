@@ -11,6 +11,7 @@ These are simple containers that can be processed by the converter.
 from __future__ import annotations
 
 import typing
+from weakref import WeakSet
 
 from openage.convert.value_object.read.dynamic_loader import DynamicLoader
 
@@ -164,7 +165,7 @@ class ConverterObjectGroup:
     instances are converted to the nyan API.
     """
 
-    __slots__ = ("group_id", "raw_api_objects", "raw_member_pushs")
+    __slots__ = ("_forward_refs", "group_id", "raw_api_objects", "raw_member_pushs")
 
     # Provided by the groups built from game data; the plain pregen group has none.
     data: GenieObjectContainer
@@ -178,6 +179,7 @@ class ConverterObjectGroup:
                                 proper API objects during conversion.
         """
         self.group_id = group_id
+        self._forward_refs: WeakSet[ForwardRef] = WeakSet()
 
         # Stores the objects that will later be converted to nyan objects
         # This uses the RawAPIObject's ids as keys.
@@ -282,6 +284,40 @@ class ConverterObjectGroup:
         Returns all raw API objects.
         """
         return self.raw_api_objects
+
+    def rename_raw_api_objects(self, references: dict[str, str]) -> None:
+        """
+        Rename raw objects and their references before creating nyan objects.
+        """
+        if len(set(references.values())) != len(references):
+            raise ValueError("Renamed raw objects must have distinct references")
+
+        for old_ref, new_ref in references.items():
+            raw_object = self.get_raw_api_object(old_ref)
+            if raw_object.nyan_object is not None:
+                raise RuntimeError("Cannot rename an object after creating its nyan object")
+            if new_ref in self.raw_api_objects and new_ref not in references:
+                raise ValueError(f"Raw object reference already exists: {new_ref}")
+
+        for reference in self._forward_refs:
+            reference.raw_api_object_ref = references.get(
+                reference.raw_api_object_ref, reference.raw_api_object_ref
+            )
+
+        renamed_objects = {}
+        for old_ref, new_ref in references.items():
+            raw_object = self.raw_api_objects.pop(old_ref)
+            raw_object.obj_id = new_ref
+            raw_object.name = new_ref.rsplit(".", 1)[-1]
+            renamed_objects[new_ref] = raw_object
+
+        self.raw_api_objects.update(renamed_objects)
+
+    def register_forward_ref(self, reference: ForwardRef) -> None:
+        """
+        Track references, including references held by other object groups.
+        """
+        self._forward_refs.add(reference)
 
     def has_raw_api_object(self, obj_id: str | int) -> bool:
         """

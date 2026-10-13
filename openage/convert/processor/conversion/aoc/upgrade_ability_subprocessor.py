@@ -16,6 +16,7 @@ import typing
 from math import degrees
 
 from .....nyan.nyan_structs import MemberOperator, MemberSpecialValue
+from ....entity_object.conversion.aoc.genie_civ import GenieCivilizationGroup
 from ....entity_object.conversion.aoc.genie_tech import GenieTechEffectBundleGroup
 from ....entity_object.conversion.aoc.genie_unit import (
     GenieBuildingLineGroup,
@@ -66,8 +67,7 @@ class AoCUpgradeAbilitySubprocessor:
         :returns: The forward references for the generated patches.
         :rtype: list
         """
-        # only called with tech groups as converter_group
-        assert isinstance(converter_group, GenieTechEffectBundleGroup)
+        assert isinstance(converter_group, (GenieTechEffectBundleGroup, GenieCivilizationGroup))
         head_unit_id = line.get_head_unit_id()
         tech_id = converter_group.get_id()
         dataset = line.data
@@ -75,7 +75,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
         command_lookup_dict = internal_name_lookups.get_command_lookups(dataset.game_version)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
@@ -251,8 +251,7 @@ class AoCUpgradeAbilitySubprocessor:
         :returns: The forward references for the generated patches.
         :rtype: list
         """
-        # only called with tech groups as converter_group
-        assert isinstance(converter_group, GenieTechEffectBundleGroup)
+        assert isinstance(converter_group, (GenieTechEffectBundleGroup, GenieCivilizationGroup))
         head_unit_id = line.get_head_unit_id()
         tech_id = converter_group.get_id()
         dataset = line.data
@@ -260,7 +259,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
         command_lookup_dict = internal_name_lookups.get_command_lookups(dataset.game_version)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
@@ -464,7 +463,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -580,7 +579,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -655,7 +654,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -736,7 +735,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -811,7 +810,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -904,7 +903,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -992,7 +991,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -1128,7 +1127,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -1212,8 +1211,7 @@ class AoCUpgradeAbilitySubprocessor:
         :returns: The forward references for the generated patches.
         :rtype: list
         """
-        # only called with tech groups as converter_group
-        assert isinstance(converter_group, GenieTechEffectBundleGroup)
+        assert isinstance(converter_group, (GenieTechEffectBundleGroup, GenieCivilizationGroup))
         head_unit_id = line.get_head_unit_id()
         dataset = line.data
 
@@ -1264,7 +1262,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -1314,7 +1312,7 @@ class AoCUpgradeAbilitySubprocessor:
             if any(not isinstance(value, NoDiffMember) for value in (diff_radius_x, diff_radius_y)):
                 changed = True
 
-        if changed:
+        if changed and isinstance(line, GenieUnitLineGroup):
             patch_target_ref = f"{game_entity_name}.{ability_name}.Rectangle"
             patch_target_forward_ref = ForwardRef(line, patch_target_ref)
 
@@ -1404,7 +1402,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
         command_lookup_dict = internal_name_lookups.get_command_lookups(dataset.game_version)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
@@ -1708,7 +1706,7 @@ class AoCUpgradeAbilitySubprocessor:
         patches = []
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         game_entity_name = name_lookup_dict[head_unit_id][0]
 
@@ -1790,7 +1788,7 @@ class AoCUpgradeAbilitySubprocessor:
         dataset = converter_group.data
 
         name_lookup_dict = internal_name_lookups.get_entity_lookups(dataset.game_version)
-        tech_lookup_dict = internal_name_lookups.get_tech_lookups(dataset.game_version)
+        tech_lookup_dict = internal_name_lookups.get_group_lookups(converter_group)
 
         if isinstance(converter_group, GenieVariantGroup):
             group_name = str(animation_id)

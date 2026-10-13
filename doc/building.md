@@ -54,6 +54,7 @@ Dependency list:
     CRA   ogg
        S  ruff
     C     pygments
+    CRA   pyreadline3 (Windows only)
        S  ty
     CR    qt6 >=6.2 (Core, Quick, QuickControls, Multimedia modules)
     CR    toml11

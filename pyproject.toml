@@ -22,6 +22,7 @@ dependencies = [
     "numpy",
     "pillow",
     "pygments",
+    "pyreadline3; sys_platform == 'win32'",
     "setuptools",
     "tomli-w",
 ]

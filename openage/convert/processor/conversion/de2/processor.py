@@ -17,12 +17,14 @@ from .....log import info
 from .....util.ordered_set import OrderedSet
 from ....entity_object.conversion.aoc.genie_graphic import GenieGraphic
 from ....entity_object.conversion.aoc.genie_object_container import GenieObjectContainer
+from ....entity_object.conversion.aoc.genie_tech import StatUpgrade
 from ....entity_object.conversion.aoc.genie_unit import (
     GenieAmbientGroup,
     GenieBuildingLineGroup,
     GenieUnitObject,
     GenieVariantGroup,
 )
+from ....service.conversion import internal_name_lookups
 from ....service.debug_info import debug_converter_object_groups, debug_converter_objects
 from ....service.read.nyan_api_loader import load_api
 from ..aoc.pregen_processor import AoCPregenSubprocessor
@@ -137,6 +139,7 @@ class DE2Processor:
         cls.create_variant_groups(full_data_set)
         AoCProcessor.create_terrain_groups(full_data_set)
         AoCProcessor.create_tech_groups(full_data_set)
+        cls.create_researchable_tech_groups(full_data_set)
         AoCProcessor.create_civ_groups(full_data_set)
 
         info("Linking API-like objects...")
@@ -175,6 +178,21 @@ class DE2Processor:
         DE2MediaSubprocessor.convert(full_data_set)
 
         return DE2ModpackSubprocessor.get_modpacks(full_data_set)
+
+    @staticmethod
+    def create_researchable_tech_groups(full_data_set: GenieObjectContainer) -> None:
+        """
+        Include supported researchable techs missing from the legacy connection tables.
+        """
+        tech_lookup = internal_name_lookups.get_tech_lookups(full_data_set.game_version)
+        for tech_id in tech_lookup:
+            if tech_id in full_data_set.tech_groups or tech_id not in full_data_set.genie_techs:
+                continue
+
+            tech_group = StatUpgrade(tech_id, full_data_set)
+            if tech_group.is_researchable():
+                full_data_set.tech_groups[tech_id] = tech_group
+                full_data_set.stat_upgrades[tech_id] = tech_group
 
     @staticmethod
     def extract_genie_units(gamespec: ArrayMember, full_data_set: GenieObjectContainer) -> None:
