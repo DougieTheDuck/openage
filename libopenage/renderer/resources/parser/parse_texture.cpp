@@ -211,7 +211,8 @@ Texture2dInfo parse_texture_file(const util::Path &path) {
 	auto imagepath = path.get_parent() / imagefile;
 
 	auto align = guess_row_alignment(size.width);
-	return Texture2dInfo(size.width, size.height, pxformat.format, imagepath, align, std::move(subinfos));
+	return Texture2dInfo(size.width, size.height, pxformat.format, imagepath, align,
+	                     std::move(subinfos), pxformat.cbits);
 }
 
 } // namespace openage::renderer::resources::parser

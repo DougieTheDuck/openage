@@ -25,6 +25,7 @@ class EventLoop;
 }
 
 namespace gamestate {
+class FVD;
 class GameEntity;
 class Map;
 class Player;
@@ -114,6 +115,16 @@ public:
 	const std::shared_ptr<assets::ModManager> &get_mod_manager() const;
 	void set_mod_manager(const std::shared_ptr<assets::ModManager> &mod_manager);
 
+	/**
+	 * Get the FVD scenario, or nullptr for other game modes.
+	 */
+	const std::shared_ptr<FVD> &get_fvd() const;
+
+	/**
+	 * Set the FVD scenario before initialising its world.
+	 */
+	void set_fvd(const std::shared_ptr<FVD> &scenario);
+
 private:
 	/**
 	 * View for the nyan game data database.
@@ -139,6 +150,11 @@ private:
 	 * TODO: Only for testing
 	 */
 	std::shared_ptr<assets::ModManager> mod_manager;
+
+	/**
+	 * Optional FVD game rules.
+	 */
+	std::shared_ptr<FVD> fvd;
 };
 } // namespace gamestate
 } // namespace openage

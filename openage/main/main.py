@@ -60,7 +60,7 @@ def main(args, error):
     from ..convert.main import convert_assets
     from ..convert.service.init.api_export_required import api_export_required
     from ..convert.service.init.changelog import check_updates
-    from ..convert.service.init.modpack_search import enumerate_modpacks, query_modpack
+    from ..convert.service.init.modpack_search import enumerate_game_modpacks, query_modpack
     from ..convert.tool.api_export import export_api
     from ..convert.tool.subtool.acquire_sourcedir import wanna_convert
     from ..cppinterface.setup import setup as cpp_interface_setup
@@ -96,10 +96,10 @@ def main(args, error):
         export_api(converted_path)
 
     # check if modpacks need to be converted
-    if wanna_convert():
+    if args.modpacks != ["fvd"] and wanna_convert():
         convert_assets(asset_path, args)
 
-    available_modpacks = enumerate_modpacks(asset_path / "converted", exclude={"engine"})
+    available_modpacks = enumerate_game_modpacks(asset_path)
     if len(available_modpacks) == 0:
         info("No modpacks have been found")
         if not args.modpacks:

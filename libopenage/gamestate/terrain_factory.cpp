@@ -265,4 +265,21 @@ void TerrainFactory::attach_renderer(const std::shared_ptr<renderer::RenderFacto
 	this->render_factory = render_factory;
 }
 
+std::shared_ptr<TerrainChunk> TerrainFactory::add_uniform_chunk(
+	const std::shared_ptr<GameState> &gstate,
+	const util::Vector2s &size,
+	const coord::tile_delta &offset,
+	const std::string &terrain) {
+	auto terrain_obj = gstate->get_db_view()->get_object(terrain);
+	auto terrain_path = api::APITerrain::get_terrain_path(terrain_obj);
+	std::vector<TerrainTile> tiles(size[0] * size[1],
+	                               TerrainTile{terrain_obj, terrain_path, terrain_elevation_t::zero()});
+	auto chunk = std::make_shared<TerrainChunk>(size, offset, std::move(tiles));
+	if (this->render_factory) {
+		chunk->set_render_entity(this->render_factory->add_terrain_render_entity(size, offset));
+		chunk->render_update(time::TIME_ZERO);
+	}
+	return chunk;
+}
+
 } // namespace openage::gamestate

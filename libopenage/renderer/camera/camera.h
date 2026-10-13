@@ -152,6 +152,11 @@ public:
 	float get_zoom() const;
 
 	/**
+	 * Get the camera's position in renderer world coordinates.
+	 */
+	const Eigen::Vector3f &get_position() const;
+
+	/**
 	 * Get the view matrix for this camera.
 	 *
 	 * @return Camera view matrix.

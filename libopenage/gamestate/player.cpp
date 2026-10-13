@@ -8,9 +8,11 @@
 namespace openage::gamestate {
 
 Player::Player(player_id_t id,
-               const std::shared_ptr<nyan::View> &db_view) :
+               const std::shared_ptr<nyan::View> &db_view,
+               const std::string &setup) :
 	id{id},
-	db_view{db_view} {
+	db_view{db_view},
+	setup{setup} {
 }
 
 std::shared_ptr<Player> Player::copy(entity_id_t id) {
@@ -30,6 +32,10 @@ const std::shared_ptr<nyan::View> &Player::get_db_view() const {
 
 void Player::set_id(entity_id_t id) {
 	this->id = id;
+}
+
+const std::string &Player::get_setup() const {
+	return this->setup;
 }
 
 } // namespace openage::gamestate

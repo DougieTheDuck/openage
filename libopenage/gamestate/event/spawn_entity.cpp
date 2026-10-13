@@ -3,22 +3,15 @@
 #include "spawn_entity.h"
 
 #include <cstdint>
-#include <functional>
 #include <vector>
 
 #include <nyan/nyan.h>
 
 #include "coord/phys.h"
-#include "gamestate/component/internal/activity.h"
-#include "gamestate/component/internal/command_queue.h"
-#include "gamestate/component/internal/ownership.h"
-#include "gamestate/component/internal/position.h"
-#include "gamestate/component/types.h"
 #include "gamestate/definitions.h"
 #include "gamestate/entity_factory.h"
-#include "gamestate/game_entity.h"
+#include "gamestate/fvd.h"
 #include "gamestate/game_state.h"
-#include "gamestate/manager.h"
 #include "gamestate/map.h"
 #include "gamestate/types.h"
 
@@ -155,6 +148,19 @@ void SpawnEntityHandler::invoke(openage::event::EventLoop & /* loop */,
                                 const time::time_t &time,
                                 const param_map &params) {
 	auto gstate = std::dynamic_pointer_cast<gamestate::GameState>(state);
+	if (gstate->get_fvd()) {
+		if (not params.check_type<coord::phys3>("position")
+		    or not params.check_type<player_id_t>("owner")
+		    or not params.check_type<std::vector<entity_id_t>>("entity_ids")) {
+			throw Error{ERR << "FVD tower placement requires a position, owner and selected entity IDs"};
+		}
+		gstate->get_fvd()->place_tower(
+			gstate, this->loop, this->factory,
+			params.get<player_id_t>("owner"),
+			params.get<std::vector<entity_id_t>>("entity_ids"),
+			params.get("position", gamestate::WORLD_ORIGIN), time);
+		return;
+	}
 
 	// Check if spawn position is on the map
 	auto pos = params.get("position", gamestate::WORLD_ORIGIN);
@@ -193,25 +199,7 @@ void SpawnEntityHandler::invoke(openage::event::EventLoop & /* loop */,
 
 	// Create entity
 	player_id_t owner_id = params.get("owner", 0);
-	auto entity = this->factory->add_game_entity(this->loop, gstate, owner_id, nyan_entity);
-
-	// Setup components
-	auto entity_pos = std::dynamic_pointer_cast<component::Position>(
-		entity->get_component(component::component_t::POSITION));
-
-	entity_pos->set_position(time, pos);
-	entity_pos->set_angle(time, coord::phys_angle_t::from_int(315));
-
-	auto entity_owner = std::dynamic_pointer_cast<component::Ownership>(
-		entity->get_component(component::component_t::OWNERSHIP));
-	entity_owner->set_owner(time, owner_id);
-
-	auto activity = std::dynamic_pointer_cast<component::Activity>(
-		entity->get_component(component::component_t::ACTIVITY));
-	activity->init(time);
-	entity->get_manager()->run_activity_system(time);
-
-	gstate->add_game_entity(entity);
+	this->factory->spawn_game_entity(this->loop, gstate, owner_id, nyan_entity, pos, time);
 }
 
 time::time_t SpawnEntityHandler::predict_invoke_time(const std::shared_ptr<openage::event::EventEntity> & /* target */,

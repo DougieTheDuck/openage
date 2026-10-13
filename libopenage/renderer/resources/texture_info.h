@@ -73,13 +73,15 @@ public:
 	 * @param imagepath Path to the texture image (optional).
 	 * @param row_alignment Byte alignment of pixels (optional).
 	 * @param subs List of subtexture information (optional).
+	 * @param cbits Whether alpha values encode special rendering effects.
 	 */
 	Texture2dInfo(size_t width,
 	              size_t height,
 	              pixel_format fmt,
 	              std::optional<util::Path> imagepath = std::nullopt,
 	              size_t row_alignment = 1,
-	              std::vector<Texture2dSubInfo> &&subs = std::vector<Texture2dSubInfo>{});
+	              std::vector<Texture2dSubInfo> &&subs = std::vector<Texture2dSubInfo>{},
+	              bool cbits = true);
 
 	Texture2dInfo() = default;
 	Texture2dInfo(Texture2dInfo const &) = default;
@@ -113,6 +115,11 @@ public:
 	 * @return Pixel format.
 	 */
 	pixel_format get_format() const;
+
+	/**
+	 * Whether the alpha channel contains special rendering effect bits.
+	 */
+	bool get_cbits() const;
 
 	/**
 	 * Get the byte alignment of texture rows to byte boundaries.
@@ -181,6 +188,11 @@ private:
 	 * Storage format of the pixels inside the texture.
 	 */
 	pixel_format format;
+
+	/**
+	 * Whether alpha values encode special rendering effects.
+	 */
+	bool cbits;
 
 	/**
 	 * The alignment of texture rows to byte boundaries. Can be 1, 2, 4 or 8.

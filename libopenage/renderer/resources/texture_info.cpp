@@ -15,10 +15,12 @@ Texture2dInfo::Texture2dInfo(size_t width,
                              pixel_format fmt,
                              std::optional<util::Path> imagepath,
                              size_t row_alignment,
-                             std::vector<Texture2dSubInfo> &&subs) :
+                             std::vector<Texture2dSubInfo> &&subs,
+                             bool cbits) :
 	w(width),
 	h(height),
 	format{fmt},
+	cbits{cbits},
 	row_alignment{row_alignment},
 	imagepath{imagepath},
 	subtextures{std::move(subs)} {}
@@ -27,6 +29,7 @@ bool Texture2dInfo::operator==(Texture2dInfo const &other) {
 	return other.w == this->w
 	       and other.h == this->h
 	       and other.format == this->format
+	       and other.cbits == this->cbits
 	       and other.row_alignment == this->row_alignment;
 }
 
@@ -40,6 +43,10 @@ std::pair<int32_t, int32_t> Texture2dInfo::get_size() const {
 
 pixel_format Texture2dInfo::get_format() const {
 	return this->format;
+}
+
+bool Texture2dInfo::get_cbits() const {
+	return this->cbits;
 }
 
 size_t Texture2dInfo::get_row_alignment() const {

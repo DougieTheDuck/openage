@@ -7,6 +7,7 @@
 
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
+#include "gamestate/system/idle.h"
 #include "renderer/render_factory.h"
 
 
@@ -23,6 +24,7 @@ void World::attach_renderer(const std::shared_ptr<renderer::RenderFactory> &rend
 	for (auto entity_ref : state->get_game_entities()) {
 		auto world_render_entity = this->render_factory->add_world_render_entity();
 		entity_ref.second->set_render_entity(world_render_entity);
+		system::Idle::idle(entity_ref.second, time::TIME_ZERO);
 	}
 }
 

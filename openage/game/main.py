@@ -62,7 +62,7 @@ def main(args, error):
     from ..assets import get_asset_path
     from ..convert.service.init.api_export_required import api_export_required
     from ..convert.service.init.changelog import check_updates
-    from ..convert.service.init.modpack_search import enumerate_modpacks
+    from ..convert.service.init.modpack_search import enumerate_game_modpacks
     from ..convert.tool.api_export import export_api
     from ..cppinterface.setup import setup as cpp_interface_setup
     from ..cvar.location import get_config_path
@@ -97,11 +97,10 @@ def main(args, error):
         export_api(converted_path)
 
     # ensure that modpacks are available
-    modpack_dir = asset_path / "converted"
-    available_modpacks = enumerate_modpacks(modpack_dir, exclude={"engine"})
+    available_modpacks = enumerate_game_modpacks(asset_path)
     for modpack in args.modpacks:
         if modpack not in available_modpacks:
-            raise FileNotFoundError(f"Modpack '{modpack}' not found in {modpack_dir}")
+            raise FileNotFoundError(f"Modpack '{modpack}' not found in {asset_path}")
 
     # check if the converted modpacks are up to date
     if args.check_updates:

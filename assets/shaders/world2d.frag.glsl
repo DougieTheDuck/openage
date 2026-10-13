@@ -7,6 +7,7 @@ layout(location=1) out uint id;
 
 uniform sampler2D tex;
 uniform uint u_id;
+uniform bool cbits = true;
 
 // position (top left corner) and size: (x, y, width, height)
 uniform vec4 tile_params;
@@ -19,13 +20,15 @@ vec2 uv = vec2(
 void main() {
 	vec4 tex_val = texture(tex, uv);
 	int alpha = int(round(tex_val.a * 255));
+	if (alpha == 0) {
+		discard;
+	}
+	if (!cbits) {
+		col = tex_val;
+		id = u_id;
+		return;
+	}
 	switch (alpha) {
-		case 0:
-			col = tex_val;
-			discard;
-
-			// do not save the ID
-			return;
 		case 254:
 			col = vec4(1.0f, 0.0f, 0.0f, 1.0f);
 			break;

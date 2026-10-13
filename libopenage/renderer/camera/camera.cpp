@@ -115,6 +115,10 @@ float Camera::get_zoom() const {
 	return this->zoom;
 }
 
+const Eigen::Vector3f &Camera::get_position() const {
+	return this->scene_pos;
+}
+
 const Eigen::Matrix4f &Camera::get_view_matrix() {
 	if (not this->moved) {
 		return this->view;

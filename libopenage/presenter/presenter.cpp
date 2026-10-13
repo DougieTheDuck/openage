@@ -7,6 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "gamestate/fvd.h"
+#include "gamestate/game.h"
+#include "gamestate/game_state.h"
 #include "gamestate/simulation.h"
 #include "input/controller/camera/binding_context.h"
 #include "input/controller/camera/controller.h"
@@ -172,6 +175,18 @@ void Presenter::init_graphics(const renderer::window_settings &window_settings) 
 	if (this->simulation) {
 		auto render_factory = std::make_shared<renderer::RenderFactory>(this->terrain_renderer, this->world_renderer);
 		this->simulation->attach_renderer(render_factory);
+		auto fvd = this->simulation->get_game()->get_state()->get_fvd();
+		if (fvd) {
+			this->camera->look_at_coord(fvd->get_centre().to_scene3());
+			auto size = fvd->get_centre().ne.to_float() * 2;
+			auto eye = this->camera->get_position();
+			auto centre = fvd->get_centre().to_scene3().to_world_space();
+			auto offset = eye - centre;
+			this->camera_manager->set_camera_boundaries({
+				offset.x(), offset.x() + size, offset.y(), offset.y(),
+				offset.z() - size, offset.z()});
+			this->skybox_renderer->set_color(0.08f, 0.12f, 0.08f, 1.0f);
+		}
 	}
 
 	log::log(INFO << "Presenter: Graphics subsystems initialized");
@@ -183,6 +198,9 @@ void Presenter::init_gui() {
 	//// -- gui initialization
 	// TODO: Do not use test GUI
 	util::Path qml_root = this->root_dir / "assets" / "test" / "qml";
+	if (this->simulation and this->simulation->get_game()->get_state()->get_fvd()) {
+		qml_root = this->root_dir / "assets" / "fvd" / "qml";
+	}
 	log::log(INFO << "Presenter: Setting QML root to " << qml_root.resolve_native_path());
 	if (not qml_root.is_dir()) {
 		throw Error{ERR << "could not find qml root folder " << qml_root};
@@ -246,6 +264,18 @@ void Presenter::init_input() {
 		// TODO: Remove hardcoding
 		auto game_controller = std::make_shared<input::game::Controller>(
 			std::unordered_set<size_t>{0, 1, 2, 3}, 0);
+		auto fvd = this->simulation->get_game()->get_state()->get_fvd();
+		if (fvd) {
+			std::unordered_set<size_t> players;
+			for (size_t id = 1; id <= fvd->get_player_count(); ++id) {
+				players.insert(id);
+				input_ctx->bind(
+					input::Event{input::event_class::KEYBOARD, static_cast<int>(Qt::Key_0 + id),
+					             Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+					input::input_action{input::input_action_t::GAME});
+			}
+			game_controller = std::make_shared<input::game::Controller>(players, 2);
+		}
 		auto engine_context = std::make_shared<input::game::BindingContext>();
 		input::game::setup_defaults(engine_context, this->time_loop, this->simulation, this->camera);
 		this->input_manager->set_game_controller(game_controller);

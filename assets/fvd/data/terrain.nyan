@@ -1,0 +1,33 @@
+# Copyright 2026 the openage authors. See copying.md for legal info.
+!version 0.2.0
+
+import engine.util.graphics
+import engine.util.language.translated.type
+import engine.util.path_type
+import engine.util.sound
+import engine.util.terrain
+import engine.util.terrain_type
+
+Land(engine.util.path_type.PathType):
+    pass
+
+PlainsType(engine.util.terrain_type.TerrainType):
+    pass
+
+Plains(engine.util.terrain.Terrain):
+    Terrain.types = {PlainsType}
+    Terrain.name = Name
+    Terrain.terrain_graphic = Graphic
+    Terrain.sound = Sound
+    Terrain.ambience = {}
+    Terrain.path_costs = {Land: 1}
+
+    Name(engine.util.language.translated.type.TranslatedString):
+        TranslatedString.translations = {}
+
+    Graphic(engine.util.graphics.Terrain):
+        Terrain.sprite = "../../../fvd/graphics/grass.terrain"
+
+    Sound(engine.util.sound.Sound):
+        Sound.play_delay = 0.0
+        Sound.sounds = o{}

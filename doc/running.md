@@ -53,6 +53,13 @@ the user wants to convert any before initializing the game.
 
 It's the default run mode.
 
+#### FVD flat plains
+
+Use `bin/run game --modpacks fvd` to start the bundled eight-player flat plains scenario without original game assets.
+Player 1 is the Hunter; players 2 through 8 each start with one Builder.
+All cameras start at the centre of the 128 by 128 map.
+See the [FVD controls and scenario settings](../assets/fvd/README.md#playing) for tower placement and player switching.
+
 
 ### `main`
 

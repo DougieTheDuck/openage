@@ -99,6 +99,11 @@ def tests_cpp():
     yield "openage::curve::tests::container"
     yield "openage::curve::tests::curve_types"
     yield "openage::event::tests::eventtrigger"
+    yield (
+        "openage::gamestate::tests::fvd_scenario",
+        "FVD plains, starting players and tower placement",
+        lambda env: env["has_assets"],
+    )
 
 
 def demos_cpp():

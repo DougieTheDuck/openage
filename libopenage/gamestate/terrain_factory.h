@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <shared_mutex>
+#include <string>
 
 #include "coord/tile.h"
 #include "util/vector.h"
@@ -50,6 +51,21 @@ public:
 	std::shared_ptr<TerrainChunk> add_chunk(const std::shared_ptr<GameState> &gstate,
 	                                        const util::Vector2s size,
 	                                        const coord::tile_delta offset);
+
+	/**
+	 * Create a flat chunk filled with a single nyan terrain.
+	 *
+	 * @param gstate Game state containing terrain data.
+	 * @param size Chunk dimensions.
+	 * @param offset Chunk origin.
+	 * @param terrain Nyan terrain identifier.
+	 * @return Filled terrain chunk.
+	 */
+	std::shared_ptr<TerrainChunk> add_uniform_chunk(
+		const std::shared_ptr<GameState> &gstate,
+		const util::Vector2s &size,
+		const coord::tile_delta &offset,
+		const std::string &terrain);
 
 	// TODO: Add tiles
 	// std::shared_ptr<TerrainTile> add_tile(const std::shared_ptr<openage::event::EventLoop> &loop,

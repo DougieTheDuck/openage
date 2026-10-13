@@ -150,6 +150,7 @@ void WorldRenderStage::init_uniform_ids() {
 	WorldObject::flip_x = this->display_shader->get_uniform_id("flip_x");
 	WorldObject::flip_y = this->display_shader->get_uniform_id("flip_y");
 	WorldObject::tex = this->display_shader->get_uniform_id("tex");
+	WorldObject::cbits = this->display_shader->get_uniform_id("cbits");
 	WorldObject::tile_params = this->display_shader->get_uniform_id("tile_params");
 	WorldObject::scale = this->display_shader->get_uniform_id("scale");
 	WorldObject::subtex_size = this->display_shader->get_uniform_id("subtex_size");

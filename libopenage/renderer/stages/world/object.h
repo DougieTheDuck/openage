@@ -151,6 +151,7 @@ public:
 	inline static uniform_id_t flip_x;
 	inline static uniform_id_t flip_y;
 	inline static uniform_id_t tex;
+	inline static uniform_id_t cbits;
 	inline static uniform_id_t tile_params;
 	inline static uniform_id_t scale;
 	inline static uniform_id_t subtex_size;

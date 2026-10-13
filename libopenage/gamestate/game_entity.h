@@ -58,6 +58,16 @@ public:
 	entity_id_t get_id() const;
 
 	/**
+	 * Get the nyan definition used to create this entity.
+	 */
+	const std::string &get_definition() const;
+
+	/**
+	 * Set the nyan definition when creating this entity.
+	 */
+	void set_definition(const std::string &definition);
+
+	/**
 	 * Set the current render entity.
 	 *
 	 * @param entity New render entity.
@@ -131,6 +141,11 @@ private:
 	 * Unique identifier.
 	 */
 	entity_id_t id;
+
+	/**
+	 * Nyan game entity definition identifier.
+	 */
+	std::string definition;
 
 	/**
 	 * Data components.

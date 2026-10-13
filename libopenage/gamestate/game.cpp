@@ -2,6 +2,7 @@
 
 #include "game.h"
 
+#include <algorithm>
 #include <vector>
 
 #include <nyan/nyan.h>
@@ -12,6 +13,7 @@
 #include "assets/mod_manager.h"
 #include "assets/modpack.h"
 #include "gamestate/entity_factory.h"
+#include "gamestate/fvd.h"
 #include "gamestate/game_state.h"
 #include "gamestate/map.h"
 #include "gamestate/terrain.h"
@@ -32,6 +34,15 @@ Game::Game(const std::shared_ptr<openage::event::EventLoop> &event_loop,
 	state{std::make_shared<GameState>(this->db, event_loop)},
 	universe{std::make_shared<Universe>(state)} {
 	this->load_data(mod_manager);
+	this->state->set_mod_manager(mod_manager);
+
+	const auto &mods = mod_manager->get_load_order();
+	if (std::find(mods.begin(), mods.end(), "fvd") != mods.end()) {
+		auto scenario = std::make_shared<FVD>(this->state);
+		this->state->set_fvd(scenario);
+		scenario->initialise(this->state, event_loop, entity_factory, terrain_factory);
+		return;
+	}
 
 	// TODO: Testing player creation
 	auto player1 = entity_factory->add_player(event_loop, state, "");

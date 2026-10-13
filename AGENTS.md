@@ -52,6 +52,7 @@ Non-obvious traps; add new ones here, verified and in one line
 - Run Python only via `bin/run ...` or `make run`, never `python3 -m openage` in the source tree: compiled Cython modules and `openage/config.py` live in `bin/`
 - Never edit files in `bin/`, they are generated: `config.*` from `*.in`, `*.gen.{h,cpp}` from `openage/codegen/` and `*.template`, `libopenage` `.pxd` files from `pxd:` annotations in C++ headers; codegen trouble: `make cleancodegen`
 - nyan is a separate project: build it and point to it with `-Dnyan_DIR=`, or `./configure --download-nyan`
+- Keep `.nyan` files LF-terminated: the nyan lexer stalls on CRLF blank lines; `.gitattributes` enforces LF.
 - C++20, but the minimum compilers are gcc/clang 10 and MSVC 16.8 (`buildsystem/CheckCompilerFeatures.cmake`): check support before using newer library features like `std::format`
 
 ## Working

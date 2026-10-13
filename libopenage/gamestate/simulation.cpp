@@ -37,6 +37,9 @@ GameSimulation::GameSimulation(const util::Path &root_dir,
 	for (const auto &mod : mods) {
 		this->mod_manager->register_modpack(mod);
 	}
+	for (const auto &mod : mod_manager->enumerate_modpacks(root_dir / "assets")) {
+		this->mod_manager->register_modpack(mod);
+	}
 
 	log::log(MSG(info) << "Created game simulation");
 }

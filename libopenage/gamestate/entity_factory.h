@@ -7,7 +7,9 @@
 
 #include <nyan/nyan.h>
 
+#include "coord/phys.h"
 #include "gamestate/types.h"
+#include "time/time.h"
 
 
 namespace openage {
@@ -58,6 +60,25 @@ public:
 	                                            const std::shared_ptr<GameState> &state,
 	                                            player_id_t owner_id,
 	                                            const nyan::fqon_t &nyan_entity);
+
+	/**
+	 * Create, initialise and register an entity at a position and time.
+	 *
+	 * @param loop Event loop for the gamestate.
+	 * @param state State of the game.
+	 * @param owner_id Player owning the entity.
+	 * @param nyan_entity Nyan entity definition.
+	 * @param position Initial world position.
+	 * @param time Spawn time.
+	 * @return Spawned entity.
+	 */
+	std::shared_ptr<GameEntity> spawn_game_entity(
+		const std::shared_ptr<openage::event::EventLoop> &loop,
+		const std::shared_ptr<GameState> &state,
+		player_id_t owner_id,
+		const nyan::fqon_t &nyan_entity,
+		const coord::phys3 &position,
+		const time::time_t &time);
 
 	/**
 	 * Create a new player.

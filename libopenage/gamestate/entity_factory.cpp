@@ -116,6 +116,7 @@ std::shared_ptr<GameEntity> EntityFactory::add_game_entity(const std::shared_ptr
                                                            player_id_t owner_id,
                                                            const nyan::fqon_t &nyan_entity) {
 	auto entity = std::make_shared<GameEntity>(this->get_next_entity_id());
+	entity->set_definition(nyan_entity);
 	entity->set_manager(std::make_shared<GameEntityManager>(loop, state, entity));
 
 	// use the owner's data to initialize the entity
@@ -130,11 +131,35 @@ std::shared_ptr<GameEntity> EntityFactory::add_game_entity(const std::shared_ptr
 	return entity;
 }
 
+std::shared_ptr<GameEntity> EntityFactory::spawn_game_entity(
+	const std::shared_ptr<openage::event::EventLoop> &loop,
+	const std::shared_ptr<GameState> &state,
+	player_id_t owner_id,
+	const nyan::fqon_t &nyan_entity,
+	const coord::phys3 &position,
+	const time::time_t &time) {
+	auto entity = this->add_game_entity(loop, state, owner_id, nyan_entity);
+	auto pos = std::dynamic_pointer_cast<component::Position>(
+		entity->get_component(component::component_t::POSITION));
+	pos->set_position(time, position);
+	pos->set_angle(time, coord::phys_angle_t::from_int(315));
+	auto owner = std::dynamic_pointer_cast<component::Ownership>(
+		entity->get_component(component::component_t::OWNERSHIP));
+	owner->set_owner(time, owner_id);
+	auto activity = std::dynamic_pointer_cast<component::Activity>(
+		entity->get_component(component::component_t::ACTIVITY));
+	activity->init(time);
+	entity->get_manager()->run_activity_system(time);
+	state->add_game_entity(entity);
+	return entity;
+}
+
 std::shared_ptr<Player> EntityFactory::add_player(const std::shared_ptr<openage::event::EventLoop> & /* loop */,
                                                   const std::shared_ptr<GameState> &state,
-                                                  const nyan::fqon_t & /* player_setup */) {
+                                                  const nyan::fqon_t &player_setup) {
 	auto player = std::make_shared<Player>(this->get_next_player_id(),
-	                                       state->get_db_view()->new_child());
+	                                       state->get_db_view()->new_child(),
+	                                       player_setup);
 
 	// TODO: Components (for resources, diplomacy, etc.)
 

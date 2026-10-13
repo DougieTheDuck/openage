@@ -37,3 +37,4 @@ To prevent the clock updates from advancing too far if the program is stopped by
 or a debugger, `update_time()` sets a maximum limit on how much real time can pass between two update
 calls. This limit is currently hardcoded to 50ms. Similarly, there is a minimum limit of 1ms to
 prevent the time loop thread from stalling.
+While waiting for the next millisecond, the clock releases its lock so simulation and rendering can read the current time.

@@ -32,7 +32,7 @@ void DragSelectHandler::invoke(openage::event::EventLoop & /* loop */,
                                const param_map &params) {
 	auto gstate = std::dynamic_pointer_cast<openage::gamestate::GameState>(state);
 
-	size_t controlled_id = params.get("controlled", 0);
+	size_t controlled_id = params.get<size_t>("controlled", 0);
 
 	Eigen::Matrix4f id_matrix = Eigen::Matrix4f::Identity();
 	Eigen::Matrix4f cam_matrix = params.get("camera_matrix", id_matrix);

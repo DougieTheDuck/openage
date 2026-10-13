@@ -30,6 +30,14 @@ entity_id_t GameEntity::get_id() const {
 	return this->id;
 }
 
+const std::string &GameEntity::get_definition() const {
+	return this->definition;
+}
+
+void GameEntity::set_definition(const std::string &definition) {
+	this->definition = definition;
+}
+
 void GameEntity::set_render_entity(const std::shared_ptr<renderer::world::RenderEntity> &entity) {
 	// TODO: Transfer state from old render entity to new one?
 

@@ -10,6 +10,7 @@
 #include "gamestate/component/internal/commands/types.h"
 #include "gamestate/event/send_command.h"
 #include "gamestate/event/spawn_entity.h"
+#include "gamestate/fvd.h"
 #include "gamestate/game.h"
 #include "gamestate/game_state.h"
 #include "gamestate/simulation.h"
@@ -34,6 +35,7 @@ void Controller::set_control(size_t faction_id) {
 
 	if (this->controlled_factions.find(faction_id) != this->controlled_factions.end()) {
 		this->active_faction_id = faction_id;
+		this->selected.clear();
 	}
 }
 
@@ -126,6 +128,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		event::EventHandler::param_map::map_t params{
 			{"position", mouse_pos},
 			{"owner", controller->get_controlled()},
+			{"entity_ids", controller->get_selected()},
 		};
 
 		auto event = simulation->get_event_loop()->create_event(
@@ -145,6 +148,22 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		QEvent::MouseButtonRelease};
 
 	ctx->bind(ev_mouse_lmb_ctrl, create_entity_action);
+
+	auto fvd = simulation->get_game()->get_state()->get_fvd();
+	if (fvd) {
+		for (size_t id = 1; id <= fvd->get_player_count(); ++id) {
+			binding_func_t switch_player{[id, camera, fvd](const event_arguments &,
+			                                               const std::shared_ptr<Controller> controller) {
+				controller->set_control(id);
+				camera->look_at_coord(fvd->get_centre().to_scene3());
+				log::log(INFO << "Controlling player " << id << (id == 1 ? " (Hunter)" : " (Builders)"));
+				return nullptr;
+			}};
+			ctx->bind(Event{event_class::KEYBOARD, static_cast<int>(Qt::Key_0 + id),
+			                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+			          binding_action{forward_action_t::CLEAR, switch_player});
+		}
+	}
 
 	binding_func_t move_entity{[&](const event_arguments &args,
 	                               const std::shared_ptr<Controller> controller) {

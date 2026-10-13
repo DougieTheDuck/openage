@@ -52,6 +52,16 @@ def enumerate_modpacks(modpacks_dir: UnionPath, exclude: set[str] | None = None)
     return modpacks
 
 
+def enumerate_game_modpacks(asset_dir: UnionPath) -> dict[str, str]:
+    """
+    Find converted and bundled modpacks, preferring converted copies.
+    """
+    modpacks = enumerate_modpacks(asset_dir / "converted", exclude={"engine"})
+    for name, version in enumerate_modpacks(asset_dir, exclude={"engine"}).items():
+        modpacks.setdefault(name, version)
+    return modpacks
+
+
 def get_modpack_info(modpack_dir: UnionPath) -> dict[str, typing.Any]:
     """
     Get information about an openage modpack from its definition file.

@@ -1,0 +1,23 @@
+# Copyright 2026 the openage authors. See copying.md for legal info.
+
+file_version = "2"
+
+[info]
+name = "fvd"
+version = "0.1.0"
+versionstr = "Flat plains"
+repo = "local"
+
+[assets]
+include = ["data/**"]
+exclude = []
+
+[dependency]
+modpacks = ["engine"]
+
+[conflict]
+modpacks = ["aoe1_base", "de1_base", "aoe2_base", "de2_base", "hd_base", "swgb_base", "trial_base"]
+
+[authors]
+
+[authorgroups]

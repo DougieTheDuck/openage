@@ -31,8 +31,10 @@ void Clock::update_time() {
 		auto now = simclock_t::now();
 		auto passed = std::chrono::duration_cast<std::chrono::milliseconds>(now - this->last_check);
 		if (passed.count() == 0) {
-			// prevent the clock from stalling the thread forever
+			// Let simulation and rendering read the clock while waiting for time to advance.
+			lock.unlock();
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			return;
 		}
 		else if (passed.count() > this->max_tick_time) {
 			// if too much real time passes between two time updates, we only advance time by a small amount

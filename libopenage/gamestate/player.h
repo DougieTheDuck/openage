@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include "gamestate/types.h"
 
@@ -23,9 +24,11 @@ public:
 	 *
 	 * @param id Unique player ID.
 	 * @param db_view View of the nyan database used for the player.
+	 * @param setup Nyan player setup, including its civilisation.
 	 */
 	Player(player_id_t id,
-	       const std::shared_ptr<nyan::View> &db_view);
+	       const std::shared_ptr<nyan::View> &db_view,
+	       const std::string &setup = "");
 
 	Player(Player &&) = default;
 	Player &operator=(Player &&) = default;
@@ -55,6 +58,11 @@ public:
 	 */
 	const std::shared_ptr<nyan::View> &get_db_view() const;
 
+	/**
+	 * Get the nyan player setup, including its civilisation.
+	 */
+	const std::string &get_setup() const;
+
 protected:
 	/**
 	 * A player cannot be default copied because of their unique ID.
@@ -83,6 +91,11 @@ private:
 	 * Player view of the nyan game data database.
 	 */
 	std::shared_ptr<nyan::View> db_view;
+
+	/**
+	 * Nyan player setup identifier.
+	 */
+	std::string setup;
 };
 
 } // namespace openage::gamestate

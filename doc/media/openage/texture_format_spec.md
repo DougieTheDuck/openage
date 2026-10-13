@@ -30,7 +30,7 @@ imagefile <filename>
 size <width> <height>
 
 # Pixel format representation
-pxformat <format> cbit=<token>
+pxformat <format> cbits=<token>
 
 # Defines a subtexture inside the image resource
 # Subtextures have x and y coordinates, width and height
@@ -121,7 +121,7 @@ Pixel format used for pixels in the image.
 Parameter | Type   | Optional | Default value
 ----------|--------|----------|--------------
 format    | token  | No       | -
-cbit      | token  | Yes      | `false`
+cbits     | token  | Yes      | `False`
 
 **format**<br>
 Pixel format of the image.
@@ -130,17 +130,17 @@ Format    | Description
 ----------|------------
 `rgba8`   | 32 bits per pixel, RGBA colours
 
-**cbit**<br>
-Determines if the last significant bit of the pixel's alpha channel is reserved
-as a colour command bit. If the command bit is set and has value `1`, the pixel
-is handled as a colour command with special drawing rules.
+**cbits**<br>
+Determines whether the pixel's alpha channel encodes colour commands with special drawing rules.
+Use `True` for encoded game textures and `False` for ordinary transparency.
+With `False`, alpha values are treated only as opacity, not as rendering effects.
 
 
 #### Example
 
 ```
 pxformat rgba8
-pxformat rgba8 cbit=true
+pxformat rgba8 cbits=True
 ```
 
 

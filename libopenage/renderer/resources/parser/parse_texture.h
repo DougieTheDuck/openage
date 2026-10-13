@@ -26,7 +26,7 @@ struct SizeData {
 
 struct PixelFormatData {
 	pixel_format format;
-	bool cbits;
+	bool cbits{false};
 };
 
 struct SubtextureData {

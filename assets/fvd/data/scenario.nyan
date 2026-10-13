@@ -1,0 +1,30 @@
+# Copyright 2026 the openage authors. See copying.md for legal info.
+!version 0.2.0
+
+import engine.root
+import engine.util.game_entity
+import engine.util.terrain
+import fvd.data.entities
+import fvd.data.terrain
+
+Civilisation(engine.root.Object):
+    name : text
+    buildables : set(engine.util.game_entity.GameEntity)
+
+Hunter(Civilisation):
+    Civilisation.name = "Hunter"
+    Civilisation.buildables = {}
+
+Builders(Civilisation):
+    Civilisation.name = "Builders"
+    Civilisation.buildables = {fvd.data.entities.Tower}
+
+Scenario(engine.root.Object):
+    map_size : int = 128
+    chunk_size : int = 16
+    player_count : int = 8
+    hunter : Civilisation = Hunter
+    builders : Civilisation = Builders
+    builder : engine.util.game_entity.GameEntity = fvd.data.entities.Builder
+    tower : engine.util.game_entity.GameEntity = fvd.data.entities.Tower
+    terrain : engine.util.terrain.Terrain = fvd.data.terrain.Plains

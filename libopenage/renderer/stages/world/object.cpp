@@ -147,6 +147,7 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 		auto &tex_manager = this->asset_manager->get_texture_manager();
 		auto &texture = tex_manager->request(tex_info->get_image_path().value());
 		layer_unifs->update(this->tex, texture);
+		layer_unifs->update(this->cbits, tex_info->get_cbits());
 
 		// Subtexture coordinates.inside texture
 		auto coords = tex_info->get_subtex_info(subtex_idx).get_subtex_coords();

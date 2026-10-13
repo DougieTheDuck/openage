@@ -50,6 +50,9 @@ Set up [vcpkg](https://github.com/Microsoft/vcpkg#quick-start). Open a command p
 vcpkg install dirent eigen3 fontconfig freetype harfbuzz libepoxy libogg libpng opus opusfile qtbase qtdeclarative qtmultimedia toml11
 ```
 
+Qt must include PNG image decoding to load terrain and sprites.
+When disabling vcpkg's default features, explicitly enable `qtbase[png]`; installing `libpng` alone does not enable Qt's decoder.
+
 If you also want Vulkan graphics support, you should also run this command:
 
 ```ps

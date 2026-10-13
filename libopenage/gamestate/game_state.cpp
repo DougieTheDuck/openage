@@ -71,4 +71,12 @@ void GameState::set_mod_manager(const std::shared_ptr<assets::ModManager> &mod_m
 	this->mod_manager = mod_manager;
 }
 
+const std::shared_ptr<FVD> &GameState::get_fvd() const {
+	return this->fvd;
+}
+
+void GameState::set_fvd(const std::shared_ptr<FVD> &scenario) {
+	this->fvd = scenario;
+}
+
 } // namespace openage::gamestate
