@@ -591,6 +591,70 @@ void eventtrigger() {
 		loop->create_event("EventParameterMap", state->objectA, gstate, 1, {{"testInt", 1}, {"testStdString", "stdstring"s}, {"testString", "string"}});
 		loop->reach_time(10, gstate);
 	}
+
+	log::log(DBG << "------------- [ Starting Test: Event submission inbox ] ------------");
+	{
+		class SubmitTestHandler : public EventHandler {
+		public:
+			SubmitTestHandler() :
+				EventHandler("submitted", EventHandler::trigger_type::ONCE) {}
+
+			void setup_event(const std::shared_ptr<Event> & /*target*/,
+			                 const std::shared_ptr<State> & /*state*/) override {}
+
+			void invoke(EventLoop & /*loop*/,
+			            const std::shared_ptr<EventEntity> & /*target*/,
+			            const std::shared_ptr<State> &gstate,
+			            const time::time_t &time,
+			            const EventHandler::param_map &param) override {
+				auto state = std::dynamic_pointer_cast<TestState>(gstate);
+				state->trace.emplace_back(param.get<std::string>("name"), time);
+			}
+
+			time::time_t predict_invoke_time(const std::shared_ptr<EventEntity> & /*target*/,
+			                                 const std::shared_ptr<State> & /*state*/,
+			                                 const time::time_t &at) override {
+				return at;
+			}
+		};
+
+		using namespace std::literals;
+
+		auto loop = std::make_shared<EventLoop>();
+		loop->add_event_handler(std::make_shared<SubmitTestHandler>());
+		auto state = std::make_shared<TestState>(loop);
+		auto gstate = std::dynamic_pointer_cast<State>(state);
+
+		loop->submit_event("submitted", state->objectA, gstate, 2, {{"name", "a"s}});
+		loop->submit_event("submitted", state->objectA, gstate, 1, {{"name", "b"s}});
+		loop->submit_event("submitted", state->objectA, gstate, 5, {{"name", "c"s}});
+
+		// submissions only enter the queue when the loop drains its inbox
+		TESTEQUALS(loop->get_queue().get_event_queue().size(), 0);
+		TESTEQUALS(state->trace.empty(), true);
+
+		loop->reach_time(2, gstate);
+		TESTEQUALS(state->trace.size(), 2);
+		TESTEQUALS(state->trace.front().name, "b");
+		TESTEQUALS(state->trace.front().time, 1);
+		TESTEQUALS(state->trace.back().name, "a");
+		TESTEQUALS(state->trace.back().time, 2);
+		TESTEQUALS(loop->get_queue().get_event_queue().size(), 1);
+
+		// an event submitted for an already reached time is executed on the next drain
+		loop->submit_event("submitted", state->objectA, gstate, 2, {{"name", "late"s}});
+		loop->reach_time(2, gstate);
+		TESTEQUALS(state->trace.size(), 3);
+		TESTEQUALS(state->trace.back().name, "late");
+
+		loop->reach_time(5, gstate);
+		TESTEQUALS(state->trace.size(), 4);
+		TESTEQUALS(state->trace.back().name, "c");
+		TESTEQUALS(loop->get_queue().get_event_queue().size(), 0);
+
+		loop->submit_event("unregistered", state->objectA, gstate, 6);
+		TESTTHROWS(loop->reach_time(6, gstate));
+	}
 }
 
 } // namespace openage::event::tests

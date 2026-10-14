@@ -34,6 +34,11 @@ called, and `t_e` is the event's scheduled invoke time. Events are executed in o
 earliest to latest invoke time. During execution, events may trigger the rescheduling of
 other events if there are dependencies between the events.
 
+`create_event(..)` waits until the event loop is not executing events.
+Threads other than the simulation thread, e.g. input handling, therefore pass their events to `submit_event(..)` instead.
+It only stores the event in an inbox, which `reach_time(..)` drains before executing events.
+Submitted events are created just like with `create_event(..)`, but no `Event` instance is returned to the submitter.
+
 Both the creation and execution of events require passing a `State` object that functions
 as a persistent global storage for values that are not linked to a specific event executions.
 In practice, `State` is primarily used to pass the state of the [game simulation](/doc/code/game_simulation/)

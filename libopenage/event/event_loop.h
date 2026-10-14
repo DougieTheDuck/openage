@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "event/eventhandler.h"
 #include "event/eventqueue.h"
@@ -51,6 +52,9 @@ public:
 	/**
 	 * Add a new event to the queue using a registered event handler.
 	 *
+	 * Blocks while the loop is executing events, so threads other than the
+	 * one calling \p reach_time() should use \p submit_event() instead.
+	 *
 	 * @param eventhandler Event handler ID. The handler must already be registered on the loop.
 	 * @param target Target entity. Can be \p nullptr.
 	 * @param state Global state.
@@ -88,7 +92,28 @@ public:
 	                                    const EventHandler::param_map params = EventHandler::param_map({}));
 
 	/**
-	 * Execute events in the queue with execution time <= a given point in time.
+	 * Submit an event from outside the thread executing the loop, e.g. from input handling.
+	 *
+	 * The event is put into an inbox without waiting for the loop's event execution.
+	 * The next call to \p reach_time() creates it like \p create_event() would,
+	 * before any events are executed.
+	 *
+	 * @param eventhandler Event handler ID. The handler must be registered on the loop
+	 *                     when the inbox is drained, else \p reach_time() throws.
+	 * @param target Target entity. Can be \p nullptr.
+	 * @param state Global state.
+	 * @param reference_time Reference time to calculate the event execution time.
+	 * @param params Event parameters map (default = {}). Passed to the event handler on event execution.
+	 */
+	void submit_event(const std::string eventhandler,
+	                  const std::shared_ptr<EventEntity> target,
+	                  const std::shared_ptr<State> state,
+	                  const time::time_t reference_time,
+	                  const EventHandler::param_map params = EventHandler::param_map({}));
+
+	/**
+	 * Create the events in the inbox, then execute events in the queue
+	 * with execution time <= a given point in time.
 	 *
 	 * @param time_until Maximum time until which events are executed.
 	 * @param state Global state.
@@ -121,6 +146,24 @@ public:
 	}
 
 private:
+	/**
+	 * Event submitted via \p submit_event() that is not created yet.
+	 */
+	struct submitted_event {
+		std::string eventhandler;
+		std::shared_ptr<EventEntity> target;
+		std::shared_ptr<State> state;
+		time::time_t reference_time;
+		EventHandler::param_map params;
+	};
+
+	/**
+	 * Create all events from the inbox and empty it.
+	 *
+	 * Must be called with \p mutex held.
+	 */
+	void drain_inbox();
+
 	/**
 	 *  Execute events in the queue with execution time <= a given point in time.
 	 *
@@ -159,6 +202,16 @@ private:
 	 * Mutex for protecting threaded access.
 	 */
 	std::recursive_mutex mutex;
+
+	/**
+	 * Events submitted from other threads, waiting to be created by \p reach_time().
+	 */
+	std::vector<submitted_event> inbox;
+
+	/**
+	 * Mutex for the inbox only, so submitters never wait for event execution.
+	 */
+	std::mutex inbox_mutex;
 };
 
 } // namespace openage::event

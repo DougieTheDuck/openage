@@ -75,12 +75,25 @@ std::shared_ptr<Event> EventLoop::create_event(const std::shared_ptr<EventHandle
 }
 
 
+void EventLoop::submit_event(const std::string eventhandler,
+                             const std::shared_ptr<EventEntity> target,
+                             const std::shared_ptr<State> state,
+                             const time::time_t reference_time,
+                             const EventHandler::param_map params) {
+	std::unique_lock lock{this->inbox_mutex};
+
+	this->inbox.push_back({eventhandler, target, state, reference_time, params});
+}
+
+
 void EventLoop::reach_time(const time::time_t &time_until,
                            const std::shared_ptr<State> &state) {
 	util::StallProfiler profile{"event.reach_time"};
 	util::StallProfiler lock_profile{"event.reach_time.lock_wait"};
 	std::unique_lock lock{this->mutex};
 	lock_profile.finish();
+
+	this->drain_inbox();
 
 	// TODO detect infinite loops (is this a halting problem?)
 	// this happens when the events don't settle:
@@ -114,6 +127,19 @@ void EventLoop::reach_time(const time::time_t &time_until,
 	// in the main loop for one frame - which is bad btw.
 	this->queue.swap_changesets();
 	log::log(SPAM << "Loop: t=" << time_until << " was reached! ========");
+}
+
+
+void EventLoop::drain_inbox() {
+	std::vector<submitted_event> submitted;
+	{
+		std::unique_lock lock{this->inbox_mutex};
+		std::swap(submitted, this->inbox);
+	}
+
+	for (const auto &ev : submitted) {
+		this->create_event(ev.eventhandler, ev.target, ev.state, ev.reference_time, ev.params);
+	}
 }
 
 

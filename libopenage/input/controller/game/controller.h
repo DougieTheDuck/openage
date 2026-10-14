@@ -117,11 +117,6 @@ private:
 	std::vector<gamestate::entity_id_t> selected;
 
 	/**
-	 * Queue for gamestate events generated from inputs.
-	 */
-	std::vector<std::shared_ptr<event::Event>> outqueue;
-
-	/**
 	 * Start position of a drag selection.
 	 *
 	 * TODO: Move this into an input event.

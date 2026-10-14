@@ -33,8 +33,7 @@ namespace openage::input::game {
 Controller::Controller(const std::unordered_set<size_t> &controlled_factions,
                        size_t active_faction_id) :
 	controlled_factions{controlled_factions},
-	active_faction_id{active_faction_id},
-	outqueue{} {}
+	active_faction_id{active_faction_id} {}
 
 void Controller::set_control(size_t faction_id) {
 	std::unique_lock lock{this->mutex};
@@ -77,28 +76,7 @@ bool Controller::process(const event_arguments &ev_args, const std::shared_ptr<B
 
 	// TODO: check if action is allowed
 	auto bind = ctx->lookup(ev_args.e);
-	auto controller = this->shared_from_this();
-	auto game_event = bind.transform(ev_args, controller);
-
-	switch (bind.action_type) {
-	case forward_action_t::SEND:
-		this->outqueue.push_back(game_event);
-		for (auto event : this->outqueue) {
-			// TODO: Send gamestate event
-		}
-		break;
-
-	case forward_action_t::QUEUE:
-		this->outqueue.push_back(game_event);
-		break;
-
-	case forward_action_t::CLEAR:
-		this->outqueue.clear();
-		break;
-
-	default:
-		throw Error{MSG(err) << "Unrecognized action type."};
-	}
+	bind.transform(ev_args, this->shared_from_this());
 
 	return true;
 }
@@ -143,13 +121,12 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			{"entity_ids", controller->get_selected()},
 		};
 
-		auto event = simulation->get_event_loop()->create_event(
+		simulation->get_event_loop()->submit_event(
 			"game.spawn_entity",
 			simulation->get_spawner(),
 			simulation->get_game()->get_state(),
 			time_loop->get_clock()->get_time(),
 			params);
-		return event;
 	}};
 
 	binding_action create_entity_action{forward_action_t::SEND, create_entity_event};
@@ -169,7 +146,6 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				controller->set_control(id);
 				camera->look_at_coord(fvd->get_centre().to_scene3());
 				log::log(INFO << "Controlling player " << id << (id == 1 ? " (Hunter)" : " (Builders)"));
-				return nullptr;
 			}};
 			ctx->bind(Event{event_class::KEYBOARD, static_cast<int>(Qt::Key_0 + id),
 			                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
@@ -186,13 +162,12 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			{"entity_ids", controller->get_selected()},
 		};
 
-		auto event = simulation->get_event_loop()->create_event(
+		simulation->get_event_loop()->submit_event(
 			"game.send_command",
 			simulation->get_commander(),
 			simulation->get_game()->get_state(),
 			time_loop->get_clock()->get_time(),
 			params);
-		return event;
 	}};
 
 	binding_action move_entity_action{forward_action_t::SEND, move_entity};
@@ -207,7 +182,6 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 	binding_func_t init_drag_selection{[&](const event_arguments &args,
 	                                       const std::shared_ptr<Controller> controller) {
 		controller->set_drag_select_start(args.mouse);
-		return nullptr;
 	}};
 
 	binding_action init_drag_selection_action{forward_action_t::CLEAR, init_drag_selection};
@@ -246,7 +220,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 								 }}},
 						};
 
-						simulation->get_event_loop()->create_event(
+						simulation->get_event_loop()->submit_event(
 							"game.click_select",
 							simulation->get_commander(),
 							simulation->get_game()->get_state(),
@@ -254,7 +228,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 							params);
 					});
 				controller->reset_drag_select();
-				return std::shared_ptr<event::Event>{};
+				return;
 			}
 
 			Eigen::Matrix4f cam_matrix = camera->get_projection_matrix() * camera->get_view_matrix();
@@ -271,7 +245,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 					 }}},
 			};
 
-			auto event = simulation->get_event_loop()->create_event(
+			simulation->get_event_loop()->submit_event(
 				"game.drag_select",
 				simulation->get_commander(),
 				simulation->get_game()->get_state(),
@@ -280,8 +254,6 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 
 			// Reset drag selection start
 			controller->reset_drag_select();
-
-			return event;
 		}};
 
 	binding_action drag_selection_action{forward_action_t::CLEAR, drag_selection};
