@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -143,11 +144,15 @@ private:
  * @param time_loop Time loop for getting simulation time.
  * @param simulation Game simulation.
  * @param camera Active game camera.
+ * @param pick_entity Callback for finding the visible entity under a window pixel.
  */
 void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
                     const std::shared_ptr<time::TimeLoop> &time_loop,
                     const std::shared_ptr<openage::gamestate::GameSimulation> &simulation,
-                    const std::shared_ptr<renderer::camera::Camera> &camera);
+                    const std::shared_ptr<renderer::camera::Camera> &camera,
+	                const std::function<void(
+		                const coord::input &,
+		                const std::function<void(std::optional<gamestate::entity_id_t>)> &)> &pick_entity);
 
 } // namespace input::game
 } // namespace openage

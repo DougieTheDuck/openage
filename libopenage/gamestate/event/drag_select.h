@@ -21,6 +21,28 @@ class State;
 namespace gamestate::event {
 
 /**
+ * Select a game entity identified by the renderer's pixel picking buffer.
+ */
+class ClickSelectHandler : public openage::event::OnceEventHandler {
+public:
+	ClickSelectHandler();
+	~ClickSelectHandler() = default;
+
+	void setup_event(const std::shared_ptr<openage::event::Event> &event,
+	                 const std::shared_ptr<openage::event::State> &state) override;
+
+	void invoke(openage::event::EventLoop &loop,
+	            const std::shared_ptr<openage::event::EventEntity> &target,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time,
+	            const param_map &params) override;
+
+	time::time_t predict_invoke_time(const std::shared_ptr<openage::event::EventEntity> &target,
+	                                 const std::shared_ptr<openage::event::State> &state,
+	                                 const time::time_t &at) override;
+};
+
+/**
  * Drag select game entities.
  */
 class DragSelectHandler : public openage::event::OnceEventHandler {

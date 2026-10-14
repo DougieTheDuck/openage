@@ -17,6 +17,50 @@
 
 namespace openage::gamestate::event {
 
+ClickSelectHandler::ClickSelectHandler() :
+	OnceEventHandler{"game.click_select"} {}
+
+void ClickSelectHandler::setup_event(const std::shared_ptr<openage::event::Event> & /* event */,
+                                     const std::shared_ptr<openage::event::State> & /* state */) {
+}
+
+void ClickSelectHandler::invoke(openage::event::EventLoop & /* loop */,
+                                const std::shared_ptr<openage::event::EventEntity> & /* target */,
+                                const std::shared_ptr<openage::event::State> &state,
+                                const time::time_t &time,
+                                const param_map &params) {
+	auto gstate = std::dynamic_pointer_cast<openage::gamestate::GameState>(state);
+	auto controlled_id = params.get<size_t>("controlled", 0);
+	auto candidates = params.get("entity_ids", std::vector<entity_id_t>{});
+
+	std::vector<entity_id_t> selected;
+	for (auto id : candidates) {
+		auto found = gstate->get_game_entities().find(id);
+		if (found == gstate->get_game_entities().end()
+		    or not found->second->has_component(component::component_t::SELECTABLE)) {
+			continue;
+		}
+
+		auto owner = std::dynamic_pointer_cast<component::Ownership>(
+			found->second->get_component(component::component_t::OWNERSHIP));
+		if (owner->get_owners().get(time) == controlled_id) {
+			selected.push_back(id);
+		}
+	}
+
+	auto select_cb = params.get("select_cb",
+	                            std::function<void(const std::vector<entity_id_t>)>{
+									[](const std::vector<entity_id_t> /* ids */) {}});
+	select_cb(selected);
+}
+
+time::time_t ClickSelectHandler::predict_invoke_time(
+	const std::shared_ptr<openage::event::EventEntity> & /* target */,
+	const std::shared_ptr<openage::event::State> & /* state */,
+	const time::time_t &at) {
+	return at;
+}
+
 DragSelectHandler::DragSelectHandler() :
 	OnceEventHandler{"game.drag_select"} {}
 

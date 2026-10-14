@@ -15,6 +15,7 @@
 #include "renderer/texture.h"
 #include "renderer/window.h"
 #include "time/clock.h"
+#include "util/stall_profiler.h"
 
 
 namespace openage::renderer::world {
@@ -58,8 +59,38 @@ void WorldRenderStage::add_render_entity(const std::shared_ptr<RenderEntity> ent
 	this->render_objects.push_back(world_object);
 }
 
+void WorldRenderStage::pick_entity(
+	const coord::input &position,
+	const std::function<void(std::optional<uint32_t>)> &callback) {
+	util::StallProfiler profile{"world.pick_entity"};
+	util::StallProfiler lock_profile{"world.pick_entity.lock_wait"};
+	std::shared_lock lock{this->mutex};
+	lock_profile.finish();
+	util::StallProfiler scan_profile{"world.pick_entity.scan"};
+	std::optional<uint32_t> selected_id;
+	std::optional<WorldObject::HitTestResult> selected_hit;
+	for (const auto &object : this->render_objects) {
+		auto hit = object->hit_test(position, this->camera);
+		if (not hit.has_value()) {
+			continue;
+		}
+		if (not selected_hit.has_value()
+		    or hit->layer_position > selected_hit->layer_position
+		    or (hit->layer_position == selected_hit->layer_position
+		        and hit->depth <= selected_hit->depth)) {
+			selected_id = object->get_id();
+			selected_hit = hit;
+		}
+	}
+	scan_profile.finish();
+	lock.unlock();
+	callback(selected_id);
+}
+
 void WorldRenderStage::update() {
+	util::StallProfiler lock_profile{"world.update.lock_wait"};
 	std::unique_lock lock{this->mutex};
+	lock_profile.finish();
 	auto current_time = this->clock->get_real_time();
 	auto &camera_frustum = this->camera->get_frustum_2d();
 	for (auto &obj : this->render_objects) {
@@ -84,9 +115,7 @@ void WorldRenderStage::update() {
 						"flip_x",
 						false,
 						"flip_y",
-						false,
-						"u_id",
-						obj->get_id());
+						false);
 
 					Renderable display_obj{
 						layer_unifs,
@@ -111,9 +140,8 @@ void WorldRenderStage::update() {
 void WorldRenderStage::resize(size_t width, size_t height) {
 	this->output_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::rgba8));
 	this->depth_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::depth24));
-	this->id_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::r32ui));
 
-	auto fbo = this->renderer->create_texture_target({this->output_texture, this->depth_texture, this->id_texture});
+	auto fbo = this->renderer->create_texture_target({this->output_texture, this->depth_texture});
 	this->render_pass->set_target(fbo);
 }
 
@@ -136,12 +164,11 @@ void WorldRenderStage::initialize_render_pass(size_t width,
 
 	this->output_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::rgba8));
 	this->depth_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::depth24));
-	this->id_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::r32ui));
 
 	this->display_shader = this->renderer->add_shader({vert_shader_src, frag_shader_src});
 	this->display_shader->bind_uniform_buffer("camera", this->camera->get_uniform_buffer());
 
-	auto fbo = this->renderer->create_texture_target({this->output_texture, this->depth_texture, this->id_texture});
+	auto fbo = this->renderer->create_texture_target({this->output_texture, this->depth_texture});
 	this->render_pass = this->renderer->add_render_pass({}, fbo);
 }
 

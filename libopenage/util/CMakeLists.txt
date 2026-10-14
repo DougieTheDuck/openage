@@ -24,6 +24,7 @@ add_sources(libopenage
 	quaternion.cpp
 	quaternion_test.cpp
 	repr.cpp
+	stall_profiler.cpp
 	stringformatter.cpp
 	strings.cpp
 	subprocess.cpp

@@ -17,6 +17,7 @@
 #include "event/eventqueue.h"
 #include "event/eventstore.h"
 #include "util/fixed_point.h"
+#include "util/stall_profiler.h"
 
 
 namespace openage::event {
@@ -34,7 +35,10 @@ std::shared_ptr<Event> EventLoop::create_event(const std::string name,
                                                const std::shared_ptr<State> state,
                                                const time::time_t reference_time,
                                                const EventHandler::param_map params) {
+	util::StallProfiler profile{"event.create"};
+	util::StallProfiler lock_profile{"event.create.lock_wait"};
 	std::unique_lock lock{this->mutex};
+	lock_profile.finish();
 
 	auto it = classstore.find(name);
 	if (it == classstore.end()) {
@@ -51,7 +55,10 @@ std::shared_ptr<Event> EventLoop::create_event(const std::shared_ptr<EventHandle
                                                const std::shared_ptr<State> state,
                                                const time::time_t reference_time,
                                                const EventHandler::param_map params) {
+	util::StallProfiler profile{"event.create_with_handler"};
+	util::StallProfiler lock_profile{"event.create_with_handler.lock_wait"};
 	std::unique_lock lock{this->mutex};
+	lock_profile.finish();
 
 	auto it = this->classstore.find(eventhandler->id());
 	if (it == this->classstore.end()) {
@@ -70,7 +77,10 @@ std::shared_ptr<Event> EventLoop::create_event(const std::shared_ptr<EventHandle
 
 void EventLoop::reach_time(const time::time_t &time_until,
                            const std::shared_ptr<State> &state) {
+	util::StallProfiler profile{"event.reach_time"};
+	util::StallProfiler lock_profile{"event.reach_time.lock_wait"};
 	std::unique_lock lock{this->mutex};
+	lock_profile.finish();
 
 	// TODO detect infinite loops (is this a halting problem?)
 	// this happens when the events don't settle:

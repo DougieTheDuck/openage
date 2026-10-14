@@ -114,6 +114,24 @@ void fvd_scenario() {
 	TESTEQUALS(builder_render->get_health_at(time::TIME_ZERO), 25);
 	TESTEQUALS(builder_render->get_max_health(), 25);
 	std::vector<entity_id_t> selection;
+	event::ClickSelectHandler click_selector;
+	auto click = [&](player_id_t controlled, const std::vector<entity_id_t> &candidates) {
+		click_selector.invoke(*loop, nullptr, state, time::TIME_ZERO,
+		                      {{"controlled", size_t{controlled}},
+		                       {"entity_ids", candidates},
+		                       {"select_cb", std::function<void(const std::vector<entity_id_t>)>{
+		                                         [&](const std::vector<entity_id_t> ids) {
+			                                         selection = ids;
+		                                         }}}});
+	};
+	click(2, {builders[2]});
+	TESTEQUALS(selection.size(), 1);
+	TESTEQUALS(selection.front(), builders[2]);
+	click(2, {builders[3]});
+	TESTEQUALS(selection.empty(), true);
+	click(2, {});
+	TESTEQUALS(selection.empty(), true);
+
 	event::DragSelectHandler selector;
 	Eigen::Matrix4f selection_matrix = Eigen::Matrix4f::Identity();
 	selection_matrix(0, 0) = 0.01f;

@@ -37,6 +37,7 @@
 #include "renderer/stages/world/render_stage.h"
 #include "time/time_loop.h"
 #include "util/path.h"
+#include "util/stall_profiler.h"
 
 
 namespace openage::presenter {
@@ -59,14 +60,26 @@ void Presenter::run(const renderer::window_settings window_settings) {
 	this->init_input();
 
 	while (not this->window->should_close()) {
-		this->gui_app->process_events();
+		{
+			util::StallProfiler profile{"presenter.process_events"};
+			this->gui_app->process_events();
+		}
 		// TODO: pass button presses and events from GUI to controller
 
-		this->render();
+		{
+			util::StallProfiler profile{"presenter.render"};
+			this->render();
+		}
 
-		this->renderer->check_error();
+		{
+			util::StallProfiler profile{"presenter.check_renderer_error"};
+			this->renderer->check_error();
+		}
 
-		this->window->update();
+		{
+			util::StallProfiler profile{"presenter.window_update"};
+			this->window->update();
+		}
 	}
 
 	log::log(MSG(info) << "Presenter: Draw loop exited");
@@ -281,7 +294,21 @@ void Presenter::init_input() {
 			game_controller = std::make_shared<input::game::Controller>(players, 2);
 		}
 		auto engine_context = std::make_shared<input::game::BindingContext>();
-		input::game::setup_defaults(engine_context, this->time_loop, this->simulation, this->camera);
+		input::game::setup_defaults(
+			engine_context, this->time_loop, this->simulation, this->camera,
+			[this](
+				const coord::input &position,
+				const std::function<void(std::optional<gamestate::entity_id_t>)> &callback) {
+				this->world_renderer->pick_entity(
+					position,
+					[callback](std::optional<uint32_t> id) {
+						if (id.has_value()) {
+							callback(static_cast<gamestate::entity_id_t>(*id));
+							return;
+						}
+						callback(std::nullopt);
+					});
+			});
 		this->input_manager->set_game_controller(game_controller);
 		this->game_controller = game_controller;
 		input_ctx->set_game_bindings(engine_context);
@@ -344,17 +371,35 @@ void Presenter::init_final_render_pass() {
 
 void Presenter::render() {
 	// TODO: Pass current time to update() instead of fetching it in renderer
-	this->camera_manager->update();
-	this->terrain_renderer->update();
-	this->world_renderer->update();
+	{
+		util::StallProfiler profile{"render.camera_update"};
+		this->camera_manager->update();
+	}
+	{
+		util::StallProfiler profile{"render.terrain_update"};
+		this->terrain_renderer->update();
+	}
+	{
+		util::StallProfiler profile{"render.world_update"};
+		this->world_renderer->update();
+	}
 	if (this->game_controller) {
 		this->hud_renderer->set_selected(this->game_controller->get_selected());
 	}
-	this->hud_renderer->update();
-	this->gui->render();
+	{
+		util::StallProfiler profile{"render.hud_update"};
+		this->hud_renderer->update();
+	}
+	{
+		util::StallProfiler profile{"render.gui"};
+		this->gui->render();
+	}
 
-	for (auto &pass : this->render_passes) {
-		this->renderer->render(pass);
+	{
+		util::StallProfiler profile{"render.passes"};
+		for (auto &pass : this->render_passes) {
+			this->renderer->render(pass);
+		}
 	}
 }
 

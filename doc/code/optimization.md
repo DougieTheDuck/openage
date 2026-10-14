@@ -44,3 +44,8 @@ Stresstests are demos that are specifically designed to test performance, partic
 in the renderer subsystem. They can also include benchmarks with additional
 information, e.g. an FPS counter. When profiling performance critical code, implementing
 a stresstest should be considered to complement profiling results.
+
+For intermittent stalls, set `OPENAGE_STALL_PROFILE_MS` to a positive integer threshold
+in milliseconds before launching openage.
+The engine then logs operations that exceed the threshold, including input dispatch,
+simulation event queue access, renderer stage updates, GUI rendering and buffer swaps.

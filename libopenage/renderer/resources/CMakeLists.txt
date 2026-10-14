@@ -6,6 +6,7 @@ add_sources(libopenage
 	shader_source.cpp
     shader_template.cpp
 	texture_data.cpp
+	texture_data_test.cpp
 	texture_info.cpp
 	texture_subinfo.cpp
 )

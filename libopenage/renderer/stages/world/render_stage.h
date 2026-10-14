@@ -2,10 +2,13 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <vector>
 
+#include "coord/pixel.h"
 #include "util/path.h"
 
 namespace openage {
@@ -75,6 +78,19 @@ public:
 	 * @param render_entity New render entity.
 	 */
 	void add_render_entity(const std::shared_ptr<RenderEntity> entity);
+
+	/**
+	 * Get the game entity under a window pixel.
+	 *
+	 * Transparent sprite pixels do not produce a result. If several sprites
+	 * overlap, the visible sprite is returned.
+	 *
+	 * @param position Pixel position in window input coordinates.
+	 * @param callback Called with the game entity ID, or no value if the pixel
+	 *                 contains no world object.
+	 */
+	void pick_entity(const coord::input &position,
+	                 const std::function<void(std::optional<uint32_t>)> &callback);
 
 	/**
 	 * Update the render entities and render positions.
@@ -164,11 +180,6 @@ private:
 	 * Depth texture.
 	 */
 	std::shared_ptr<renderer::Texture2d> depth_texture;
-
-	/**
-	 * ID texture.
-	 */
-	std::shared_ptr<renderer::Texture2d> id_texture;
 
 	/**
 	 * Mutex for protecting threaded access.

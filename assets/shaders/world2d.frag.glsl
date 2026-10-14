@@ -3,10 +3,8 @@
 in vec2 vert_uv;
 
 layout(location=0) out vec4 col;
-layout(location=1) out uint id;
 
 uniform sampler2D tex;
-uniform uint u_id;
 uniform bool cbits = true;
 
 // position (top left corner) and size: (x, y, width, height)
@@ -25,7 +23,6 @@ void main() {
 	}
 	if (!cbits) {
 		col = tex_val;
-		id = u_id;
 		return;
 	}
 	switch (alpha) {
@@ -42,5 +39,4 @@ void main() {
 			col = tex_val;
 			break;
 	}
-	id = u_id;
 }

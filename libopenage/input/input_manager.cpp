@@ -8,6 +8,7 @@
 #include "input/event.h"
 #include "input/input_context.h"
 #include "renderer/gui/guisys/public/gui_input.h"
+#include "util/stall_profiler.h"
 
 
 namespace openage::input {
@@ -129,6 +130,7 @@ void InputManager::set_motion(int x, int y) {
 }
 
 bool InputManager::process(const QEvent &ev) {
+	util::StallProfiler profile{"input.process"};
 	input::Event input_ev{ev};
 
 	// Check context list on top of the stack (most recent bound first)
@@ -158,6 +160,7 @@ bool InputManager::process(const QEvent &ev) {
 void InputManager::process_action(const input::Event &ev,
                                   const input_action &action,
                                   const std::shared_ptr<InputContext> &ctx) {
+	util::StallProfiler profile{"input.process_action"};
 	auto actions = action.action;
 	event_arguments args{ev, this->mouse_position, this->mouse_motion, action.flags};
 	if (actions) {

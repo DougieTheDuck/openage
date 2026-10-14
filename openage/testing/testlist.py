@@ -86,6 +86,7 @@ def tests_cpp():
     yield "openage::pyinterface::tests::err_py_to_cpp"
     yield "openage::renderer::tests::font"
     yield "openage::renderer::tests::font_manager"
+    yield "openage::renderer::resources::tests::alpha_mask"
     yield "openage::rng::tests::run"
     yield "openage::util::tests::constinit_vector"
     yield "openage::util::tests::enum_"

@@ -10,22 +10,31 @@ namespace openage::renderer::resources {
 
 TextureManager::TextureManager(const std::shared_ptr<Renderer> &renderer) :
 	renderer{renderer},
-	loaded{} {
+	loaded{},
+	masks{} {
 }
 
 const std::shared_ptr<Texture2d> &TextureManager::request(const util::Path &path) {
 	if (not this->loaded.contains(path)) {
-		// create if not loaded
 		auto tex_data = resources::Texture2dData(path);
+		this->masks.insert({path, std::make_shared<AlphaMask>(tex_data)});
 		this->loaded.insert({path, this->renderer->add_texture(tex_data)});
 	}
 	return this->loaded.at(path);
 }
 
+const std::shared_ptr<AlphaMask> &TextureManager::request_mask(const util::Path &path) {
+	if (not this->masks.contains(path)) {
+		auto tex_data = resources::Texture2dData(path);
+		this->masks.insert({path, std::make_shared<AlphaMask>(tex_data)});
+	}
+	return this->masks.at(path);
+}
+
 void TextureManager::add(const util::Path &path) {
 	if (not this->loaded.contains(path)) {
-		// create if not loaded
 		auto tex_data = resources::Texture2dData(path);
+		this->masks.insert({path, std::make_shared<AlphaMask>(tex_data)});
 		this->loaded.insert({path, this->renderer->add_texture(tex_data)});
 	}
 }
@@ -38,6 +47,7 @@ void TextureManager::add(const util::Path &path,
 
 void TextureManager::remove(const util::Path &path) {
 	this->loaded.erase(path);
+	this->masks.erase(path);
 }
 
 void TextureManager::set_placeholder(const util::Path &path) {

@@ -17,6 +17,8 @@ class Texture2d;
 
 namespace resources {
 
+class AlphaMask;
+
 /**
  * Loads and stores references to shared texture assets.
  *
@@ -51,6 +53,17 @@ public:
 	 * @return Texture resource at the given path.
 	 */
 	const std::shared_ptr<Texture2d> &request(const util::Path &path);
+
+	/**
+	 * Get the cached alpha mask for a texture.
+	 *
+	 * The mask is created from the source image on first request and shared by
+	 * every sprite that uses the texture.
+	 *
+	 * @param path Path to the texture resource.
+	 * @return One-bit alpha mask for the texture.
+	 */
+	const std::shared_ptr<AlphaMask> &request_mask(const util::Path &path);
 
 	/**
 	 * Load the texture at the given path. Does nothing if the path
@@ -100,11 +113,17 @@ private:
 	std::shared_ptr<Renderer> renderer;
 
 	using texture_cache_t = std::unordered_map<util::Path, std::shared_ptr<Texture2d>>;
+	using mask_cache_t = std::unordered_map<util::Path, std::shared_ptr<AlphaMask>>;
 
 	/**
 	 * Cache of already created textures.
 	 */
 	texture_cache_t loaded;
+
+	/**
+	 * CPU alpha masks for loaded texture images.
+	 */
+	mask_cache_t masks;
 
 	/**
 	 * Placeholder texture to use if a texture could not be loaded.

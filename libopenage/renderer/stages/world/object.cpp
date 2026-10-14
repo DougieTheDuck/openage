@@ -10,6 +10,7 @@
 
 #include <eigen3/Eigen/Dense>
 
+#include "renderer/camera/camera.h"
 #include "renderer/camera/frustum_2d.h"
 #include "renderer/definitions.h"
 #include "renderer/resources/animation/angle_info.h"
@@ -20,6 +21,7 @@
 #include "renderer/resources/assets/texture_manager.h"
 #include "renderer/resources/frame_timing.h"
 #include "renderer/resources/mesh_data.h"
+#include "renderer/resources/texture_data.h"
 #include "renderer/resources/texture_info.h"
 #include "renderer/resources/texture_subinfo.h"
 #include "renderer/stages/world/render_entity.h"
@@ -40,6 +42,8 @@ WorldObject::WorldObject(const std::shared_ptr<renderer::resources::AssetManager
 	angle{nullptr, 0, "", nullptr, 0},
 	animation_info{nullptr, 0},
 	layer_uniforms{},
+	rendered_position{SCENE_ORIGIN},
+	rendered_layers{},
 	last_update{0.0} {
 }
 
@@ -99,6 +103,7 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 
 	// Object world position
 	auto current_pos = this->position.get(time);
+	this->rendered_position = current_pos;
 
 	// Direction angle the object is facing towards currently
 	auto angle_degrees = this->angle.get(time).to_float();
@@ -106,6 +111,8 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 	// Animation information
 	auto [last_update, animation_info] = this->animation_info.frame(time);
 
+	this->rendered_layers.clear();
+	this->rendered_layers.reserve(this->layer_uniforms.size());
 	for (size_t layer_idx = 0; layer_idx < this->layer_uniforms.size(); ++layer_idx) {
 		auto &layer_unifs = this->layer_uniforms.at(layer_idx);
 		layer_unifs->update(this->obj_world_position, current_pos.to_world_space());
@@ -115,7 +122,8 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 		auto &angle = layer.get_direction_angle(angle_degrees);
 
 		// Flip subtexture horizontally if angle is mirrored
-		if (angle->is_mirrored()) {
+		auto flip_x = angle->is_mirrored();
+		if (flip_x) {
 			layer_unifs->update(this->flip_x, true);
 		}
 		else {
@@ -146,6 +154,7 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 		auto &tex_info = animation_info->get_texture(tex_idx);
 		auto &tex_manager = this->asset_manager->get_texture_manager();
 		auto &texture = tex_manager->request(tex_info->get_image_path().value());
+		auto &alpha_mask = tex_manager->request_mask(tex_info->get_image_path().value());
 		layer_unifs->update(this->tex, texture);
 		layer_unifs->update(this->cbits, tex_info->get_cbits());
 
@@ -172,6 +181,17 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 			static_cast<float>(anchor[0]),
 			static_cast<float>(anchor[1])};
 		layer_unifs->update(this->anchor_offset, anchor_offset);
+
+		this->rendered_layers.push_back(RenderedLayer{
+			alpha_mask,
+			tex_info->get_subtex_info(subtex_idx).get_pos(),
+			subtex_size,
+			anchor,
+			scale,
+			flip_x,
+			false,
+			layer.get_position(),
+		});
 	}
 }
 
@@ -240,6 +260,69 @@ bool WorldObject::is_visible(const camera::Frustum2d &frustum,
 	                          model_matrix,
 	                          animation_info->get_scalefactor(),
 	                          animation_info->get_max_bounds());
+}
+
+std::optional<WorldObject::HitTestResult> WorldObject::hit_test(
+	const coord::input &position,
+	const std::shared_ptr<renderer::camera::Camera> &camera) const {
+	auto viewport = camera->get_viewport_size();
+	if (viewport[0] == 0 or viewport[1] == 0) {
+		return std::nullopt;
+	}
+
+	Eigen::Vector2f cursor_ndc{
+		2.0f * static_cast<float>(position.x) / static_cast<float>(viewport[0]) - 1.0f,
+		1.0f - 2.0f * static_cast<float>(position.y) / static_cast<float>(viewport[1])};
+	auto world_position = this->rendered_position.to_world_space();
+	Eigen::Vector4f clip_position = camera->get_projection_matrix()
+	                                * camera->get_view_matrix()
+	                                * Eigen::Vector4f{world_position.x(), world_position.y(), world_position.z(), 1.0f};
+	clip_position /= clip_position.w();
+
+	std::optional<HitTestResult> result;
+	for (const auto &layer : this->rendered_layers) {
+		auto zoom_scale = layer.scale / camera->get_zoom();
+		Eigen::Vector2f sprite_scale{
+			zoom_scale * static_cast<float>(layer.subtexture_size.x()) / static_cast<float>(viewport[0]),
+			zoom_scale * static_cast<float>(layer.subtexture_size.y()) / static_cast<float>(viewport[1])};
+		Eigen::Vector2f anchor_scale{
+			zoom_scale * static_cast<float>(layer.anchor_offset.x()) / static_cast<float>(viewport[0]),
+			zoom_scale * static_cast<float>(layer.anchor_offset.y()) / static_cast<float>(viewport[1])};
+		if (layer.flip_x) {
+			anchor_scale.x() *= -1.0f;
+		}
+		if (layer.flip_y) {
+			anchor_scale.y() *= -1.0f;
+		}
+
+		Eigen::Vector2f local{
+			(cursor_ndc.x() - clip_position.x() - anchor_scale.x()) / sprite_scale.x(),
+			(cursor_ndc.y() - clip_position.y() - anchor_scale.y()) / sprite_scale.y()};
+		if (local.x() < -1.0f or local.x() >= 1.0f
+		    or local.y() < -1.0f or local.y() >= 1.0f) {
+			continue;
+		}
+
+		float u = (local.x() + 1.0f) * 0.5f;
+		float v = (local.y() + 1.0f) * 0.5f;
+		if (layer.flip_x) {
+			u = 1.0f - u;
+		}
+		if (not layer.flip_y) {
+			v = 1.0f - v;
+		}
+
+		auto pixel_x = static_cast<size_t>(layer.subtexture_pos.x())
+		               + static_cast<size_t>(u * static_cast<float>(layer.subtexture_size.x()));
+		auto pixel_y = static_cast<size_t>(layer.subtexture_pos.y())
+		               + static_cast<size_t>(v * static_cast<float>(layer.subtexture_size.y()));
+		if (layer.alpha_mask->is_opaque(pixel_x, pixel_y)
+		    and (not result.has_value() or layer.layer_position >= result->layer_position)) {
+			result = HitTestResult{clip_position.z(), layer.layer_position};
+		}
+	}
+
+	return result;
 }
 
 } // namespace openage::renderer::world

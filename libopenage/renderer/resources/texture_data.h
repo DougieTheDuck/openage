@@ -77,5 +77,50 @@ private:
 	std::vector<uint8_t> data;
 };
 
+/**
+ * Compact opaque-pixel mask derived from RGBA texture data.
+ *
+ * Coordinates use the image convention with the origin at the top left.
+ */
+class AlphaMask {
+public:
+	/**
+	 * Create a one-bit alpha mask from RGBA texture data.
+	 *
+	 * Pixels with a nonzero alpha value are opaque.
+	 *
+	 * @param texture Texture data to convert.
+	 */
+	explicit AlphaMask(const Texture2dData &texture);
+
+	/**
+	 * Test whether a pixel is opaque.
+	 *
+	 * @param x Horizontal pixel coordinate.
+	 * @param y Vertical pixel coordinate.
+	 * @return true if the pixel alpha is nonzero.
+	 */
+	bool is_opaque(size_t x, size_t y) const;
+
+	/**
+	 * Get the mask dimensions.
+	 *
+	 * @return Width and height in pixels.
+	 */
+	std::pair<size_t, size_t> get_size() const;
+
+	/**
+	 * Get the allocated mask size.
+	 *
+	 * @return Number of bytes used by the bit mask.
+	 */
+	size_t get_byte_size() const;
+
+private:
+	size_t width;
+	size_t height;
+	std::vector<uint8_t> bits;
+};
+
 } // namespace renderer::resources
 } // namespace openage

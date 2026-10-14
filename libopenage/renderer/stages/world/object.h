@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <list>
 #include <memory>
+#include <optional>
 #include <string>
 
+#include "coord/pixel.h"
 #include "coord/scene.h"
 #include "curve/continuous.h"
 #include "curve/discrete.h"
@@ -20,10 +22,12 @@ namespace openage::renderer {
 class UniformInput;
 
 namespace camera {
+class Camera;
 class Frustum2d;
 }
 
 namespace resources {
+class AlphaMask;
 class AssetManager;
 class Animation2dInfo;
 } // namespace resources
@@ -36,6 +40,11 @@ class RenderEntity;
  */
 class WorldObject {
 public:
+	struct HitTestResult {
+		float depth;
+		size_t layer_position;
+	};
+
 	/**
 	 * Create a new object for the World render stage.
 	 *
@@ -145,6 +154,17 @@ public:
 	                const time::time_t &time);
 
 	/**
+	 * Test a window pixel against the opaque pixels of the rendered sprite.
+	 *
+	 * @param position Pixel position in window input coordinates.
+	 * @param camera Camera used to render the sprite.
+	 * @return Render depth and layer if an opaque pixel was hit.
+	 */
+	std::optional<HitTestResult> hit_test(
+		const coord::input &position,
+		const std::shared_ptr<renderer::camera::Camera> &camera) const;
+
+	/**
 	 * Shader uniform IDs for setting uniform values.
 	 */
 	inline static uniform_id_t obj_world_position;
@@ -206,6 +226,20 @@ private:
 	 * renderable in the render pass.
 	 */
 	std::vector<std::shared_ptr<renderer::UniformInput>> layer_uniforms;
+
+	struct RenderedLayer {
+		std::shared_ptr<renderer::resources::AlphaMask> alpha_mask;
+		Eigen::Vector2i subtexture_pos;
+		Eigen::Vector2<uint32_t> subtexture_size;
+		Eigen::Vector2i anchor_offset;
+		float scale;
+		bool flip_x;
+		bool flip_y;
+		size_t layer_position;
+	};
+
+	coord::scene3 rendered_position;
+	std::vector<RenderedLayer> rendered_layers;
 
 	/**
 	 * Time of the last update call.

@@ -2,6 +2,11 @@
 
 #include "controller.h"
 
+#include <cstdlib>
+
+#include <QGuiApplication>
+#include <QStyleHints>
+
 #include "log/log.h"
 
 #include "event/event_loop.h"
@@ -17,6 +22,7 @@
 #include "input/controller/game/binding_context.h"
 #include "time/clock.h"
 #include "time/time_loop.h"
+#include "util/stall_profiler.h"
 
 #include "coord/phys.h"
 #include "renderer/camera/camera.h"
@@ -60,7 +66,10 @@ void Controller::set_selected(const std::vector<gamestate::entity_id_t> ids) {
 }
 
 bool Controller::process(const event_arguments &ev_args, const std::shared_ptr<BindingContext> &ctx) {
+	util::StallProfiler profile{"input.game_controller.process"};
+	util::StallProfiler lock_profile{"input.game_controller.lock_wait"};
 	std::unique_lock lock{this->mutex};
+	lock_profile.finish();
 
 	if (not ctx->is_bound(ev_args.e)) {
 		return false;
@@ -121,7 +130,10 @@ void Controller::reset_drag_select() {
 void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
                     const std::shared_ptr<time::TimeLoop> &time_loop,
                     const std::shared_ptr<openage::gamestate::GameSimulation> &simulation,
-                    const std::shared_ptr<renderer::camera::Camera> &camera) {
+                    const std::shared_ptr<renderer::camera::Camera> &camera,
+	                const std::function<void(
+		                const coord::input &,
+		                const std::function<void(std::optional<gamestate::entity_id_t>)> &)> &pick_entity) {
 	binding_func_t create_entity_event{[&](const event_arguments &args,
 	                                       const std::shared_ptr<Controller> controller) {
 		auto mouse_pos = args.mouse.to_phys3(camera);
@@ -208,12 +220,47 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 	ctx->bind(ev_mouse_lmb_press, init_drag_selection_action);
 
 	binding_func_t drag_selection{
-		[&](const event_arguments &args,
+		[&, pick_entity](const event_arguments &args,
 	        const std::shared_ptr<Controller> controller) {
+			auto drag_start = controller->get_drag_select_start();
+			auto drag_delta = args.mouse - drag_start;
+			auto drag_threshold = QGuiApplication::styleHints()->startDragDistance();
+			if (std::abs(drag_delta.x) < drag_threshold
+			    and std::abs(drag_delta.y) < drag_threshold) {
+				auto controlled = controller->get_controlled();
+				pick_entity(
+					args.mouse,
+					[simulation, time_loop, controller, controlled](
+						std::optional<gamestate::entity_id_t> id) {
+						std::vector<gamestate::entity_id_t> picked;
+						if (id.has_value()) {
+							picked.push_back(*id);
+						}
+						event::EventHandler::param_map::map_t params{
+							{"controlled", controlled},
+							{"entity_ids", picked},
+							{"select_cb",
+							 std::function<void(const std::vector<gamestate::entity_id_t>)>{
+								 [controller](const std::vector<gamestate::entity_id_t> ids) {
+									 controller->set_selected(ids);
+								 }}},
+						};
+
+						simulation->get_event_loop()->create_event(
+							"game.click_select",
+							simulation->get_commander(),
+							simulation->get_game()->get_state(),
+							time_loop->get_clock()->get_time(),
+							params);
+					});
+				controller->reset_drag_select();
+				return std::shared_ptr<event::Event>{};
+			}
+
 			Eigen::Matrix4f cam_matrix = camera->get_projection_matrix() * camera->get_view_matrix();
 			event::EventHandler::param_map::map_t params{
 				{"controlled", controller->get_controlled()},
-				{"drag_start", controller->get_drag_select_start().to_viewport(camera).to_ndc_space(camera)},
+				{"drag_start", drag_start.to_viewport(camera).to_ndc_space(camera)},
 				{"drag_end", args.mouse.to_viewport(camera).to_ndc_space(camera)},
 				{"camera_matrix", cam_matrix},
 				{"select_cb",

@@ -150,6 +150,44 @@ const uint8_t *Texture2dData::get_data() const {
 	return this->data.data();
 }
 
+AlphaMask::AlphaMask(const Texture2dData &texture) :
+	width{static_cast<size_t>(texture.get_info().get_size().first)},
+	height{static_cast<size_t>(texture.get_info().get_size().second)},
+	bits((this->width * this->height + 7) / 8, 0) {
+	if (texture.get_info().get_format() != pixel_format::rgba8) {
+		throw Error{ERR << "Alpha masks require an rgba8 texture."};
+	}
+
+	auto data = texture.get_data();
+	auto row_size = texture.get_info().get_row_size();
+	for (size_t y = 0; y < this->height; ++y) {
+		for (size_t x = 0; x < this->width; ++x) {
+			auto alpha = data[y * row_size + x * 4 + 3];
+			if (alpha != 0) {
+				auto index = y * this->width + x;
+				this->bits[index / 8] |= static_cast<uint8_t>(1u << (index % 8));
+			}
+		}
+	}
+}
+
+bool AlphaMask::is_opaque(size_t x, size_t y) const {
+	if (x >= this->width or y >= this->height) {
+		return false;
+	}
+
+	auto index = y * this->width + x;
+	return (this->bits[index / 8] & static_cast<uint8_t>(1u << (index % 8))) != 0;
+}
+
+std::pair<size_t, size_t> AlphaMask::get_size() const {
+	return {this->width, this->height};
+}
+
+size_t AlphaMask::get_byte_size() const {
+	return this->bits.size();
+}
+
 void Texture2dData::store(const util::Path &file) const {
 	log::log(MSG(info) << "Saving texture data to " << file);
 

@@ -137,12 +137,14 @@ void GameSimulation::set_modpacks(const std::vector<std::string> &modpacks) {
 }
 
 void GameSimulation::init_event_handlers() {
+	auto click_select_handler = std::make_shared<gamestate::event::ClickSelectHandler>();
 	auto drag_select_handler = std::make_shared<gamestate::event::DragSelectHandler>();
 	auto spawn_handler = std::make_shared<gamestate::event::SpawnEntityHandler>(this->event_loop,
 	                                                                            this->entity_factory);
 	auto command_handler = std::make_shared<gamestate::event::SendCommandHandler>();
 	auto manager_handler = std::make_shared<gamestate::event::ProcessCommandHandler>();
 	auto wait_handler = std::make_shared<gamestate::event::WaitHandler>();
+	this->event_loop->add_event_handler(click_select_handler);
 	this->event_loop->add_event_handler(drag_select_handler);
 	this->event_loop->add_event_handler(spawn_handler);
 	this->event_loop->add_event_handler(command_handler);
