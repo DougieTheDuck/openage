@@ -11,6 +11,7 @@
 #include "renderer/resources/texture_info.h"
 #include "renderer/shader_program.h"
 #include "renderer/stages/hud/object.h"
+#include "renderer/stages/world/render_entity.h"
 #include "renderer/texture.h"
 #include "renderer/window.h"
 #include "time/clock.h"
@@ -28,6 +29,8 @@ HudRenderStage::HudRenderStage(const std::shared_ptr<Window> &window,
 	camera{camera},
 	asset_manager{asset_manager},
 	drag_object{nullptr},
+	health_objects{},
+	selected_entities{},
 	clock{clock} {
 	renderer::opengl::GlContext::check_error();
 
@@ -59,11 +62,63 @@ void HudRenderStage::remove_drag_entity() {
 
 	this->drag_object = nullptr;
 	this->render_pass->clear_renderables();
+	for (auto &health_object : this->health_objects) {
+		health_object->require_renderable();
+	}
+}
+
+void HudRenderStage::add_health_entity(
+	const std::shared_ptr<renderer::world::RenderEntity> &render_entity) {
+	std::unique_lock lock{this->mutex};
+
+	this->health_objects.push_back(std::make_shared<HudHealthObject>(render_entity));
+}
+
+void HudRenderStage::set_selected(const std::vector<gamestate::entity_id_t> &entity_ids) {
+	std::unique_lock lock{this->mutex};
+
+	this->selected_entities.clear();
+	this->selected_entities.insert(entity_ids.begin(), entity_ids.end());
 }
 
 void HudRenderStage::update() {
 	std::unique_lock lock{this->mutex};
 	auto current_time = this->clock->get_real_time();
+	for (auto &health_object : this->health_objects) {
+		if (health_object->requires_renderable()) {
+			auto background_uniforms = this->health_bar_shader->new_uniform_input(
+				"obj_world_position",
+				Eigen::Vector3f{0.0f, 0.0f, 0.0f},
+				"bar_size",
+				Eigen::Vector2f{0.0f, 0.0f},
+				"bar_offset",
+				Eigen::Vector2f{0.0f, 0.0f},
+				"in_col",
+				Eigen::Vector4f{0.0f, 0.0f, 0.0f, 0.0f});
+			auto fill_uniforms = this->health_bar_shader->new_uniform_input(
+				"obj_world_position",
+				Eigen::Vector3f{0.0f, 0.0f, 0.0f},
+				"bar_size",
+				Eigen::Vector2f{0.0f, 0.0f},
+				"bar_offset",
+				Eigen::Vector2f{0.0f, 0.0f},
+				"in_col",
+				Eigen::Vector4f{0.0f, 0.0f, 0.0f, 0.0f});
+
+			this->render_pass->add_renderables(
+				Renderable{background_uniforms, this->health_bar_geometry, true, false});
+			this->render_pass->add_renderables(
+				Renderable{fill_uniforms, this->health_bar_geometry, true, false});
+			health_object->set_uniforms(background_uniforms, fill_uniforms);
+			health_object->clear_requires_renderable();
+		}
+
+		if (health_object->requires_renderable()) {
+			continue;
+		}
+		auto selected = this->selected_entities.contains(health_object->get_id());
+		health_object->update_uniforms(current_time, selected);
+	}
 
 	if (this->drag_object) {
 		this->drag_object->fetch_updates(current_time);
@@ -118,6 +173,25 @@ void HudRenderStage::initialize_render_pass(size_t width,
 	frag_shader_file.close();
 
 	this->drag_select_shader = this->renderer->add_shader({vert_shader_src, frag_shader_src});
+
+	// Health bar shader
+	vert_shader_file = (shaderdir / "hud_health_bar.vert.glsl").open();
+	vert_shader_src = renderer::resources::ShaderSource(
+		resources::shader_lang_t::glsl,
+		resources::shader_stage_t::vertex,
+		vert_shader_file.read());
+	vert_shader_file.close();
+
+	frag_shader_file = (shaderdir / "hud_health_bar.frag.glsl").open();
+	frag_shader_src = renderer::resources::ShaderSource(
+		resources::shader_lang_t::glsl,
+		resources::shader_stage_t::fragment,
+		frag_shader_file.read());
+	frag_shader_file.close();
+
+	this->health_bar_shader = this->renderer->add_shader({vert_shader_src, frag_shader_src});
+	this->health_bar_shader->bind_uniform_buffer("camera", this->camera->get_uniform_buffer());
+	this->health_bar_geometry = this->renderer->add_mesh_geometry(resources::MeshData::make_quad());
 
 	// Texture targets
 	this->output_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::rgba8));

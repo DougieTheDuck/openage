@@ -42,6 +42,18 @@ public:
 	                   const nyan::fqon_t &attribute,
 	                   int64_t value);
 
+	/**
+	 * Get the value curve of an attribute at a given time.
+	 *
+	 * @param time Time at which the attribute must exist.
+	 * @param attribute Attribute identifier (fqon of the nyan object).
+	 *
+	 * @return Attribute value curve.
+	 */
+	const std::shared_ptr<curve::Discrete<int64_t>> &get_attribute(
+		const time::time_t &time,
+		const nyan::fqon_t &attribute) const;
+
 private:
 	using attribute_storage_t = curve::UnorderedMap<nyan::fqon_t,
 	                                                std::shared_ptr<curve::Discrete<int64_t>>>;

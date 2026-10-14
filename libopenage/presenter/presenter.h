@@ -21,6 +21,10 @@ class GameSimulation;
 
 namespace input {
 class InputManager;
+
+namespace game {
+class Controller;
+}
 }
 
 namespace time {
@@ -230,6 +234,11 @@ protected:
 	 * Input manager.
 	 */
 	std::shared_ptr<input::InputManager> input_manager;
+
+	/**
+	 * Controller whose current selection is displayed by the HUD.
+	 */
+	std::shared_ptr<input::game::Controller> game_controller;
 };
 
 } // namespace presenter

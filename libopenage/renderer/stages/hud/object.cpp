@@ -2,8 +2,14 @@
 
 #include "object.h"
 
+#include <algorithm>
+
+#include <eigen3/Eigen/Dense>
+
 #include "renderer/geometry.h"
 #include "renderer/stages/hud/render_entity.h"
+#include "renderer/stages/world/render_entity.h"
+#include "renderer/uniform_input.h"
 
 
 namespace openage::renderer::hud {
@@ -125,6 +131,79 @@ void HudDragObject::set_uniforms(const std::shared_ptr<renderer::UniformInput> &
 
 void HudDragObject::set_geometry(const std::shared_ptr<renderer::Geometry> &geometry) {
 	this->geometry = geometry;
+}
+
+HudHealthObject::HudHealthObject(
+	const std::shared_ptr<renderer::world::RenderEntity> &render_entity) :
+	require_renderables{true},
+	render_entity{render_entity},
+	background_uniforms{nullptr},
+	fill_uniforms{nullptr} {
+}
+
+bool HudHealthObject::requires_renderable() {
+	return this->require_renderables and this->render_entity->has_health();
+}
+
+void HudHealthObject::clear_requires_renderable() {
+	this->require_renderables = false;
+}
+
+void HudHealthObject::require_renderable() {
+	this->require_renderables = true;
+}
+
+void HudHealthObject::set_uniforms(
+	const std::shared_ptr<renderer::UniformInput> &background,
+	const std::shared_ptr<renderer::UniformInput> &fill) {
+	this->background_uniforms = background;
+	this->fill_uniforms = fill;
+}
+
+void HudHealthObject::update_uniforms(const time::time_t &time, bool selected) {
+	if (this->background_uniforms == nullptr or this->fill_uniforms == nullptr) [[unlikely]] {
+		return;
+	}
+
+	auto world_position = this->render_entity->get_position_at(time).to_world_space();
+	auto max_health = this->render_entity->get_max_health();
+	if (max_health <= 0) [[unlikely]] {
+		return;
+	}
+
+	constexpr float bar_width = 52.0f;
+	constexpr float bar_height = 7.0f;
+	constexpr float fill_padding = 2.0f;
+	constexpr float vertical_offset = 264.0f;
+	const auto current_health = this->render_entity->get_health_at(time);
+	const auto health_ratio = std::clamp(
+		static_cast<float>(current_health) / static_cast<float>(max_health), 0.0f, 1.0f);
+	const auto fill_width = (bar_width - fill_padding) * health_ratio;
+	const auto fill_offset = -(bar_width - fill_padding - fill_width) * 0.5f;
+	const auto alpha = selected ? 1.0f : 0.0f;
+
+	this->background_uniforms->update(
+		"obj_world_position",
+		world_position,
+		"bar_size",
+		Eigen::Vector2f{bar_width, bar_height},
+		"bar_offset",
+		Eigen::Vector2f{0.0f, vertical_offset},
+		"in_col",
+		Eigen::Vector4f{0.05f, 0.05f, 0.05f, 0.85f * alpha});
+	this->fill_uniforms->update(
+		"obj_world_position",
+		world_position,
+		"bar_size",
+		Eigen::Vector2f{fill_width, bar_height - fill_padding},
+		"bar_offset",
+		Eigen::Vector2f{fill_offset, vertical_offset},
+		"in_col",
+		Eigen::Vector4f{0.1f, 0.8f, 0.2f, alpha});
+}
+
+uint32_t HudHealthObject::get_id() {
+	return this->render_entity->get_id();
 }
 
 } // namespace openage::renderer::hud

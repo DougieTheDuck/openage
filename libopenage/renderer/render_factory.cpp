@@ -3,6 +3,7 @@
 #include "render_factory.h"
 
 #include "coord/phys.h"
+#include "renderer/stages/hud/render_stage.h"
 #include "renderer/stages/terrain/render_entity.h"
 #include "renderer/stages/terrain/render_stage.h"
 #include "renderer/stages/world/render_entity.h"
@@ -10,9 +11,11 @@
 
 namespace openage::renderer {
 RenderFactory::RenderFactory(const std::shared_ptr<terrain::TerrainRenderStage> terrain_renderer,
-                             const std::shared_ptr<world::WorldRenderStage> world_renderer) :
+                             const std::shared_ptr<world::WorldRenderStage> world_renderer,
+                             const std::shared_ptr<hud::HudRenderStage> hud_renderer) :
 	terrain_renderer{terrain_renderer},
-	world_renderer{world_renderer} {
+	world_renderer{world_renderer},
+	hud_renderer{hud_renderer} {
 }
 
 std::shared_ptr<terrain::RenderEntity> RenderFactory::add_terrain_render_entity(const util::Vector2s chunk_size,
@@ -26,6 +29,9 @@ std::shared_ptr<terrain::RenderEntity> RenderFactory::add_terrain_render_entity(
 std::shared_ptr<world::RenderEntity> RenderFactory::add_world_render_entity() {
 	auto entity = std::make_shared<world::RenderEntity>();
 	this->world_renderer->add_render_entity(entity);
+	if (this->hud_renderer) {
+		this->hud_renderer->add_health_entity(entity);
+	}
 
 	return entity;
 }

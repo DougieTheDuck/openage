@@ -25,6 +25,10 @@ class AssetManager;
 class Animation2dInfo;
 } // namespace resources
 
+namespace world {
+class RenderEntity;
+}
+
 namespace hud {
 class DragRenderEntity;
 
@@ -173,6 +177,67 @@ private:
 	 * Time of the last update call.
 	 */
 	time::time_t last_update;
+};
+
+/**
+ * Stores the HUD state for a game entity health bar.
+ */
+class HudHealthObject {
+public:
+	/**
+	 * Create a health bar object backed by a world render entity.
+	 *
+	 * @param render_entity Source for position and health data.
+	 */
+	explicit HudHealthObject(const std::shared_ptr<renderer::world::RenderEntity> &render_entity);
+	~HudHealthObject() = default;
+
+	/**
+	 * Check whether the health bar needs renderables.
+	 *
+	 * @return true if renderables must be created, else false.
+	 */
+	bool requires_renderable();
+
+	/**
+	 * Indicate that renderables were created.
+	 */
+	void clear_requires_renderable();
+
+	/**
+	 * Require new renderables after the HUD render pass was cleared.
+	 */
+	void require_renderable();
+
+	/**
+	 * Set the background and fill uniforms used by the health bar.
+	 *
+	 * @param background Background uniforms.
+	 * @param fill Health fill uniforms.
+	 */
+	void set_uniforms(const std::shared_ptr<renderer::UniformInput> &background,
+	                  const std::shared_ptr<renderer::UniformInput> &fill);
+
+	/**
+	 * Update the health bar position, fill amount, and visibility.
+	 *
+	 * @param time Current simulation time.
+	 * @param selected Whether the corresponding entity is selected.
+	 */
+	void update_uniforms(const time::time_t &time, bool selected);
+
+	/**
+	 * Get the ID of the corresponding game entity.
+	 *
+	 * @return Game entity ID.
+	 */
+	uint32_t get_id();
+
+private:
+	bool require_renderables;
+	std::shared_ptr<renderer::world::RenderEntity> render_entity;
+	std::shared_ptr<renderer::UniformInput> background_uniforms;
+	std::shared_ptr<renderer::UniformInput> fill_uniforms;
 };
 } // namespace hud
 } // namespace openage::renderer

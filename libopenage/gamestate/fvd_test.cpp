@@ -110,6 +110,9 @@ void fvd_scenario() {
 		TESTEQUALS(builder_render->get_position().get(time::TIME_ZERO),
 		           position->get_positions().get(time::TIME_ZERO).to_scene3());
 	}
+	TESTEQUALS(builder_render->has_health(), true);
+	TESTEQUALS(builder_render->get_health_at(time::TIME_ZERO), 25);
+	TESTEQUALS(builder_render->get_max_health(), 25);
 	std::vector<entity_id_t> selection;
 	event::DragSelectHandler selector;
 	Eigen::Matrix4f selection_matrix = Eigen::Matrix4f::Identity();

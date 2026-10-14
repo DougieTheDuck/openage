@@ -61,7 +61,7 @@ public:
 	 *
 	 * @return Selected entities.
 	 */
-	const std::vector<gamestate::entity_id_t> &get_selected() const;
+	std::vector<gamestate::entity_id_t> get_selected() const;
 
 	/**
 	 * Set the currently selected entities.

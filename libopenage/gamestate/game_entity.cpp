@@ -6,6 +6,7 @@
 #include "gamestate/api/animation.h"
 #include "gamestate/api/property.h"
 #include "gamestate/component/api/idle.h"
+#include "gamestate/component/api/live.h"
 #include "gamestate/component/api/move.h"
 #include "gamestate/component/base_component.h"
 #include "gamestate/component/internal/position.h"
@@ -74,6 +75,24 @@ void GameEntity::render_update(const time::time_t &time,
 								this->components.at(component::component_t::POSITION))
 		                        ->get_angles();
 		this->render_entity->update(this->id, pos, angle, animation_path, time);
+
+		if (this->has_component(component::component_t::LIVE)) {
+			auto live = dynamic_pointer_cast<component::Live>(
+				this->components.at(component::component_t::LIVE));
+			auto attribute_settings = live->get_ability().get_set("Live.attributes");
+			for (const auto &setting : attribute_settings) {
+				auto setting_value = std::dynamic_pointer_cast<nyan::ObjectValue>(setting.get_ptr());
+				auto setting_object = live->get_ability().get_view()->get_object(setting_value->get_name());
+				auto attribute = setting_object.get_object("AttributeSetting.attribute");
+				auto attribute_name = attribute.get_name();
+				if (attribute_name.ends_with(".Health")) {
+					auto max_health = setting_object.get_int("AttributeSetting.max_value");
+					this->render_entity->update_health(
+						*live->get_attribute(time, attribute_name), max_health, time);
+					break;
+				}
+			}
+		}
 	}
 }
 

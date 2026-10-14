@@ -45,7 +45,7 @@ size_t Controller::get_controlled() const {
 	return this->active_faction_id;
 }
 
-const std::vector<gamestate::entity_id_t> &Controller::get_selected() const {
+std::vector<gamestate::entity_id_t> Controller::get_selected() const {
 	std::unique_lock lock{this->mutex};
 
 	return this->selected;

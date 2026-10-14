@@ -4,8 +4,10 @@
 
 #include <memory>
 #include <shared_mutex>
+#include <unordered_set>
 #include <vector>
 
+#include "gamestate/types.h"
 #include "util/path.h"
 
 namespace openage {
@@ -18,6 +20,7 @@ namespace renderer {
 class Renderer;
 class RenderPass;
 class ShaderProgram;
+class Geometry;
 class Texture2d;
 class Window;
 
@@ -31,13 +34,21 @@ class AssetManager;
 
 namespace hud {
 class HudDragObject;
+class HudHealthObject;
 class DragRenderEntity;
+
+} // namespace hud
+
+namespace world {
+class RenderEntity;
+}
+
+namespace hud {
 
 /**
  * Renderer for the "Heads-Up Display" (HUD).
  * Draws UI elements that are not part of the GUI, e.g. health bars, selection boxes, minimap, etc.
  *
- * TODO: Currently only supports drag selection.
  */
 class HudRenderStage {
 public:
@@ -75,10 +86,22 @@ public:
 
 	/**
 	 * Remove the render object for drag selection.
-	 *
-	 * @param render_entity Render entity to remove.
 	 */
 	void remove_drag_entity();
+
+	/**
+	 * Add a world render entity as a possible health bar source.
+	 *
+	 * @param render_entity World render entity.
+	 */
+	void add_health_entity(const std::shared_ptr<renderer::world::RenderEntity> &render_entity);
+
+	/**
+	 * Set the entities whose health bars should be visible.
+	 *
+	 * @param entity_ids Selected game entity IDs.
+	 */
+	void set_selected(const std::vector<gamestate::entity_id_t> &entity_ids);
 
 	/**
 	 * Update the render entities and render positions.
@@ -137,6 +160,26 @@ private:
 	 * Shader for rendering the drag select rectangle.
 	 */
 	std::shared_ptr<renderer::ShaderProgram> drag_select_shader;
+
+	/**
+	 * Render objects that can display health bars.
+	 */
+	std::vector<std::shared_ptr<HudHealthObject>> health_objects;
+
+	/**
+	 * IDs of entities whose health bars are visible.
+	 */
+	std::unordered_set<gamestate::entity_id_t> selected_entities;
+
+	/**
+	 * Shader for rendering health bars.
+	 */
+	std::shared_ptr<renderer::ShaderProgram> health_bar_shader;
+
+	/**
+	 * Shared quad geometry for health bar backgrounds and fills.
+	 */
+	std::shared_ptr<renderer::Geometry> health_bar_geometry;
 
 	/**
 	 * Simulation clock for timing animations.

@@ -67,6 +67,13 @@ public:
 	std::shared_ptr<renderer::RenderPass> get_render_pass();
 
 	/**
+	 * Enable or disable the terrain tile grid.
+	 *
+	 * @param enabled Whether grid lines are rendered.
+	 */
+	void set_grid_enabled(bool enabled);
+
+	/**
 	 * Add a new render entity to the terrain renderer.
 	 *
 	 * This creates a new terrain chunk and add it to the model.
@@ -135,6 +142,11 @@ private:
 	 * Shader for rendering the world objects.
 	 */
 	std::shared_ptr<renderer::ShaderProgram> display_shader;
+
+	/**
+	 * Whether terrain tile boundaries are rendered.
+	 */
+	bool grid_enabled;
 
 	/**
 	 * Simulation clock for timing animations.

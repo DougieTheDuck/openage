@@ -58,6 +58,17 @@ public:
 	            const time::time_t time = 0.0);
 
 	/**
+	 * Update the health displayed for the game entity.
+	 *
+	 * @param health Current health value curve.
+	 * @param max_health Maximum health value.
+	 * @param time Simulation time of the update.
+	 */
+	void update_health(const curve::Discrete<int64_t> &health,
+	                   int64_t max_health,
+	                   const time::time_t time = 0.0);
+
+	/**
 	 * Get the ID of the corresponding game entity.
 	 *
 	 * Accessing the game entity ID is thread-safe.
@@ -96,6 +107,36 @@ public:
 	 */
 	const curve::Discrete<std::string> &get_animation_path();
 
+	/**
+	 * Check whether the entity has health data for HUD rendering.
+	 *
+	 * @return true if health data is available, else false.
+	 */
+	bool has_health();
+
+	/**
+	 * Get the entity position at a given time.
+	 *
+	 * @param time Query time.
+	 * @return Position in renderer scene coordinates.
+	 */
+	coord::scene3 get_position_at(const time::time_t &time);
+
+	/**
+	 * Get the health value at a given time.
+	 *
+	 * @param time Query time.
+	 * @return Current health value.
+	 */
+	int64_t get_health_at(const time::time_t &time);
+
+	/**
+	 * Get the maximum health value.
+	 *
+	 * @return Maximum health value.
+	 */
+	int64_t get_max_health();
+
 private:
 	/**
 	 * ID of the game entity in the gamestate.
@@ -116,5 +157,20 @@ private:
 	 * Path to the animation definition file.
 	 */
 	curve::Discrete<std::string> animation_path;
+
+	/**
+	 * Whether health data is available for this entity.
+	 */
+	bool health_available;
+
+	/**
+	 * Current health value.
+	 */
+	curve::Discrete<int64_t> health;
+
+	/**
+	 * Maximum health value.
+	 */
+	int64_t max_health;
 };
 } // namespace openage::renderer::world

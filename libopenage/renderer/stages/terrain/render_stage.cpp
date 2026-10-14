@@ -13,6 +13,7 @@
 #include "renderer/stages/terrain/chunk.h"
 #include "renderer/stages/terrain/mesh.h"
 #include "renderer/stages/terrain/model.h"
+#include "renderer/uniform_input.h"
 #include "renderer/window.h"
 #include "time/clock.h"
 
@@ -29,6 +30,7 @@ TerrainRenderStage::TerrainRenderStage(const std::shared_ptr<Window> &window,
 	camera{camera},
 	render_entity{nullptr},
 	model{std::make_shared<TerrainRenderModel>(asset_manager)},
+	grid_enabled{false},
 	clock{clock} {
 	renderer::opengl::GlContext::check_error();
 
@@ -46,6 +48,19 @@ TerrainRenderStage::TerrainRenderStage(const std::shared_ptr<Window> &window,
 
 std::shared_ptr<renderer::RenderPass> TerrainRenderStage::get_render_pass() {
 	return this->render_pass;
+}
+
+void TerrainRenderStage::set_grid_enabled(bool enabled) {
+	std::unique_lock lock{this->mutex};
+
+	this->grid_enabled = enabled;
+	for (auto &chunk : this->model->get_chunks()) {
+		for (auto &mesh : chunk->get_meshes()) {
+			if (mesh->get_uniforms()) {
+				mesh->get_uniforms()->update("show_grid", this->grid_enabled);
+			}
+		}
+	}
 }
 
 void TerrainRenderStage::add_render_entity(const std::shared_ptr<RenderEntity> entity,
@@ -68,6 +83,7 @@ void TerrainRenderStage::update() {
 				// TODO: Update existing renderable instead of recreating it
 				auto geometry = this->renderer->add_mesh_geometry(mesh->get_mesh());
 				auto transform_unifs = this->display_shader->create_empty_input();
+				transform_unifs->update("show_grid", this->grid_enabled);
 
 				Renderable display_obj{
 					transform_unifs,

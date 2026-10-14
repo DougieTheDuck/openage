@@ -19,6 +19,10 @@ class WorldRenderStage;
 class RenderEntity;
 } // namespace world
 
+namespace hud {
+class HudRenderStage;
+}
+
 /**
  * Creates render entities that push animation updates from the
  * engine to the renderer. Also registers the render entities with
@@ -31,9 +35,11 @@ public:
 	 *
 	 * @param terrain_renderer Terrain renderer.
 	 * @param world_renderer World renderer.
+	 * @param hud_renderer HUD renderer.
 	 */
 	RenderFactory(const std::shared_ptr<terrain::TerrainRenderStage> terrain_renderer,
-	              const std::shared_ptr<world::WorldRenderStage> world_renderer);
+	              const std::shared_ptr<world::WorldRenderStage> world_renderer,
+	              const std::shared_ptr<hud::HudRenderStage> hud_renderer = nullptr);
 	~RenderFactory() = default;
 
 	/**
@@ -67,6 +73,11 @@ private:
 	 * Render stage for game entity drawing.
 	 */
 	std::shared_ptr<world::WorldRenderStage> world_renderer;
+
+	/**
+	 * Render stage for HUD drawing. Can be nullptr.
+	 */
+	std::shared_ptr<hud::HudRenderStage> hud_renderer;
 };
 
 } // namespace openage::renderer

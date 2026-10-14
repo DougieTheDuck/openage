@@ -3,10 +3,10 @@
 
 version 1
 
-imagefile "tower.png"
+imagefile "tower_v3.png"
 
-size 512 512
+size 1254 1254
 
 pxformat rgba8 cbits=False
 
-subtex 0 0 512 512 256 500
+subtex 0 0 1254 1254 627 1106

@@ -7,6 +7,7 @@
 #include "curve/container/iterator.h"
 #include "curve/container/map_filter_iterator.h"
 #include "curve/discrete.h"
+#include "error/error.h"
 #include "gamestate/component/types.h"
 
 
@@ -31,7 +32,20 @@ void Live::set_attribute(const time::time_t &time,
 		(**attribute_value)->set_last(time, value);
 	}
 	else {
-		// TODO: fail here
+		throw Error{ERR << "Attribute '" << attribute
+		                << "' does not exist at time " << time};
 	}
+}
+
+const std::shared_ptr<curve::Discrete<int64_t>> &Live::get_attribute(
+	const time::time_t &time,
+	const nyan::fqon_t &attribute) const {
+	auto attribute_value = this->attribute_values.at(time, attribute);
+	if (not attribute_value) {
+		throw Error{ERR << "Attribute '" << attribute
+		                << "' does not exist at time " << time};
+	}
+
+	return **attribute_value;
 }
 } // namespace openage::gamestate::component

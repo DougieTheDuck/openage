@@ -47,7 +47,8 @@ Presenter::Presenter(const util::Path &root_dir,
 	root_dir{root_dir},
 	render_passes{},
 	simulation{simulation},
-	time_loop{time_loop} {}
+	time_loop{time_loop},
+	game_controller{nullptr} {}
 
 
 void Presenter::run(const renderer::window_settings window_settings) {
@@ -83,7 +84,8 @@ void Presenter::run(const renderer::window_settings window_settings) {
 
 void Presenter::set_simulation(const std::shared_ptr<gamestate::GameSimulation> &simulation) {
 	this->simulation = simulation;
-	auto render_factory = std::make_shared<renderer::RenderFactory>(this->terrain_renderer, this->world_renderer);
+	auto render_factory = std::make_shared<renderer::RenderFactory>(
+		this->terrain_renderer, this->world_renderer, this->hud_renderer);
 	this->simulation->attach_renderer(render_factory);
 }
 
@@ -173,10 +175,12 @@ void Presenter::init_graphics(const renderer::window_settings &window_settings) 
 	this->init_final_render_pass();
 
 	if (this->simulation) {
-		auto render_factory = std::make_shared<renderer::RenderFactory>(this->terrain_renderer, this->world_renderer);
+		auto render_factory = std::make_shared<renderer::RenderFactory>(
+			this->terrain_renderer, this->world_renderer, this->hud_renderer);
 		this->simulation->attach_renderer(render_factory);
 		auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 		if (fvd) {
+			this->terrain_renderer->set_grid_enabled(true);
 			this->camera->look_at_coord(fvd->get_centre().to_scene3());
 			auto size = fvd->get_centre().ne.to_float() * 2;
 			auto eye = this->camera->get_position();
@@ -279,6 +283,7 @@ void Presenter::init_input() {
 		auto engine_context = std::make_shared<input::game::BindingContext>();
 		input::game::setup_defaults(engine_context, this->time_loop, this->simulation, this->camera);
 		this->input_manager->set_game_controller(game_controller);
+		this->game_controller = game_controller;
 		input_ctx->set_game_bindings(engine_context);
 	}
 
@@ -342,6 +347,9 @@ void Presenter::render() {
 	this->camera_manager->update();
 	this->terrain_renderer->update();
 	this->world_renderer->update();
+	if (this->game_controller) {
+		this->hud_renderer->set_selected(this->game_controller->get_selected());
+	}
 	this->hud_renderer->update();
 	this->gui->render();
 

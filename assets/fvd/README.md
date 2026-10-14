@@ -11,10 +11,12 @@ The prompts used for the initial set are recorded in [prompts.md](prompts.md).
 
 Start the engine with `run game --modpacks fvd`.
 In a Windows development build, run `.\RelWithDebInfo\run.exe game --modpacks fvd` from the build directory with the runtime dependency paths configured.
+Selected Builders display their current health above the unit.
 The mode uses only these original graphics and the engine API; original game assets are not needed.
 
 The [scenario settings](data/scenario.nyan) define a square 128 by 128 tile map divided into 16 by 16 tile chunks.
 Every tile is flat, walkable plains using the generated grass texture.
+The FVD renderer draws the exact tile boundaries over the plains for placement reference.
 All eight players start with their camera centred at (64, 64).
 Player 1 has the Hunter civilisation, starts without units and cannot place buildings.
 Players 2 through 8 have the Builders civilisation and each receive exactly one Builder near the centre, with distinct starting positions.
