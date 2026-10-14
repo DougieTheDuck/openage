@@ -5,7 +5,7 @@ version 2
 
 texture 0 "tower.texture"
 
-scalefactor 0.32
+scalefactor 0.4614
 
 layer 0 mode=off
 
