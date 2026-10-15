@@ -266,21 +266,21 @@ void fvd_construction() {
 			entity->get_component(component::component_t::OWNERSHIP));
 		builders.at(ownership->get_owners().get(time::TIME_ZERO)) = id;
 	}
-	auto t = [](int seconds) {
-		return time::time_t::from_int(seconds);
+	auto t = [](double seconds) {
+		return time::time_t::from_double(seconds);
 	};
-	auto build = [&](player_id_t owner, const coord::phys3 &tile, int seconds) {
+	auto build = [&](player_id_t owner, const coord::phys3 &tile, double seconds) {
 		return fvd->request_build(state, owner, {builders.at(owner)}, tile, t(seconds));
 	};
 
 	// An adjacent Builder starts building at once but cannot spawn a
-	// functional tower before the configured three-second duration.
+	// functional tower before the configured fractional duration.
 	TESTEQUALS(build(2, {61, 66, 0}, 0), true);
 	TESTEQUALS(fvd->is_tile_reserved({61, 66}), true);
 	TESTEQUALS(state->get_game_entities().size(), 7);
-	loop->reach_time(t(2), state);
+	loop->reach_time(t(0.09), state);
 	TESTEQUALS(state->get_game_entities().size(), 7);
-	loop->reach_time(t(3), state);
+	loop->reach_time(t(0.1), state);
 	TESTEQUALS(state->get_game_entities().size(), 8);
 	TESTEQUALS(fvd->is_tile_reserved({61, 66}), false);
 	TESTEQUALS(fvd->get_build_order(builders[2]) == nullptr, true);
@@ -289,10 +289,10 @@ void fvd_construction() {
 		if (entity->get_definition() == "fvd.data.entities.Tower") {
 			auto pos = std::dynamic_pointer_cast<component::Position>(
 				entity->get_component(component::component_t::POSITION));
-			if (pos->get_positions().get(t(3)).to_tile() == coord::tile{61, 66}) {
+			if (pos->get_positions().get(t(0.1)).to_tile() == coord::tile{61, 66}) {
 				auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 					entity->get_component(component::component_t::OWNERSHIP));
-				TESTEQUALS(ownership->get_owners().get(t(3)), player_id_t{2});
+				TESTEQUALS(ownership->get_owners().get(t(0.1)), player_id_t{2});
 				completed = true;
 			}
 		}
@@ -368,8 +368,8 @@ void fvd_construction() {
 	auto final_builder = state->get_game_entity(builders[7]);
 	auto final_live = std::dynamic_pointer_cast<component::Live>(
 		final_builder->get_component(component::component_t::LIVE));
-	loop->reach_time(t(213), state);
-	final_live->set_attribute(t(213), "fvd.data.entities.Health", 0);
+	loop->reach_time(t(212.05), state);
+	final_live->set_attribute(t(212.05), "fvd.data.entities.Health", 0);
 	loop->reach_time(t(220), state);
 	TESTEQUALS(fvd->is_tile_reserved({66, 66}), false);
 	TESTEQUALS(state->get_game_entities().size(), 18);

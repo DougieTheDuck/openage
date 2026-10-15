@@ -99,7 +99,7 @@ private:
 	size_t map_size;
 	size_t chunk_size;
 	size_t player_count;
-	int64_t construction_time;
+	time::time_t construction_time;
 	std::string hunter;
 	std::string builders;
 	std::string builder;

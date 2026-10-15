@@ -59,7 +59,7 @@ void Presenter::run(const renderer::window_settings window_settings) {
 
 	this->init_input();
 
-	while (not this->window->should_close()) {
+	while (not this->stop_requested and not this->window->should_close()) {
 		{
 			util::StallProfiler profile{"presenter.process_events"};
 			this->gui_app->process_events();
@@ -93,6 +93,10 @@ void Presenter::run(const renderer::window_settings window_settings) {
 	}
 
 	this->window->close();
+}
+
+void Presenter::stop() {
+	this->stop_requested = true;
 }
 
 void Presenter::set_simulation(const std::shared_ptr<gamestate::GameSimulation> &simulation) {

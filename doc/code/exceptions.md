@@ -30,3 +30,7 @@ Example usage:
 Also see the example demo code in `cpp/error/demo.cpp`.
 
 Avoid exceptions that don't inherit from `Error`.
+
+Wrap exceptions from third-party libraries in `Error` at the integration boundary.
+Include the affected input or resource and the original exception text in the message, and disable cause storage because the Cython exception translator cannot translate a non-`Error` cause.
+Before an exception leaves a loop that owns background threads, request that those threads stop and join them so that shutdown cannot hide the diagnostic.

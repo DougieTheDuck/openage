@@ -24,8 +24,6 @@ void DragRenderEntity::update(const coord::input drag_pos,
 }
 
 const curve::Continuous<coord::input> &DragRenderEntity::get_drag_pos() {
-	std::shared_lock lock{this->mutex};
-
 	return this->drag_pos;
 }
 

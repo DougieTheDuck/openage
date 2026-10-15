@@ -71,7 +71,12 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			if (not params.check_type<coord::phys3>("target")) {
 				throw Error{ERR << "BuildTower requires a target position"};
 			}
-			fvd->request_build(gstate, owner, ids, params.get<coord::phys3>("target"), time);
+			fvd->request_build(
+				gstate,
+				owner,
+				ids,
+				params.get<coord::phys3>("target", coord::phys3{0, 0, 0}),
+				time);
 			return;
 		}
 	}

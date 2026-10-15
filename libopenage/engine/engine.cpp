@@ -70,8 +70,22 @@ Engine::Engine(mode mode,
 }
 
 void Engine::loop() {
-	// Run the main game simulation loop:
-	this->simulation->run();
+	try {
+		// Run the main game simulation loop:
+		this->simulation->run();
+	}
+	catch (...) {
+		// Background loops must exit before the exception can cross the Cython
+		// boundary and report the startup failure to the user.
+		if (this->presenter) {
+			this->presenter->stop();
+		}
+		this->simulation->stop();
+		this->time_loop->stop();
+		this->threads.clear();
+
+		throw;
+	}
 
 	// After stopping, clean up the simulation
 	this->simulation.reset();

@@ -75,20 +75,14 @@ uint32_t RenderEntity::get_id() {
 }
 
 const curve::Continuous<coord::scene3> &RenderEntity::get_position() {
-	std::shared_lock lock{this->mutex};
-
 	return this->position;
 }
 
 const curve::Segmented<coord::phys_angle_t> &RenderEntity::get_angle() {
-	std::shared_lock lock{this->mutex};
-
 	return this->angle;
 }
 
 const curve::Discrete<std::string> &RenderEntity::get_animation_path() {
-	std::shared_lock lock{this->mutex};
-
 	return this->animation_path;
 }
 

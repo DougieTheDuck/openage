@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -96,6 +97,14 @@ public:
 	 * @param window_settings The settings to customize the display window (e.g. size, display mode, vsync).
 	 */
 	void run(const renderer::window_settings window_settings = {});
+
+	/**
+	 * Request that the presenter exits its draw loop.
+	 *
+	 * This can be called from another thread while the presenter is starting or
+	 * running.
+	 */
+	void stop();
 
 	/**
 	 * Set the game simulation controlled by this presenter.
@@ -239,6 +248,11 @@ protected:
 	 * Controller whose current selection is displayed by the HUD.
 	 */
 	std::shared_ptr<input::game::Controller> game_controller;
+
+	/**
+	 * Set when another engine subsystem requests shutdown.
+	 */
+	std::atomic<bool> stop_requested{false};
 };
 
 } // namespace presenter

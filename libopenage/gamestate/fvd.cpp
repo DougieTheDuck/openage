@@ -86,18 +86,18 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	auto size = settings.get_int("map_size");
 	auto chunk = settings.get_int("chunk_size");
 	auto players = settings.get_int("player_count");
-	auto build_time = settings.get_int("construction_time");
+	auto build_time = settings.get_float("construction_time");
 	if (size < 16 or size > 512 or chunk < 4 or chunk > size
 	    or chunk > MAX_CHUNK_WIDTH or chunk > MAX_CHUNK_HEIGHT
 	    or size % chunk != 0 or players < 2 or players > 8
-	    or build_time < 1 or build_time > 300) {
+	    or build_time <= 0.0 or build_time > 300.0) {
 		throw Error{ERR << "Invalid FVD settings: map 16..512, chunk 4.."
-		                << MAX_CHUNK_WIDTH << ", players 2..8, construction 1..300 seconds"};
+		                << MAX_CHUNK_WIDTH << ", players 2..8, construction >0..300 seconds"};
 	}
 	this->map_size = size;
 	this->chunk_size = chunk;
 	this->player_count = players;
-	this->construction_time = build_time;
+	this->construction_time = time::time_t::from_double(build_time);
 	this->hunter = settings.get_object("hunter").get_name();
 	this->builders = settings.get_object("builders").get_name();
 	this->builder = settings.get_object("builder").get_name();
@@ -345,7 +345,7 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 		auto loop = this->event_loop.lock();
 		loop->create_event(
 			"game.fvd_build_progress", entity->get_manager(), state,
-			time + time::time_t::from_int(this->construction_time),
+			time + this->construction_time,
 			{{"builder", builder}, {"order", order_id}, {"finish", true}});
 		return;
 	}

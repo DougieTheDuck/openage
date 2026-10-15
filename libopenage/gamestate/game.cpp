@@ -7,6 +7,7 @@
 
 #include <nyan/nyan.h>
 
+#include "error/error.h"
 #include "log/log.h"
 #include "log/message.h"
 
@@ -38,7 +39,26 @@ Game::Game(const std::shared_ptr<openage::event::EventLoop> &event_loop,
 
 	const auto &mods = mod_manager->get_load_order();
 	if (std::find(mods.begin(), mods.end(), "fvd") != mods.end()) {
-		auto scenario = std::make_shared<FVD>(this->state);
+		std::shared_ptr<FVD> scenario;
+		try {
+			scenario = std::make_shared<FVD>(this->state);
+		}
+		catch (Error &) {
+			throw Error{ERR << "Failed to read FVD scenario settings from "
+			                << "fvd/data/scenario.nyan"};
+		}
+		catch (const std::exception &exc) {
+			throw Error{ERR << "Failed to read FVD scenario settings from "
+			                << "fvd/data/scenario.nyan: " << exc.what(),
+			            true,
+			            false};
+		}
+		catch (...) {
+			throw Error{ERR << "Failed to read FVD scenario settings from "
+			                << "fvd/data/scenario.nyan: unknown error",
+			            true,
+			            false};
+		}
 		this->state->set_fvd(scenario);
 		scenario->initialise(this->state, event_loop, entity_factory, terrain_factory);
 		return;
@@ -119,7 +139,22 @@ void Game::load_path(const util::Path &base_dir,
 	// file loading
 	if (search_path.is_file() and search_path.get_suffix() == ".nyan") {
 		auto loc = mod_dir + "/" + search;
-		this->db->load(loc, fileload_func);
+		try {
+			this->db->load(loc, fileload_func);
+		}
+		catch (Error &) {
+			throw;
+		}
+		catch (const std::exception &exc) {
+			throw Error{ERR << "Failed to load nyan file '" << loc << "': " << exc.what(),
+			            true,
+			            false};
+		}
+		catch (...) {
+			throw Error{ERR << "Failed to load nyan file '" << loc << "': unknown error",
+			            true,
+			            false};
+		}
 		return;
 	}
 

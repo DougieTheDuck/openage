@@ -23,7 +23,7 @@ Scenario(engine.root.Object):
     map_size : int = 128
     chunk_size : int = 16
     player_count : int = 8
-    construction_time : int = 3
+    construction_time : float = 0.1
     hunter : Civilisation = Hunter
     builders : Civilisation = Builders
     builder : engine.util.game_entity.GameEntity = fvd.data.entities.Builder
