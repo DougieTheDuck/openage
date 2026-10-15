@@ -2,77 +2,65 @@
 
 ## Context
 
-In `FVD::place_tower`, validation and `spawn_game_entity` currently happen
-in one call. The FVD input binding sends `game.spawn_entity` directly on
-Ctrl-left-click. The engine already has Move commands, the pathfinder and
-time-indexed position curves, while event handlers can schedule game actions.
-`FVD::place_tower` is exercised in `fvd_test.cpp`.
+`FVD::place_tower` currently validates then spawns immediately. The
+Ctrl-click controller sends `game.spawn_entity`; `fvd_test.cpp` checks
+instant placement. Pathfinding, Move commands, queued events and
+time-indexed positions already exist.
 
 ## Goals / Non-Goals
 
-**Goals:** command-driven movement to a valid stand tile, collision-safe site
-reservation, timed completion, ownership enforcement and cancellation,
-including when run without a renderer.
+**Goals:** ordered movement, ownership and tile validation, stand-tile
+selection, reservation, positive construction duration, cancellation and
+headless simulation behavior.
 
-**Non-Goals:** build menu, resources, multiple Builder cooperation, combat,
-animation polish, networking or upgrading towers.
+**Non-Goals:** final build UI, resources, multiple workers per site, combat,
+network transport, animation polish or Hunter unit controls.
 
 ## Decisions
 
-### 1. Build is a command, not a special spawn click
+### Build orders use the command lifecycle
 
-Introduce a FVD BuildTower command/order (or extend the existing command
-model) and submit it through the event loop, not directly through a renderer
-callback. Keep Ctrl-left-click mapped to this order for development.
-Use the same authoritative validation for future QML buttons and network
-commands. Do not add construction logic to the input controller.
+Represent construction as a new Builder action, not a rendering callback or
+unconditional spawn. Reuse the event loop and existing command system.
+The command carries the Builder identity and a claimed target tile.
+Check ownership against the current match's assigned human player; player 1
+is ineligible whether controlled by a solo tester or a multiplayer human.
+Keep Ctrl-click as the solo test interface, and make future QML/network
+requests call the same authoritative code path.
 
-### 2. Reuse the engine's movement and event machinery
+### The Builder must physically reach the site
 
-Use existing pathfinding to identify a valid adjacent stand location.
-Coordinate movement with the active order, then schedule construction
-completion relative to simulation time. Avoid per-render-frame timers or a
-parallel movement implementation. Revalidate the Builder and order when a
-scheduled event runs; stale scheduled completions must be harmless.
+Find a reachable, unoccupied tile adjacent to the footprint with existing
+pathfinding. Begin a finite, data-driven build duration only after arrival.
+Do not base completion on wall-clock or render-frame time.
 
-### 3. Reserve tiles in simulation-owned state
+### Prevent double occupancy and stale completion
 
-Track which incomplete order owns each reserved tile, separately from
-completed tower occupation. Validate against units, completed towers and
-existing reservations. Release reservations on cancellation/failure; clear
-them atomically on successful completion. If two requests compete, event
-processing order decides the winner.
+Keep reservations in simulation state, distinct from complete towers.
+Reserve atomically when the order is accepted, release on failure or
+cancellation, and consume the reservation when the tower completes.
+Give orders stable identities; at completion, verify the Builder is still
+alive, on that order and at a valid site.
 
-### 4. Keep the first build duration data-driven
+### Interrupt consistently
 
-Use one positive construction duration in FVD scenario/ability data,
-rather than a UI timer or hardcoded wall-clock delay. The current tower
-sprite may be used as a temporary construction marker if helpful, but a
-completed tower must not exist before construction finishes.
-
-### 5. Integrate interruption with the Builder's command lifecycle
-
-A replacement move/build command cancels a pending build. On death or
-unreachable route, clear the same order state. Ensure a subsequent
-completion event checks a stable order identity, so a canceled order
-cannot finish accidentally after a later order starts.
+A replacement move/build order or the Builder's destruction cancels
+pending work. Ensure scheduled arrival/completion events cannot spawn an
+orphan tower after cancellation. Preserve curve semantics when movement is
+interrupted.
 
 ## Risks / Trade-offs
 
-- **Pathfinding currently considers terrain, not necessarily temporary tower
-  reservations:** select/validate a destination adjacent to the footprint;
-  confirm occupancy assumptions with integration tests.
-- **Future combat may destroy Builders:** keep cancellation centralized so
-  the death handler can invoke it rather than duplicating cleanup.
-- **Movement is recorded on curves ahead of time:** command interruption
-  may require trimming or overriding scheduled movement and arrival.
-  Investigate the activity system before choosing exactly where orders live.
-- **Visible construction may precede a dedicated HUD:** use clear diagnostic
-  state and tests now; let the later HUD change display progress.
+- Pathfinder terrain occupancy may not account for temporary reservations;
+  validate candidate stand tiles against actual game state.
+- Movement curves can schedule future positions; verify that replacing an
+  order makes prior waypoints and completion events harmless.
+- Combat later needs to call the same cancellation cleanup when a Builder
+  dies.
+- Progress feedback belongs to the later build-menu/HUD feature.
 
 ## Migration Plan
 
-Update the current Ctrl-click binding to issue BuildTower instead of directly
-spawning a tower, then adjust the FVD scenario test from instant placement
-assertions to order/arrival/completion assertions. Keep existing FVD map and
-player setup intact. Change only the relevant FVD behavior.
+Change the Ctrl-click action from immediate tower spawn to BuildTower,
+update the FVD test to assert travel and completion timing, and leave the
+existing map/role setup usable in solo development mode.

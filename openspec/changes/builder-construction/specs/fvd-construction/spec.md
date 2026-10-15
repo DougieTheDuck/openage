@@ -2,94 +2,95 @@
 
 ## Purpose
 
-FVD construction turns a Builder player's tower-placement request into a
-validated, interruptible gameplay order that requires movement and elapsed
-simulation time before a tower becomes usable.
+Builder-issued construction orders require valid ownership, movement to an
+adjacent stand tile and a finite period before a usable tower exists.
 
 ## ADDED Requirements
 
-### Requirement: Only an eligible Builder may receive a build order
+### Requirement: Only an eligible Builder may construct
 
-The simulation SHALL accept a tower build order only from a Builder player
-controlling a living Builder they own and whose civilization can build towers.
+The simulation SHALL accept construction orders only for a living Builder
+owned by the requesting player, who SHALL be in a Builder slot (2-8).
+Player 1, the human Hunter role, SHALL never build structures.
 
-#### Scenario: Owned Builder starts an order
-- **WHEN** player 2 orders their selected Builder to build a tower at an eligible location
-- **THEN** that Builder begins a tower construction order attributed to player 2
+#### Scenario: Human Builder submits an eligible order
+- **WHEN** a player assigned slot 2-8 orders their own selected Builder to build on a free tile
+- **THEN** the simulation accepts that Builder's construction order
 
-#### Scenario: Another player's unit or Hunter tries to build
-- **WHEN** a player submits an order through player 1, an unowned Builder, or a non-Builder entity
-- **THEN** the simulation rejects it and no tower, reservation or construction is created
+#### Scenario: Hunter or other player's Builder submits an order
+- **WHEN** player 1 submits any tower order, or another player references a Builder they do not own
+- **THEN** the simulation rejects it without constructing or reserving a tower
 
-### Requirement: Build tiles are valid and reserved consistently
+#### Scenario: Solo Hunter role is selected
+- **WHEN** the solo tester switches to Hunter player 1 and attempts to build
+- **THEN** the same Hunter construction prohibition applies
 
-The simulation SHALL accept only buildable, unoccupied map tiles and SHALL
-prevent two outstanding construction orders from claiming the same tile.
+### Requirement: Build sites are validated and exclusively reserved
 
-#### Scenario: A requested tile is already occupied or reserved
-- **WHEN** a second order targets a tile holding a unit, tower or outstanding building reservation
-- **THEN** the second order is rejected without affecting the first order
+The simulation SHALL allow construction only on unoccupied, buildable,
+in-bounds tiles and SHALL reserve the accepted target until completion or
+cancellation.
 
-#### Scenario: Simultaneous orders claim one tile
-- **WHEN** two valid requests for the same tile are processed
-- **THEN** the first accepted order owns that tile and the other is rejected
+#### Scenario: Same tile is requested twice
+- **WHEN** two players issue valid Builder orders for the same free tile
+- **THEN** the first accepted order reserves it and the next is rejected
 
-#### Scenario: Out-of-bounds request
-- **WHEN** a Builder attempts to build beyond the map boundary
-- **THEN** the request is rejected without mutating game state
+#### Scenario: Occupied, blocked or out-of-bounds tile
+- **WHEN** a request targets a tile occupied by an entity, reserved for construction, unbuildable or outside the map
+- **THEN** the order is rejected without changing an existing order
 
-### Requirement: Builder reaches an adjacent stand location
+### Requirement: Builder reaches a stand tile next to the build footprint
 
-An accepted order SHALL move its Builder to a reachable, unoccupied location
-adjacent to the target footprint, rather than moving onto the tower tile.
+The simulation SHALL route an accepted Builder to a reachable vacant
+location adjacent to the target tile rather than onto the target itself.
 
-#### Scenario: Distant construction
-- **WHEN** an owned Builder is distant from a valid tower tile
-- **THEN** the Builder walks toward a reachable adjacent stand location and construction does not complete during travel
+#### Scenario: Distant Builder
+- **WHEN** a Builder requests a valid distant tile
+- **THEN** the Builder travels toward an eligible neighboring position and does not finish during travel
 
-#### Scenario: No reachable stand location
+#### Scenario: Already adjacent
+- **WHEN** the Builder already stands at an eligible neighboring location
+- **THEN** construction may begin without further travel
+
+#### Scenario: No valid path
 - **WHEN** no eligible adjacent location can be reached
-- **THEN** the order fails without creating a tower and its tile reservation is released
+- **THEN** the order fails and releases its reservation
 
-#### Scenario: Builder already adjacent
-- **WHEN** the Builder is already at an eligible adjacent location
-- **THEN** it can begin construction without a redundant travel order
+### Requirement: Construction completes after simulation time
 
-### Requirement: Construction requires positive simulation time
+The simulation SHALL finish one tower only after the Builder reaches
+the valid site and a positive configured construction duration elapses.
 
-The tower SHALL become a completed game entity only after the assigned
-Builder reaches the site and the configured construction duration elapses.
+#### Scenario: Construction duration elapses
+- **WHEN** the Builder stays on the valid order through the full construction duration after arrival
+- **THEN** exactly one finished tower appears at the reserved tile with that Builder's owner
 
-#### Scenario: Completion after arrival
-- **WHEN** the Builder reaches a valid site and stays on the order through the construction duration
-- **THEN** one completed tower is created on the reserved tile for the Builder's player
+#### Scenario: Construction is pending
+- **WHEN** a construction order has not completed
+- **THEN** the site SHALL NOT contain a usable combat-capable tower
 
-#### Scenario: Tower is not available immediately
-- **WHEN** a construction order is pending or underway but has not completed
-- **THEN** it does not yield a completed, combat-capable tower
+### Requirement: Interruption cancels unfinished work
 
-### Requirement: Interrupted orders release their reservation
+The simulation SHALL cancel construction and release reservations when
+the Builder is redirected, destroyed or cannot continue the order.
 
-The simulation SHALL cancel incomplete work when the Builder receives a
-replacement order, dies, or cannot continue construction.
+#### Scenario: Player redirects Builder
+- **WHEN** a new Move or Build order supersedes an incomplete order
+- **THEN** the previous order is canceled, its reservation released, and its delayed event cannot spawn a tower
 
-#### Scenario: Player redirects the Builder
-- **WHEN** the Builder receives a new move order before tower completion
-- **THEN** the former build order is canceled and no tower appears later from it
+#### Scenario: Builder dies before completion
+- **WHEN** a Builder is removed before finishing construction
+- **THEN** no tower is completed by that order and its reservation is released
 
-#### Scenario: Builder disappears before completion
-- **WHEN** the Builder is destroyed during travel or construction
-- **THEN** the build order is canceled and its reservation is released
+### Requirement: Simulation rules do not depend on the UI
 
-### Requirement: Build orders use authoritative simulation state
+Construction validation, travel and completion SHALL use simulation state
+and SHALL produce the same outcome in headless and graphical execution.
 
-The simulation SHALL decide validity, completion and ownership using game
-state at the time the order or completion event is processed.
+#### Scenario: Construction runs headlessly
+- **WHEN** a valid order is processed without a renderer
+- **THEN** the same movement, ownership and completion rules apply
 
-#### Scenario: Placement is contested after travel
-- **WHEN** the site or Builder becomes invalid before completion
-- **THEN** completion fails safely with no duplicated tower or stale reservation
-
-#### Scenario: Renderer is not running
-- **WHEN** a valid construction order runs in a headless simulation
-- **THEN** movement and completion produce the same rules outcome as with the graphical client
+#### Scenario: Site is invalidated before completion
+- **WHEN** a previously valid site or order ceases to be valid
+- **THEN** completion does not create a duplicated tower or stale reservation

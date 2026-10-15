@@ -1,28 +1,45 @@
 # FVD development specs
 
-The [roadmap](ROADMAP.md) describes the first playable FVD multiplayer game.
-Work is tracked as small OpenSpec changes with a proposal (why), a spec delta
-(what users can rely on), a design (how), and tasks (implementation checklist).
+The user-edited [roadmap](ROADMAP.md) is the authority for the first playable
+FVD match. The specs below translate its milestones into behavioral contracts,
+implementation decisions and testable tasks. A change is not considered
+implemented merely because it has a spec.
 
-## Current change
+## Changes in roadmap order
 
-- [builder-construction](changes/builder-construction/proposal.md) — make a Builder
-  walk to a valid adjacent tile and complete a timed tower construction order.
+1. [Builder construction](changes/builder-construction/proposal.md): move to a
+   valid adjacent tile, reserve the site and complete timed construction.
+2. [Build menu and HUD](changes/build-menu-hud/proposal.md): tower placement
+   UI, selection details and only the current player's kill count.
+3. [Hunter combat and kills](changes/hunter-combat-kills/proposal.md): one
+   Hunter horse per second, tower arrows, lethal-damage attribution.
+4. [Multiplayer lobby](changes/multiplayer-lobby/proposal.md): 2-8 humans,
+   a randomly assigned human Hunter, half-weight host draw, host Start.
+5. [Synchronized match](changes/synchronized-match/proposal.md): authoritative
+   state, player ownership, concurrent commands and disconnect handling.
 
-The later changes in the roadmap should be proposed individually after their
-dependencies and integration risks are reviewed. Only approved, observable
-behavior belongs in the specs; implementation decisions can be revised.
+The last four plans capture product requirements now, while networking
+transport and Hunter unit controls remain open engineering decisions.
+Keep those decisions in the corresponding design files rather than
+inventing behavior not specified by the roadmap.
 
-To use the OpenSpec CLI, install it separately, then run these commands from
-the repository root:
+### Player model
 
-    openspec list
-    openspec validate builder-construction
-    openspec show builder-construction
+Player 1 is always the **human Hunter role in a multiplayer match**, not an
+AI player. The other 1-7 humans each own one Builder in slots 2-8. A lobby
+host may become the Hunter, with half the selection weight of any guest.
+In solo development mode, one tester switches between roles 1 and 2 with a
+hotkey; no AI player participates. Automatic Hunter-unit spawning/pathing
+is separate from who owns the Hunter role.
 
-These files are plain Markdown/YAML and do not require the CLI to read or edit.
-When a change is implemented and reviewed, archive it using the OpenSpec
-workflow so its capability spec becomes part of openspec/specs/.
+## Working with OpenSpec
 
-For engine-specific conventions, see [AGENTS.md](../AGENTS.md), and for the
-existing FVD behavior see [assets/fvd/README.md](../assets/fvd/README.md).
+Run `openspec list`, `openspec show <change>`, and
+`openspec validate <change>` if the OpenSpec CLI is installed. These Markdown
+and YAML files can also be reviewed without the CLI.
+
+After a change is implemented and reviewed, archive it through the OpenSpec
+workflow so its accepted requirements become part of `openspec/specs/`.
+
+See [AGENTS.md](../AGENTS.md) for development conventions and
+[assets/fvd/README.md](../assets/fvd/README.md) for the existing prototype.

@@ -2,37 +2,38 @@
 
 ## Why
 
-A tower currently appears instantly when a user Ctrl-clicks a vacant tile,
-even if their Builder is on the other side of the map. FVD needs building
-orders to behave as real gameplay actions before adding the build menu,
-combat and multiplayer synchronization.
+A tower currently appears instantly on Ctrl-left-click regardless of where
+the Builder is standing. FVD needs real construction orders before its build
+menu, tower combat and shared multiplayer match can work reliably.
 
 ## What Changes
 
-- Replace FVD's instant tower spawn with a Builder construction order.
-- Validate the controlling player, chosen Builder and requested tile.
-- Reserve an available tower tile while the Builder travels to a reachable
-  adjacent position, then complete construction after a finite duration.
-- Cancel and clean up work when the Builder is redirected, lost or blocked.
-- Preserve a Ctrl-click testing path until the build menu is available.
-- Add regression tests covering valid and invalid orders, timing and conflicts.
+- Replace instant tower spawning with a simulation-owned BuildTower order.
+- Validate the owning Builder, their human player's right to build, and
+  the vacant target tile.
+- Reserve the tile, move to a reachable adjacent stand tile, then complete
+  construction after a finite configurable duration.
+- Cancel on new orders, loss of the Builder, unreachable sites or conflicts.
+- Keep Ctrl-click as a solo developer shortcut until the build menu is ready.
+- Test contention and cancellation without a renderer.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `fvd-construction`: Builder-owned construction orders, adjacency,
-  reservation, timed completion and cancellation.
+- `fvd-construction`: validated, interruptible, timed Builder construction.
 
 ### Modified Capabilities
 
-None; no existing OpenSpec capability is being modified.
+None; the capability has not yet been established as an archived spec.
 
 ## Impact
 
-- `libopenage/gamestate/fvd.*` and `libopenage/gamestate/fvd_test.cpp`
-- `libopenage/gamestate/event/`, command queue and activity/movement systems
-- `libopenage/input/controller/game/` for local command submission
-- `assets/fvd/data/` for configurable construction parameters if needed
+- `libopenage/gamestate/fvd.*` and FVD simulation tests
+- Game commands, event handlers, activity and movement code
+- `libopenage/input/controller/game/` for the local shortcut
+- `assets/fvd/data/` for construction settings
 
-No networking protocol, resource economy or final build-menu UI is included.
+In multiplayer, player 1 is a **human Hunter**, not an AI player, but is
+still forbidden to build. Only assigned Builder slots 2-8 may construct.
+Role assignment and networking belong to the later changes.
