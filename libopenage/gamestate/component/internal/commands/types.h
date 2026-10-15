@@ -14,6 +14,7 @@ enum class command_t {
 	CUSTOM,
 	IDLE,
 	MOVE,
+	BUILD_TOWER,
 };
 
 } // namespace openage::gamestate::component::command

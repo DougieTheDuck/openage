@@ -4,7 +4,10 @@
 
 #include <nyan/nyan.h>
 
+#include "curve/discrete.h"
 #include "error/error.h"
+#include "gamestate/component/api/live.h"
+#include "gamestate/component/internal/commands/build_tower.h"
 #include "gamestate/component/internal/ownership.h"
 #include "gamestate/component/internal/position.h"
 #include "gamestate/entity_factory.h"
@@ -68,13 +71,11 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 	}
 }
 
-bool FVD::place_tower(const std::shared_ptr<GameState> &state,
-                      const std::shared_ptr<openage::event::EventLoop> &loop,
-                      const std::shared_ptr<EntityFactory> &entities,
-                      player_id_t owner,
-                      const std::vector<entity_id_t> &selected,
-                      const coord::phys3 &position,
-                      const time::time_t &time) const {
+bool FVD::request_build(const std::shared_ptr<GameState> &state,
+                        player_id_t owner,
+                        const std::vector<entity_id_t> &selected,
+                        const coord::phys3 &position,
+                        const time::time_t &time) {
 	if (owner < 2 or owner > this->player_count) {
 		log::log(WARN << "Only Builder players can place towers");
 		return false;
@@ -92,21 +93,33 @@ bool FVD::place_tower(const std::shared_ptr<GameState> &state,
 		return false;
 	}
 
-	bool has_builder = false;
-	for (auto id : selected) {
-		auto found = state->get_game_entities().find(id);
-		if (found == state->get_game_entities().end()) {
-			continue;
-		}
-		auto entity = found->second;
-		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
-			entity->get_component(component::component_t::OWNERSHIP));
-		if (entity->get_definition() == this->builder and ownership->get_owners().get(time) == owner) {
-			has_builder = true;
-		}
+	if (selected.size() != 1) {
+		log::log(WARN << "Select exactly one Builder before ordering a tower");
+		return false;
 	}
-	if (not has_builder) {
-		log::log(WARN << "Select one of your Builders before placing a tower");
+	auto builder_id = selected.front();
+	auto found = state->get_game_entities().find(builder_id);
+	if (found == state->get_game_entities().end()) {
+		log::log(WARN << "Builder does not exist");
+		return false;
+	}
+	auto entity = found->second;
+	if (entity->get_definition() != this->builder
+	    or not entity->has_component(component::component_t::OWNERSHIP)
+	    or not entity->has_component(component::component_t::LIVE)) {
+		log::log(WARN << "The selected entity is not a living Builder");
+		return false;
+	}
+	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+		entity->get_component(component::component_t::OWNERSHIP));
+	if (ownership->get_owners().get(time) != owner) {
+		log::log(WARN << "Cannot order another player's Builder");
+		return false;
+	}
+	auto live = std::dynamic_pointer_cast<component::Live>(
+		entity->get_component(component::component_t::LIVE));
+	if (live->get_attribute(time, "fvd.data.entities.Health")->get(time) <= 0) {
+		log::log(WARN << "A dead Builder cannot construct");
 		return false;
 	}
 	if (position.ne < 0 or position.se < 0
@@ -116,17 +129,54 @@ bool FVD::place_tower(const std::shared_ptr<GameState> &state,
 		return false;
 	}
 	auto tile = position.to_tile();
-	auto site = tile.to_phys3_center();
-	for (const auto &[id, entity] : state->get_game_entities()) {
+	if (this->is_tile_reserved(tile)) {
+		log::log(WARN << "Tower placement tile is reserved");
+		return false;
+	}
+	for (const auto &[id, candidate] : state->get_game_entities()) {
 		auto pos = std::dynamic_pointer_cast<component::Position>(
-			entity->get_component(component::component_t::POSITION));
+			candidate->get_component(component::component_t::POSITION));
 		if (pos->get_positions().get(time).to_tile() == tile) {
 			log::log(WARN << "Tower placement tile is occupied");
 			return false;
 		}
 	}
-	entities->spawn_game_entity(loop, state, owner, this->tower, site, time);
+
+	// The validated FVD map is currently entirely flat, buildable plains.
+	// A later terrain variant must also check the target's terrain type.
+	this->cancel_build(builder_id);
+	auto order = std::make_shared<component::command::BuildTowerCommand>(
+		this->next_build_id++, owner, builder_id, tile);
+	this->build_orders.emplace(builder_id, order);
+	this->reserved_tiles.emplace(tile, builder_id);
 	return true;
+}
+
+bool FVD::cancel_build(entity_id_t builder) {
+	auto it = this->build_orders.find(builder);
+	if (it == this->build_orders.end()) {
+		return false;
+	}
+
+	auto reserved = this->reserved_tiles.find(it->second->get_target());
+	if (reserved != this->reserved_tiles.end() and reserved->second == builder) {
+		this->reserved_tiles.erase(reserved);
+	}
+	this->build_orders.erase(it);
+	return true;
+}
+
+std::shared_ptr<component::command::BuildTowerCommand> FVD::get_build_order(
+	entity_id_t builder) const {
+	auto it = this->build_orders.find(builder);
+	if (it == this->build_orders.end()) {
+		return nullptr;
+	}
+	return it->second;
+}
+
+bool FVD::is_tile_reserved(const coord::tile &tile) const {
+	return this->reserved_tiles.contains(tile);
 }
 
 coord::phys3 FVD::get_centre() const {

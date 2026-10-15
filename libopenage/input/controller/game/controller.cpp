@@ -115,18 +115,28 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 	binding_func_t create_entity_event{[&](const event_arguments &args,
 	                                       const std::shared_ptr<Controller> controller) {
 		auto mouse_pos = args.mouse.to_phys3(camera);
+		auto state = simulation->get_game()->get_state();
+		if (state->get_fvd()) {
+			event::EventHandler::param_map::map_t params{
+				{"type", gamestate::component::command::command_t::BUILD_TOWER},
+				{"target", mouse_pos},
+				{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
+				{"entity_ids", controller->get_selected()},
+			};
+			simulation->get_event_loop()->submit_event(
+				"game.send_command", simulation->get_commander(), state,
+				time_loop->get_clock()->get_time(), params);
+			return;
+		}
+
 		event::EventHandler::param_map::map_t params{
 			{"position", mouse_pos},
 			{"owner", controller->get_controlled()},
 			{"entity_ids", controller->get_selected()},
 		};
-
 		simulation->get_event_loop()->submit_event(
-			"game.spawn_entity",
-			simulation->get_spawner(),
-			simulation->get_game()->get_state(),
-			time_loop->get_clock()->get_time(),
-			params);
+			"game.spawn_entity", simulation->get_spawner(), state,
+			time_loop->get_clock()->get_time(), params);
 	}};
 
 	binding_action create_entity_action{forward_action_t::SEND, create_entity_event};
@@ -159,6 +169,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		event::EventHandler::param_map::map_t params{
 			{"type", gamestate::component::command::command_t::MOVE},
 			{"target", mouse_pos},
+			{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
 			{"entity_ids", controller->get_selected()},
 		};
 

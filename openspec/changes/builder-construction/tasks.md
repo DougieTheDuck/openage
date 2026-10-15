@@ -2,9 +2,9 @@
 
 ## 1. Simulation and ownership
 
-- [ ] 1.1 Inspect command/activity sequencing and introduce BuildTower, retaining requesting player, Builder, target tile and order identity.
-- [ ] 1.2 Reject orders from Hunter player 1 (human in a match), unowned/invalid Builders, occupied or out-of-bounds tiles; cover valid slots 2-8 and invalid cases in tests.
-- [ ] 1.3 Reserve the target tile and resolve conflicting requests in event-processing order; assert at most one successful claim.
+- [x] 1.1 Inspect command/activity sequencing and introduce BuildTower, retaining requesting player, Builder, target tile and order identity.
+- [x] 1.2 Reject orders from Hunter player 1 (human in a match), unowned/invalid Builders, occupied or out-of-bounds tiles; cover valid slots 2-8 and invalid cases in tests.
+- [x] 1.3 Reserve the target tile and resolve conflicting requests in event-processing order; assert at most one successful claim.
 
 ## 2. Movement, completion and interruption
 

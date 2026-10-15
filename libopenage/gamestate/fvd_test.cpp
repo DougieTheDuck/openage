@@ -7,11 +7,15 @@
 #include "assets/mod_manager.h"
 #include "config.h"
 #include "event/event_loop.h"
+#include "gamestate/component/api/live.h"
+#include "gamestate/component/internal/commands/build_tower.h"
+#include "gamestate/component/internal/commands/types.h"
 #include "gamestate/component/internal/ownership.h"
 #include "gamestate/component/internal/position.h"
 #include "gamestate/entity_factory.h"
 #include "gamestate/event/drag_select.h"
 #include "gamestate/event/process_command.h"
+#include "gamestate/event/send_command.h"
 #include "gamestate/event/spawn_entity.h"
 #include "gamestate/event/wait.h"
 #include "gamestate/fvd.h"
@@ -148,11 +152,12 @@ void fvd_scenario() {
 	TESTEQUALS(selection.size(), 1);
 	TESTEQUALS(selection.front(), builders[2]);
 
-	auto place = [&](player_id_t owner, const std::vector<entity_id_t> &selection, coord::phys3 pos) {
-		return fvd->place_tower(state, loop, entities, owner, selection, pos, time::TIME_ZERO);
+	auto place = [&](player_id_t owner, const std::vector<entity_id_t> &selected, coord::phys3 pos) {
+		return fvd->request_build(state, owner, selected, pos, time::TIME_ZERO);
 	};
 	TESTEQUALS(place(1, {builders[2]}, {10, 10, 0}), false);
 	TESTEQUALS(place(2, {}, {10, 10, 0}), false);
+	TESTEQUALS(place(2, {builders[2], builders[3]}, {10, 10, 0}), false);
 	TESTEQUALS(place(2, {builders[3]}, {10, 10, 0}), false);
 	TESTEQUALS(place(2, {9999}, {10, 10, 0}), false);
 	TESTEQUALS(place(9, {builders[2]}, {10, 10, 0}), false);
@@ -160,32 +165,79 @@ void fvd_scenario() {
 	TESTEQUALS(place(2, {builders[2]}, {128, 10, 0}), false);
 	TESTEQUALS(place(2, {builders[2]}, {10, 128, 0}), false);
 	TESTEQUALS(place(2, {builders[2]}, {10, 10, 1}), false);
+
 	auto builder_pos = std::dynamic_pointer_cast<component::Position>(
-		state->get_game_entity(builders[2])->get_component(component::component_t::POSITION));
+		builder_entity->get_component(component::component_t::POSITION));
 	TESTEQUALS(place(2, {builders[2]}, builder_pos->get_positions().get(time::TIME_ZERO)), false);
 	TESTEQUALS(state->get_game_entities().size(), 7);
 	TESTEQUALS(place(2, {builders[2]}, {10, 10, 0}), true);
-	TESTEQUALS(place(2, {builders[2]}, {10, 10, 0}), false);
-	TESTEQUALS(state->get_game_entities().size(), 8);
-	entity_id_t tower_id = 0;
-	for (const auto &[id, entity] : state->get_game_entities()) {
-		if (entity->get_definition() == "fvd.data.entities.Tower") {
-			tower_id = id;
-			auto pos = std::dynamic_pointer_cast<component::Position>(
-				entity->get_component(component::component_t::POSITION));
-			TESTEQUALS(pos->get_positions().get(time::TIME_ZERO), (coord::phys3{10.5, 10.5, 0}));
-		}
-	}
-	TESTEQUALS(place(2, {tower_id}, {12, 12, 0}), false);
-	TESTEQUALS(place(8, {builders[8]}, {127.5, 127.5, 0}), true);
+	TESTEQUALS(fvd->is_tile_reserved(coord::tile{10, 10}), true);
+	TESTEQUALS(fvd->is_tile_reserved(coord::tile{12, 12}), false);
+	auto order = fvd->get_build_order(builders[2]);
+	TESTEQUALS(order != nullptr, true);
+	TESTEQUALS(order->get_type() == component::command::command_t::BUILD_TOWER, true);
+	TESTEQUALS(order->get_owner(), player_id_t{2});
+	TESTEQUALS(order->get_builder(), builders[2]);
+	TESTEQUALS(order->get_target(), (coord::tile{10, 10}));
+	TESTEQUALS(state->get_game_entities().size(), 7);
 
-	event::SpawnEntityHandler handler{loop, entities};
-	handler.invoke(*loop, nullptr, state, time::TIME_ZERO,
-	               {{"position", coord::phys3{12, 12, 0}},
-	                {"owner", player_id_t{1}},
-	                {"entity_ids", std::vector<entity_id_t>{builders[2]}}});
-	TESTEQUALS(state->get_game_entities().size(), 9);
-	TESTTHROWS(handler.invoke(*loop, nullptr, state, time::TIME_ZERO, {}));
+	// A conflicting reservation must not overwrite or cancel the first order.
+	TESTEQUALS(place(3, {builders[3]}, {10, 10, 0}), false);
+	TESTEQUALS(place(2, {builders[2]}, {10, 10, 0}), false);
+	TESTEQUALS(fvd->get_build_order(builders[2])->get_id(), order->get_id());
+	TESTEQUALS(fvd->get_build_order(builders[3]) == nullptr, true);
+	TESTEQUALS(place(2, {builders[2]}, {12, 12, 0}), true);
+	TESTEQUALS(fvd->is_tile_reserved(coord::tile{10, 10}), false);
+	TESTEQUALS(fvd->is_tile_reserved(coord::tile{12, 12}), true);
+	TESTEQUALS(fvd->get_build_order(builders[2])->get_id() != order->get_id(), true);
+
+	// Other Builders may claim a tile released by the replaced order.
+	TESTEQUALS(place(3, {builders[3]}, {10, 10, 0}), true);
+	TESTEQUALS(fvd->get_build_order(builders[3])->get_owner(), player_id_t{3});
+	TESTEQUALS(state->get_game_entities().size(), 7);
+
+	// Dead Builders cannot initiate new construction.
+	auto live = std::dynamic_pointer_cast<component::Live>(
+		state->get_game_entity(builders[8])->get_component(component::component_t::LIVE));
+	live->set_attribute(time::TIME_ZERO, "fvd.data.entities.Health", 0);
+	TESTEQUALS(place(8, {builders[8]}, {127.5, 127.5, 0}), false);
+
+	event::SendCommandHandler commander;
+	commander.invoke(*loop, nullptr, state, time::TIME_ZERO,
+	                 {{"type", component::command::command_t::BUILD_TOWER},
+	                  {"owner", player_id_t{4}},
+	                  {"entity_ids", std::vector<entity_id_t>{builders[4]}},
+	                  {"target", coord::phys3{20, 20, 0}}});
+	TESTEQUALS(fvd->is_tile_reserved(coord::tile{20, 20}), true);
+	TESTEQUALS(fvd->get_build_order(builders[4])->get_owner(), player_id_t{4});
+	// Spoofed MOVE must not cancel another player's pending build.
+	commander.invoke(*loop, nullptr, state, time::TIME_ZERO,
+	                 {{"type", component::command::command_t::MOVE},
+	                  {"owner", player_id_t{3}},
+	                  {"entity_ids", std::vector<entity_id_t>{builders[4]}},
+	                  {"target", coord::phys3{30, 30, 0}}});
+	TESTEQUALS(fvd->is_tile_reserved(coord::tile{20, 20}), true);
+	commander.invoke(*loop, nullptr, state, time::TIME_ZERO,
+	                 {{"type", component::command::command_t::MOVE},
+	                  {"owner", player_id_t{4}},
+	                  {"entity_ids", std::vector<entity_id_t>{builders[4]}},
+	                  {"target", coord::phys3{30, 30, 0}}});
+	TESTEQUALS(fvd->is_tile_reserved(coord::tile{20, 20}), false);
+	TESTEQUALS(fvd->get_build_order(builders[4]) == nullptr, true);
+
+	TESTEQUALS(fvd->cancel_build(builders[2]), true);
+	TESTEQUALS(fvd->is_tile_reserved(coord::tile{12, 12}), false);
+	TESTEQUALS(fvd->cancel_build(builders[2]), false);
+	TESTEQUALS(place(5, {builders[5]}, {12, 12, 0}), true);
+	TESTEQUALS(fvd->cancel_build(builders[3]), true);
+	TESTEQUALS(fvd->cancel_build(builders[5]), true);
+	TESTEQUALS(state->get_game_entities().size(), 7);
+
+	event::SpawnEntityHandler spawner{loop, entities};
+	TESTTHROWS(spawner.invoke(*loop, nullptr, state, time::TIME_ZERO,
+	                          {{"position", coord::phys3{10, 10, 0}},
+	                           {"owner", player_id_t{2}},
+	                           {"entity_ids", std::vector<entity_id_t>{builders[2]}}}));
 
 	auto destination = coord::phys3{80, 80, 0};
 	auto duration = system::Move::move_default(

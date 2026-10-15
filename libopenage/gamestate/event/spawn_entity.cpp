@@ -10,7 +10,6 @@
 #include "coord/phys.h"
 #include "gamestate/definitions.h"
 #include "gamestate/entity_factory.h"
-#include "gamestate/fvd.h"
 #include "gamestate/game_state.h"
 #include "gamestate/map.h"
 #include "gamestate/types.h"
@@ -149,17 +148,7 @@ void SpawnEntityHandler::invoke(openage::event::EventLoop & /* loop */,
                                 const param_map &params) {
 	auto gstate = std::dynamic_pointer_cast<gamestate::GameState>(state);
 	if (gstate->get_fvd()) {
-		if (not params.check_type<coord::phys3>("position")
-		    or not params.check_type<player_id_t>("owner")
-		    or not params.check_type<std::vector<entity_id_t>>("entity_ids")) {
-			throw Error{ERR << "FVD tower placement requires a position, owner and selected entity IDs"};
-		}
-		gstate->get_fvd()->place_tower(
-			gstate, this->loop, this->factory,
-			params.get<player_id_t>("owner"),
-			params.get<std::vector<entity_id_t>>("entity_ids"),
-			params.get("position", gamestate::WORLD_ORIGIN), time);
-		return;
+		throw Error{ERR << "FVD entity creation must use simulation gameplay rules"};
 	}
 
 	// Check if spawn position is on the map

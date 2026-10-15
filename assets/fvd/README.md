@@ -24,9 +24,10 @@ Hunter unit spawning is not implemented yet.
 
 The local view initially controls player 2.
 Press keys 1 through 8 to switch the controlled player and return the camera to the common start location.
-Drag with the left mouse button to select your Builder, right-click to move it, and Ctrl-left-click to place a tower on a vacant tile.
-Tower placement checks the active civilisation and selected unit ownership in the simulation, so switching to the Hunter cannot bypass the restriction.
-Towers are placed instantly without a resource cost or construction timer; combat and tower path blocking are not implemented yet.
+Drag with the left mouse button to select your Builder, right-click to move it, and Ctrl-left-click to submit a tower build order for a vacant tile.
+The simulation validates ownership and reserves the target tile, so the Hunter and other Builders cannot claim the same site.
+Until the construction activity is implemented, accepted orders remain pending: no tower appears or moves into construction yet.
+A subsequent movement order cancels the selected Builder's pending build and releases its reserved tile.
 
 The bundled modpack lives outside `converted/`.
 Its relative graphic references are resolved from the renderer's converted asset directory back to this directory.
