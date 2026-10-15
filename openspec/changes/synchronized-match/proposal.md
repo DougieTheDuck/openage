@@ -8,10 +8,11 @@ must agree on units, movement, construction, combat and local kill counts.
 ## What Changes
 
 - Run a host-authoritative match for 2-8 humans, including the human Hunter.
-- Clients submit intents for their assigned units; the host authenticates,
-  validates and processes those intents in simulation order.
-- Replicate world entities, construction occupancy/state, projectiles,
-  damage, deaths and per-player kill totals to connected clients.
+- Clients submit intents for their assigned units, including human Hunter
+  multi-horse Move/AttackMove commands; the host validates and processes
+  them in simulation order.
+- Replicate world entities, construction occupancy/state, delayed horse
+  spawns, Hunter orders, projectiles, damage, deaths and kill totals.
 - Handle rejected commands and disconnections without silent divergence.
 - Keep networking outside the renderer and GUI, with Windows as the
   required initial platform.

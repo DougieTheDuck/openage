@@ -5,10 +5,13 @@
 The lobby host runs the only authoritative simulation, independent of
 whether that human was assigned Hunter or Builder. Each client gets a
 server-bound connection/session identity and a fixed player ID from the
-lobby. Send gameplay intents (selected Builder, BuildTower position, Move,
-and any later Hunter command), not GUI events or client-created entities.
+lobby. Send gameplay intents (Builder BuildTower/Move and Hunter-owned horse
+Move/AttackMove with selected entity IDs and target destination), not
+GUI events or client-created entities.
 Server-side handlers verify that intent's sender owns the referenced units
-and may use the requested ability.
+and may use the requested ability. New Hunter horses must remain idle
+at the center until the assigned human Hunter orders them; spawning
+alone never causes autonomous movement.
 
 Run accepted actions on the host's event loop. Transmit deterministic,
 ordered world updates or snapshots with sequence/time identifiers;
@@ -16,7 +19,9 @@ clients render received state and optionally interpolate positions.
 The first version should prioritize correctness over sophisticated
 client-side prediction or lockstep. Keep the authoritative kill count
 per player on the host and transmit only the needed local display total
-for the HUD (other players must not appear in the HUD).
+for the HUD (other players must not appear in the HUD). Spawn cadence is
+relative to the host-authoritative match start: first horse at 20s, then
+one per second. Clients must not schedule independent horse spawns.
 
 ## Investigation before implementation
 

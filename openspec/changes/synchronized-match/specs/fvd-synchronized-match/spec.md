@@ -28,6 +28,25 @@ SHALL reject commands to control other players' entities or abilities.
 - **WHEN** the participant assigned player 1 sends BuildTower
 - **THEN** the host rejects the construction request
 
+### Requirement: Human Hunter controls horses through authenticated commands
+
+The participant assigned Hunter player 1 SHALL be able to send selection-
+based Move and AttackMove intents for owned horses. The host SHALL process
+accepted commands and replicate their effects. Spawned horses SHALL remain
+idle until such an order is accepted.
+
+#### Scenario: Hunter selects several horses and orders AttackMove
+- **WHEN** the Hunter player sends a valid AttackMove for owned horse IDs and a destination
+- **THEN** the host accepts the command and all clients observe the resulting travel and engagements
+
+#### Scenario: Uncommanded horses accumulate
+- **WHEN** horses spawn and the human Hunter issues no commands
+- **THEN** all connected clients observe those horses remaining at the map center
+
+#### Scenario: Builder forges a Hunter order
+- **WHEN** a Builder sends a Move or AttackMove naming player 1's horses
+- **THEN** the host rejects the command without altering those horses
+
 ### Requirement: Observable game state is synchronized
 
 All clients SHALL receive authoritative updates for unit positions,
@@ -37,9 +56,13 @@ reserved/building/completed tower state, combat, deaths and kills.
 - **WHEN** two connected Builders simultaneously target the same free tile
 - **THEN** the host accepts at most one reservation and all clients converge on that outcome
 
-#### Scenario: Hunter horse spawns
-- **WHEN** a second of match simulation time elapses
-- **THEN** every connected client observes the same spawned Hunter horse
+#### Scenario: Hunter grace period and spawning
+- **WHEN** the match runs from t=0 to just before t=20s
+- **THEN** no clients observe a scheduled Hunter horse
+
+#### Scenario: First and subsequent horses spawn
+- **WHEN** host simulation time reaches t=20s and then t=21s
+- **THEN** all clients observe the same first and second idle Hunter horses at the center
 
 #### Scenario: Tower scores a kill
 - **WHEN** the host confirms a tower's lethal attack
@@ -65,4 +88,4 @@ clients on reachable addresses/ports to play a common match.
 
 #### Scenario: Two Windows machines
 - **WHEN** two compatible Windows clients are connected and the host starts
-- **THEN** both clients can observe shared movements, builds, horse attacks and kill outcomes
+- **THEN** both clients can observe shared Builder orders, manual Hunter horse attack-move, tower attacks and kill outcomes

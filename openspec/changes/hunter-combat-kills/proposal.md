@@ -7,9 +7,13 @@ cannot yet demonstrate the core defense loop or meaningful kill totals.
 
 ## What Changes
 
-- During a running match, spawn one Hunter horse per second at map center.
-- Move spawned horses towards the Builder defense area; exact routing and
-  human Hunter controls remain design decisions.
+- Give Builders 20 seconds from match start before the first Hunter horse spawns
+  at map center, then spawn one additional horse per second.
+- Leave spawned horses idle at the center until the human Hunter selects one
+  or more and issues an order.
+- Support human Hunter Move and AttackMove orders; horses on AttackMove engage
+  eligible opposing units met along their route and then resume advancing.
+- Defer automatic rally/gather points and automatic movement after spawning.
 - Let completed towers automatically fire arrows at Hunter units and apply
   damage until a unit dies.
 - Record exactly one kill for the owner of the tower dealing lethal damage.
@@ -19,8 +23,8 @@ cannot yet demonstrate the core defense loop or meaningful kill totals.
 
 ### New Capabilities
 
-- `fvd-hunter-combat`: horse spawning, movement, tower arrow combat, death
-  and owner-based kill credit.
+- `fvd-hunter-combat`: delayed Hunter horse spawning, human selection,
+  movement/AttackMove, tower arrow combat, death and owner-based kill credit.
 
 ### Modified Capabilities
 
@@ -33,5 +37,5 @@ None.
 - Player-owned kill tally and HUD binding
 
 Player 1 is a **human Hunter in multiplayer**, NOT an AI participant.
-Automated spawning and any basic horse movement must not be confused with
-the player role. Solo developer mode has no AI opponent/player.
+Only horse spawning is automatic; the human Hunter controls when and where
+horses move. Solo developer mode has no AI opponent/player.

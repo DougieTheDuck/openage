@@ -52,7 +52,7 @@ and each guest weight 1.
 
 #### Scenario: Chosen Hunter joins the match
 - **WHEN** role assignment finishes
-- **THEN** the selected human controls player 1, not an AI player, and cannot construct
+- **THEN** the selected human controls player 1, not an AI player, cannot construct, and can select and command Hunter-owned horses
 
 ### Requirement: Every non-Hunter owns a unique Builder slot
 

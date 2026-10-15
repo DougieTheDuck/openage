@@ -11,7 +11,9 @@ started but the lobby host has 50 percent less chance to get the Hunter role.
 Each builder can select and move their own Builder, choose
 a tower from the UI, place an order to build it on any free tile, and watch the 
 Builder walk to an adjacent tile and construct it. Towers defend against approaching 
-Hunter units. All players see compatible game state and scores but only see their kill count,
+Hunter units. The human Hunter selects the horses gathering at map center and gives
+them attack-move orders; horses never advance automatically after spawning.
+All players see compatible game state and scores but only see their kill count,
 which is incremented for every hunter unit one of their towers kills.
 
 Solo FVD remains available as a development/test mode where a hotkey switches 
@@ -65,15 +67,19 @@ over the menu do not unintentionally select or command the world.
 
 ### 3. Hunter pressure, tower combat, and kill credit — next proposal
 
-- Player 1 AI spawns and steers basic Hunter attackers from the center of the map.
-- One horse unit is spawned per second
+- The first horse spawns at the map center 20 seconds after match start, giving Builders a head start.
+- One additional horse spawns per second thereafter, owned by human Hunter player 1.
+- Horses remain at map center until the Hunter selects one or more and orders them to move or attack-move.
+- Attack-moving horses engage eligible opponents they encounter, then continue to their destination.
+- Automatic rally/gather points are out of scope for this first version.
 - Completed towers autonomously target enemies, fire arrows, inflict damage and kill.
 - Credited kills belong to the **owner of the tower that dealt lethal damage**;
   no double-credit, including near-simultaneous attacks.
 - Show the current human player's kill total in the HUD; totals persist for
   the match. Test killing, attribution and cleanup in the simulation.
 
-**Done when:** Hunter units reach the build area, towers stop them, and kill
+**Done when:** the Builder has a 20-second head start, the Hunter can select
+horses and attack-move them toward the build area, towers stop them, and kill
 totals advance only for the correct Builder. A full victory/economy system is
 not a prerequisite for the first multiplayer build.
 
@@ -96,11 +102,11 @@ not a prerequisite for the first multiplayer build.
 - Prefer **host-authoritative simulation** for the first version. Clients send
   input intents; the host validates player and entity ownership and runs the
   game rules. The host transmits ordered world-state changes or snapshots.
-- Synchronize movement, construction and occupancy, enemy activity, tower
-  attacks, deaths and per-player kills. Clients cannot choose another owner's
+- Synchronize movement, construction and occupancy, manual Hunter
+  Move/AttackMove, delayed horse spawning, tower attacks, deaths and per-player kills. Clients cannot choose another owner's
   identity merely by forging a command.
 - Clearly handle disconnects and rejected input; no silent divergence.
-- Test with two physical machines first, then 3–7 human participants.
+- Test with two physical machines first, then 3–8 human participants.
 - Keep the renderer independent of networking and use explicit simulation
   state transfer rather than sending mouse/UI events.
 

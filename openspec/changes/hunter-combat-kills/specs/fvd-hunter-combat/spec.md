@@ -4,26 +4,77 @@
 
 ### Requirement: Hunter horses spawn on a simulation-time cadence
 
-While a match is running, the simulation SHALL spawn one Hunter-owned horse
-at the center of the map for each elapsed second of active game time.
+While a match is running, the simulation SHALL give the Builders a
+20-second grace period before any Hunter horse spawns. It SHALL spawn
+one Hunter-owned horse at the map center at match simulation time t=20s,
+then one additional horse at each whole second t=21s, t=22s, and so on.
 
-#### Scenario: One second elapses
-- **WHEN** a full second of match simulation time elapses
-- **THEN** one new horse owned by player 1 has spawned at the central spawn location
+#### Scenario: Before the grace period ends
+- **WHEN** the match has run for any time earlier than 20 seconds
+- **THEN** no scheduled Hunter horses have spawned
+
+#### Scenario: Grace period ends
+- **WHEN** match simulation time reaches 20 seconds
+- **THEN** exactly one Hunter-owned horse spawns at map center
+
+#### Scenario: Subsequent seconds elapse
+- **WHEN** match simulation time reaches 21 seconds, then 22 seconds
+- **THEN** a second, then a third, Hunter-owned horse has spawned
 
 #### Scenario: Match is not running
 - **WHEN** the game is in the lobby or stopped
-- **THEN** no timed Hunter horses spawn
+- **THEN** no timed Hunter horses spawn and lobby waiting does not consume the grace period
 
-### Requirement: Hunter horses move in the playable world
+### Requirement: Newly spawned Hunter horses await human orders
 
-Spawned horses SHALL be represented as movable world units. Their initial
-automated route and available human Hunter commands SHALL be resolved in
-design before declaring horse behavior complete.
+The simulation SHALL spawn each Hunter-owned horse idle at the center;
+horses SHALL NOT automatically follow a path, rally or attack without
+an instruction from their human Hunter.
 
-#### Scenario: Horse enters play
-- **WHEN** a scheduled horse is spawned
-- **THEN** all clients may observe the same horse and its authoritative position
+#### Scenario: A horse spawns
+- **WHEN** a Hunter horse appears at t=20 seconds or later
+- **THEN** it remains at the center, visible to all players and awaiting an order
+
+#### Scenario: Horses accumulate
+- **WHEN** the Hunter does not issue any commands across several spawn intervals
+- **THEN** all surviving uncommanded horses remain at the center
+
+### Requirement: Human Hunter can command individual horses or a group
+
+Player 1's human Hunter SHALL be able to select one or more owned horses
+and issue Move or AttackMove orders with a map destination. Only the
+selected living horses owned by that Hunter SHALL receive the orders.
+
+#### Scenario: Hunter attack-moves a group
+- **WHEN** the Hunter selects several horses and issues AttackMove to a target location
+- **THEN** each selected horse begins progressing toward the location under an AttackMove order
+
+#### Scenario: Hunter orders ordinary movement
+- **WHEN** the Hunter commands Move to a destination
+- **THEN** selected horses travel there without actively seeking enemies en route
+
+#### Scenario: Builder attempts to command Hunter units
+- **WHEN** a Builder attempts to move or attack-move horses owned by player 1
+- **THEN** the simulation rejects the order without changing their behavior
+
+### Requirement: AttackMove engages opponents on the route
+
+An attack-moving horse SHALL attack eligible enemy Builder-owned entities
+encountered en route, then resume travel toward its original destination
+after the engagement. Reaching the destination SHALL leave it awaiting
+another Hunter order.
+
+#### Scenario: Horse encounters an opponent
+- **WHEN** a horse under AttackMove encounters an eligible opposing unit or structure
+- **THEN** it interrupts travel and engages that target through simulation combat rules
+
+#### Scenario: Horse defeats or loses a target
+- **WHEN** an AttackMove target dies or is no longer eligible
+- **THEN** a surviving horse resumes travel toward its original destination
+
+#### Scenario: Horse reaches its destination
+- **WHEN** an attack-moving horse finishes moving to its destination
+- **THEN** it waits there for the next human-issued order
 
 ### Requirement: Completed towers fire arrows and can kill horses
 

@@ -11,17 +11,17 @@ implemented merely because it has a spec.
    valid adjacent tile, reserve the site and complete timed construction.
 2. [Build menu and HUD](changes/build-menu-hud/proposal.md): tower placement
    UI, selection details and only the current player's kill count.
-3. [Hunter combat and kills](changes/hunter-combat-kills/proposal.md): one
-   Hunter horse per second, tower arrows, lethal-damage attribution.
+3. [Hunter combat and kills](changes/hunter-combat-kills/proposal.md): a
+   20-second Builder head start, one horse per second thereafter, human
+   Hunter selection/attack-move, tower arrows and kill attribution.
 4. [Multiplayer lobby](changes/multiplayer-lobby/proposal.md): 2-8 humans,
    a randomly assigned human Hunter, half-weight host draw, host Start.
 5. [Synchronized match](changes/synchronized-match/proposal.md): authoritative
    state, player ownership, concurrent commands and disconnect handling.
 
-The last four plans capture product requirements now, while networking
-transport and Hunter unit controls remain open engineering decisions.
-Keep those decisions in the corresponding design files rather than
-inventing behavior not specified by the roadmap.
+The last four plans capture product requirements now. Hunter control is
+human selection, Move and AttackMove; automatic spawn movement is excluded.
+Networking transport and combat tuning remain engineering decisions.
 
 ### Player model
 
@@ -29,8 +29,9 @@ Player 1 is always the **human Hunter role in a multiplayer match**, not an
 AI player. The other 1-7 humans each own one Builder in slots 2-8. A lobby
 host may become the Hunter, with half the selection weight of any guest.
 In solo development mode, one tester switches between roles 1 and 2 with a
-hotkey; no AI player participates. Automatic Hunter-unit spawning/pathing
-is separate from who owns the Hunter role.
+hotkey; no AI player participates. Hunter horses first spawn at match second
+20 and once per second thereafter, remaining at map center until ordered.
+A future rally/gather point is deliberately outside the initial scope.
 
 ## Working with OpenSpec
 

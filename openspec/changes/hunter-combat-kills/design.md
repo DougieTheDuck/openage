@@ -3,31 +3,64 @@
 ## Context
 
 FVD already has sprite data for horses and towers and simulation primitives
-for units, ownership, movement and health. The current Tower definition
-does not yet attack, and the Hunter begins with no units.
+for units, ownership, movement and health. The Tower currently cannot attack,
+and player 1 begins without units. The existing Move command and selection
+system provide a starting point for human Hunter control.
 
 ## Proposed Approach
 
-Schedule one horse spawn per second of game simulation time after match start,
-owned by player 1, from the center tile/position. Use the engine's event loop
-and pathfinding for spawning/movement; do not build a per-frame timer.
-Use a target-selection and attack event for completed towers, with explicit
-arrow shots, damage and a single death transition. Credit the lethal hit
-to the tower's owner in authoritative match state, not in client QML.
-Avoid duplicate credit when projectiles overlap or events share a timestamp.
+### Give Builders a head start
 
-The human Hunter controls the Hunter role. The roadmap retains the phrase
-"Player 1 AI spawns and steers" while also specifying random human selection.
-Treat it as a request for automatic *unit behavior* until clarified, not as
-an AI-controlled player.
+Use simulation-relative time, with match start as time zero. Schedule the
+first horse spawn for **t = 20 seconds**, then t = 21, 22, 23, and so forth:
+one additional horse per second while the match is active. No horse can
+spawn before 20 seconds, including when a game runs headlessly. The start
+delay and cadence should be data-driven (defaults: 20 and 1 seconds).
+Do not count lobby time toward the 20-second grace period, and do not use
+renderer or wall-clock timers.
+
+### Spawn idle horses at map center
+
+Spawn each horse owned by player 1 at the map center. After spawning,
+horses remain idle and may accumulate at the center; do not assign
+automatic paths, attack orders, gather locations or rally points.
+Check the interaction of overlapped spawning units with occupancy and
+pathfinding without routing them away prematurely.
+
+### Human Hunter selection and commands
+
+The multiplayer participant assigned player 1 can select one or more
+living, owned horses. Integrate an explicit AttackMove action with the
+existing input, command and pathfinding systems. AttackMove orders
+specify a destination; horses move towards it and engage eligible
+Builder-owned enemies encountered along the way. After a target dies or
+becomes invalid, a surviving horse resumes its order toward the
+original destination, then waits for another order. Normal Move orders
+travel without seeking enemies. None of these orders is issued on spawn.
+
+A selection with several horses issues an order to each selected unit.
+The authoritative simulation validates ownership; a Builder must never
+be able to move or attack-move a Hunter horse. The solo role-switch mode
+uses the same player-1 rules as a multiplayer Hunter assignment.
+
+### Tower combat and kill attribution
+
+Use an event-driven attack for completed towers with an arrow shot,
+damage and one definitive death transition per horse. Only credit a
+Hunter kill to the owning Builder of the tower dealing lethal damage.
+Simultaneous projectiles/events must not double count a death.
+The HUD displays only the local player's credited total.
 
 ## Open Decisions
 
-- What direct commands, if any, can the human Hunter issue to horses?
-- What target or route do automatically moving horses use on the initially
-  open 128x128 map, and do they damage Builders/towers in this milestone?
-- Exact tower range, rate of fire, damage, projectile travel time and
-  horse health should be configurable and agreed before implementation.
+- Exact horse/tower damage, attack ranges/rates, projectile travel time,
+  targeting priorities and health are balance parameters to establish
+  before their final implementation.
+- Determine the best occupancy approach for several idle horses standing
+  at one spawn point while retaining the requirement not to move until
+  given a human order.
+- Map the human AttackMove action into the current controller UX with a
+  minimal shortcut; a complete Hunter control panel is not required.
 
-These questions must not block implementing deterministic spawn cadence,
-tower damage, kill credit or a test harness.
+The 20-second grace period, one-per-second cadence, manual orders and lack
+of a gather/rally point are fixed product requirements.
