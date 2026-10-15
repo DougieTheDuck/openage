@@ -1,0 +1,23 @@
+schema: spec-driven
+context: |
+  This repository is the openage C++20 RTS engine. The FVD prototype runs with
+  run game --modpacks fvd; gameplay is in libopenage/gamestate/, input in
+  libopenage/input/, presentation in libopenage/presenter/, and FVD assets in
+  assets/fvd/. The simulation is event-driven and uses fixed-point coordinates
+  and time-indexed curves. The user-facing interface uses Qt Quick/QML.
+  FVD player 1 is reserved for an AI Hunter. Human Builders use slots 2-8,
+  giving at most seven human participants including the host.
+  Preserve the existing single-player FVD workflow as features are introduced.
+rules:
+  specs:
+    - Express observable, testable behavior with SHALL requirements and WHEN/THEN scenarios.
+    - Keep player 1 AI-owned and assign human Builders only to slots 2-8.
+    - Include invalid actions, cancellation, ownership, and multiplayer disagreement cases where relevant.
+  design:
+    - Reuse the existing event loop, movement/pathfinding, command queues, and QML interfaces.
+    - Keep simulation changes independent of rendering and input.
+    - Treat host authority, ownership validation, and synchronized outcomes as core networking concerns.
+    - Record architectural risks and alternatives before adding dependencies.
+  tasks:
+    - Include regression tests for deterministic game rules and interactive verification for GUI changes.
+    - Use make tests and make checkmerge where available, and report any unverified checks.
