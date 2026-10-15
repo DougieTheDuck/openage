@@ -99,7 +99,7 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			    and not entity->has_component(component::component_t::MOVE)) {
 				continue;
 			}
-			fvd->cancel_build(id);
+			fvd->cancel_build(gstate, id, time);
 		}
 		auto command_queue = std::dynamic_pointer_cast<component::CommandQueue>(
 			entity->get_component(component::component_t::COMMANDQUEUE));

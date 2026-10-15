@@ -105,6 +105,11 @@ def tests_cpp():
         "FVD plains, starting players and tower placement",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_construction",
+        "FVD Builder movement, timed construction and cancellation",
+        lambda env: env["has_assets"],
+    )
 
 
 def demos_cpp():

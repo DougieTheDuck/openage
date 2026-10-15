@@ -8,9 +8,9 @@
 
 ## 2. Movement, completion and interruption
 
-- [ ] 2.1 Reuse pathfinding to reach a valid adjacent stand location; test distant, adjacent and unreachable sites.
-- [ ] 2.2 Begin a positive configurable construction duration after arrival; create exactly one completed tower only at completion.
-- [ ] 2.3 Cancel and release the reservation on replacement orders, unreachable paths and Builder death; prove stale scheduled events cannot complete.
+- [x] 2.1 Reuse pathfinding to reach a valid adjacent stand location; test distant, adjacent and unreachable sites.
+- [x] 2.2 Begin a positive configurable construction duration after arrival; create exactly one completed tower only at completion.
+- [x] 2.3 Cancel and release the reservation on replacement orders, unreachable paths and Builder death; prove stale scheduled events cannot complete.
 
 ## 3. Developer flow and checks
 

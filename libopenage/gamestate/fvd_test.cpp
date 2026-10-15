@@ -225,12 +225,12 @@ void fvd_scenario() {
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{20, 20}), false);
 	TESTEQUALS(fvd->get_build_order(builders[4]) == nullptr, true);
 
-	TESTEQUALS(fvd->cancel_build(builders[2]), true);
+	TESTEQUALS(fvd->cancel_build(state, builders[2], time::TIME_ZERO), true);
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{12, 12}), false);
-	TESTEQUALS(fvd->cancel_build(builders[2]), false);
+	TESTEQUALS(fvd->cancel_build(state, builders[2], time::TIME_ZERO), false);
 	TESTEQUALS(place(5, {builders[5]}, {12, 12, 0}), true);
-	TESTEQUALS(fvd->cancel_build(builders[3]), true);
-	TESTEQUALS(fvd->cancel_build(builders[5]), true);
+	TESTEQUALS(fvd->cancel_build(state, builders[3], time::TIME_ZERO), true);
+	TESTEQUALS(fvd->cancel_build(state, builders[5], time::TIME_ZERO), true);
 	TESTEQUALS(state->get_game_entities().size(), 7);
 
 	event::SpawnEntityHandler spawner{loop, entities};
@@ -243,5 +243,135 @@ void fvd_scenario() {
 	auto duration = system::Move::move_default(
 		state->get_game_entity(builders[2]), state, destination, time::TIME_ZERO);
 	TESTEQUALS(builder_pos->get_positions().get(duration), destination);
+}
+
+void fvd_construction() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+
+	std::array<entity_id_t, 9> builders{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		builders.at(ownership->get_owners().get(time::TIME_ZERO)) = id;
+	}
+	auto t = [](int seconds) {
+		return time::time_t::from_int(seconds);
+	};
+	auto build = [&](player_id_t owner, const coord::phys3 &tile, int seconds) {
+		return fvd->request_build(state, owner, {builders.at(owner)}, tile, t(seconds));
+	};
+
+	// An adjacent Builder starts building at once but cannot spawn a
+	// functional tower before the configured three-second duration.
+	TESTEQUALS(build(2, {61, 66, 0}, 0), true);
+	TESTEQUALS(fvd->is_tile_reserved({61, 66}), true);
+	TESTEQUALS(state->get_game_entities().size(), 7);
+	loop->reach_time(t(2), state);
+	TESTEQUALS(state->get_game_entities().size(), 7);
+	loop->reach_time(t(3), state);
+	TESTEQUALS(state->get_game_entities().size(), 8);
+	TESTEQUALS(fvd->is_tile_reserved({61, 66}), false);
+	TESTEQUALS(fvd->get_build_order(builders[2]) == nullptr, true);
+	bool completed = false;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			auto pos = std::dynamic_pointer_cast<component::Position>(
+				entity->get_component(component::component_t::POSITION));
+			if (pos->get_positions().get(t(3)).to_tile() == coord::tile{61, 66}) {
+				auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+					entity->get_component(component::component_t::OWNERSHIP));
+				TESTEQUALS(ownership->get_owners().get(t(3)), player_id_t{2});
+				completed = true;
+			}
+		}
+	}
+	TESTEQUALS(completed, true);
+
+	// Distant construction must travel first and then finish.
+	TESTEQUALS(build(3, {75, 75, 0}, 4), true);
+	auto moving = state->get_game_entity(builders[3]);
+	auto position = std::dynamic_pointer_cast<component::Position>(
+		moving->get_component(component::component_t::POSITION));
+	auto start = position->get_positions().get(t(4));
+	TESTEQUALS(position->get_positions().get(t(5)) != start, true);
+	loop->reach_time(t(5), state);
+	TESTEQUALS(state->get_game_entities().size(), 8);
+	loop->reach_time(t(30), state);
+	TESTEQUALS(fvd->is_tile_reserved({75, 75}), false);
+	TESTEQUALS(state->get_game_entities().size(), 9);
+
+	// Issuing a different command cancels the work, truncates the old
+	// movement curve, and makes scheduled completion a no-op.
+	TESTEQUALS(build(4, {90, 90, 0}, 31), true);
+	event::SendCommandHandler commander;
+	commander.invoke(*loop, nullptr, state, t(32),
+	                 {{"type", component::command::command_t::MOVE},
+	                  {"owner", player_id_t{4}},
+	                  {"entity_ids", std::vector<entity_id_t>{builders[4]}},
+	                  {"target", coord::phys3{70, 70, 0}}});
+	TESTEQUALS(fvd->is_tile_reserved({90, 90}), false);
+	TESTEQUALS(fvd->get_build_order(builders[4]) == nullptr, true);
+	loop->reach_time(t(100), state);
+	TESTEQUALS(state->get_game_entities().size(), 9);
+
+	// A Builder who dies during travel does not complete construction.
+	TESTEQUALS(build(5, {95, 95, 0}, 101), true);
+	auto victim = state->get_game_entity(builders[5]);
+	auto live = std::dynamic_pointer_cast<component::Live>(
+		victim->get_component(component::component_t::LIVE));
+	live->set_attribute(t(102), "fvd.data.entities.Health", 0);
+	loop->reach_time(t(150), state);
+	TESTEQUALS(fvd->is_tile_reserved({95, 95}), false);
+	TESTEQUALS(fvd->get_build_order(builders[5]) == nullptr, true);
+	TESTEQUALS(state->get_game_entities().size(), 9);
+
+	// A newer order supersedes a previous construction. Its old event
+	// cannot spawn a tower even once the previous deadline passes.
+	TESTEQUALS(build(6, {83, 83, 0}, 151), true);
+	auto original = fvd->get_build_order(builders[6])->get_id();
+	TESTEQUALS(build(6, {84, 84, 0}, 152), true);
+	TESTEQUALS(fvd->get_build_order(builders[6])->get_id() != original, true);
+	TESTEQUALS(fvd->is_tile_reserved({83, 83}), false);
+	loop->reach_time(t(210), state);
+	TESTEQUALS(fvd->is_tile_reserved({84, 84}), false);
+
+	TESTEQUALS(state->get_game_entities().size(), 10);
+
+	// Fully surrounded sites have no reachable, vacant adjacent stand tile.
+	const std::array<coord::tile_delta, 8> neighbors{{
+		{-1, 0}, {1, 0}, {0, -1}, {0, 1},
+		{-1, -1}, {-1, 1}, {1, -1}, {1, 1},
+	}};
+	for (const auto &delta : neighbors) {
+		coord::tile tile{110 + delta.ne, 110 + delta.se};
+		entities->spawn_game_entity(loop, state, 2, "fvd.data.entities.Tower",
+		                           tile.to_phys3_center(), t(211));
+	}
+	TESTEQUALS(build(7, {110, 110, 0}, 211), false);
+	TESTEQUALS(fvd->is_tile_reserved({110, 110}), false);
+	TESTEQUALS(state->get_game_entities().size(), 18);
+
+	// A dead Builder with a construction already underway cannot finish it.
+	TESTEQUALS(build(7, {66, 66, 0}, 212), true);
+	auto final_builder = state->get_game_entity(builders[7]);
+	auto final_live = std::dynamic_pointer_cast<component::Live>(
+		final_builder->get_component(component::component_t::LIVE));
+	loop->reach_time(t(213), state);
+	final_live->set_attribute(t(213), "fvd.data.entities.Health", 0);
+	loop->reach_time(t(220), state);
+	TESTEQUALS(fvd->is_tile_reserved({66, 66}), false);
+	TESTEQUALS(state->get_game_entities().size(), 18);
 }
 }
