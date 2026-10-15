@@ -2,16 +2,20 @@
 
 ## Target experience
 
-A host and at least one remote friend can join an FVD lobby, occupy distinct
-Builder slots (2–8), and start a shared match. Player 1 is always an AI Hunter
-and is never joinable. Each human can select and move their own Builder, choose
-a tower from the UI, place an order, watch the Builder walk to an adjacent tile
-and construct it, defend against approaching Hunter units, and see their own
-kill count. All players see compatible game state and scores.
+A host and at least one remote friend (for a total of 8 players max) can join an FVD lobby and start a shared match. 
+Player 1 is always the Hunter and doesn't get to build structures. 
+Player numbers are assigned at random to players from the lobby when the game is 
+started but the lobby host has 50 percent less chance to get the Hunter role.
 
-A lobby supports **2–7 human Builder players, host included**. Eight total
-player IDs exist only because ID 1 belongs to the AI Hunter. Solo FVD remains
-available as a development/test mode.
+### Gameplay
+Each builder can select and move their own Builder, choose
+a tower from the UI, place an order to build it on any free tile, and watch the 
+Builder walk to an adjacent tile and construct it. Towers defend against approaching 
+Hunter units. All players see compatible game state and scores but only see their kill count,
+which is incremented for every hunter unit one of their towers kills.
+
+Solo FVD remains available as a development/test mode where a hotkey switches 
+control between player 1 and player 2 (there is no ai).
 
 ## Observed baseline (FVD branch, 2026-10-15)
 
@@ -61,8 +65,9 @@ over the menu do not unintentionally select or command the world.
 
 ### 3. Hunter pressure, tower combat, and kill credit — next proposal
 
-- Player 1 AI spawns and steers basic Hunter attackers from defined locations.
-- Completed towers autonomously target enemies, fire, inflict damage and kill.
+- Player 1 AI spawns and steers basic Hunter attackers from the center of the map.
+- One horse unit is spawned per second
+- Completed towers autonomously target enemies, fire arrows, inflict damage and kill.
 - Credited kills belong to the **owner of the tower that dealt lethal damage**;
   no double-credit, including near-simultaneous attacks.
 - Show the current human player's kill total in the HUD; totals persist for
@@ -76,13 +81,13 @@ not a prerequisite for the first multiplayer build.
 
 - Host a session, join via address/port, display participant names and
   unique Builder slots, and let participants mark ready.
-- Start only when the host chooses Start and 2–7 human Builder participants
-  have valid slots and are ready. Slot 1 is AI-only.
+- Start only when the host chooses Start
 - Assign only one human per Builder slot; reject incompatible clients, full
   games and attempts to claim the Hunter slot.
-- Starting a match fixes each human's controlled slot (no 1–8 switching).
+- Starting a match selects a random player to be hunter (player 1) with less chance of the host being hunter.
 - First transport target: direct IP/LAN; account services, NAT traversal,
   public matchmaking, spectators and mid-match joining are out of scope.
+- Cross platform network implementation is a bonus, but windows only is required.
 
 **Done when:** two machines can connect, agree on slots and start together.
 
@@ -128,5 +133,6 @@ system or online account dependency is required.
 - Multiplayer integration check on two separate processes/machines and then
   with more players: conflicting orders, disconnect, concurrent attacks,
   state consistency and restart/exit.
-- Follow repository instructions: make tests, make checkmerge and report any
+- Follow repository instructions: make tests and report any
   checks blocked by development dependencies or runtime assets.
+- This project is a separate game fork, so don't worry about upstream compatibility or merges
