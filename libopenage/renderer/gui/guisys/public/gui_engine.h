@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <QObject>
+#include <QString>
 
 // QT_FORWARD_DECLARE_CLASS(QQuickWindow)
 
@@ -21,6 +22,9 @@ class GuiQmlEngine {
 public:
 	explicit GuiQmlEngine(std::shared_ptr<GuiRenderer> renderer);
 	~GuiQmlEngine();
+
+	/** Expose a QObject to QML without tying the GUI renderer to game logic. */
+	void set_context_property(const QString &name, QObject *object);
 
 private:
 	friend class GuiQmlEngineImpl;

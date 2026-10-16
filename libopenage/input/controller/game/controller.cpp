@@ -41,6 +41,7 @@ void Controller::set_control(size_t faction_id) {
 	if (this->controlled_factions.find(faction_id) != this->controlled_factions.end()) {
 		this->active_faction_id = faction_id;
 		this->selected.clear();
+		this->placing_tower = false;
 	}
 }
 
@@ -62,6 +63,26 @@ void Controller::set_selected(const std::vector<gamestate::entity_id_t> ids) {
 	log::log(DBG << "Selected " << ids.size() << " entities");
 
 	this->selected = ids;
+	this->placing_tower = false;
+}
+
+bool Controller::begin_tower_placement() {
+	std::unique_lock lock{this->mutex};
+	if (this->active_faction_id < 2 or this->selected.size() != 1) {
+		return false;
+	}
+	this->placing_tower = true;
+	return true;
+}
+
+void Controller::cancel_tower_placement() {
+	std::unique_lock lock{this->mutex};
+	this->placing_tower = false;
+}
+
+bool Controller::is_tower_placement_active() const {
+	std::unique_lock lock{this->mutex};
+	return this->placing_tower;
 }
 
 bool Controller::process(const event_arguments &ev_args, const std::shared_ptr<BindingContext> &ctx) {
@@ -112,8 +133,9 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 	                const std::function<void(
 		                const coord::input &,
 		                const std::function<void(std::optional<gamestate::entity_id_t>)> &)> &pick_entity) {
-	binding_func_t create_entity_event{[&](const event_arguments &args,
+	binding_func_t create_entity_event{[simulation, time_loop, camera](const event_arguments &args,
 	                                       const std::shared_ptr<Controller> controller) {
+		controller->cancel_tower_placement();
 		auto mouse_pos = args.mouse.to_phys3(camera);
 		auto state = simulation->get_game()->get_state();
 		if (state->get_fvd()) {
@@ -150,6 +172,21 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 
 	auto fvd = simulation->get_game()->get_state()->get_fvd();
 	if (fvd) {
+		binding_func_t start_placement{[](const event_arguments &,
+		                                 const std::shared_ptr<Controller> controller) {
+			controller->begin_tower_placement();
+		}};
+		binding_func_t cancel_placement{[](const event_arguments &,
+		                                  const std::shared_ptr<Controller> controller) {
+			controller->cancel_tower_placement();
+		}};
+		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_B,
+		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+		          binding_action{forward_action_t::CLEAR, start_placement});
+		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_Escape,
+		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+		          binding_action{forward_action_t::CLEAR, cancel_placement});
+
 		for (size_t id = 1; id <= fvd->get_player_count(); ++id) {
 			binding_func_t switch_player{[id, camera, fvd](const event_arguments &,
 			                                               const std::shared_ptr<Controller> controller) {
@@ -163,8 +200,12 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		}
 	}
 
-	binding_func_t move_entity{[&](const event_arguments &args,
+	binding_func_t move_entity{[simulation, time_loop, camera](const event_arguments &args,
 	                               const std::shared_ptr<Controller> controller) {
+		if (controller->is_tower_placement_active()) {
+			controller->cancel_tower_placement();
+			return;
+		}
 		auto mouse_pos = args.mouse.to_phys3(camera);
 		event::EventHandler::param_map::map_t params{
 			{"type", gamestate::component::command::command_t::MOVE},
@@ -190,7 +231,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 
 	ctx->bind(ev_mouse_rmb, move_entity_action);
 
-	binding_func_t init_drag_selection{[&](const event_arguments &args,
+	binding_func_t init_drag_selection{[](const event_arguments &args,
 	                                       const std::shared_ptr<Controller> controller) {
 		controller->set_drag_select_start(args.mouse);
 	}};
@@ -205,8 +246,13 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 	ctx->bind(ev_mouse_lmb_press, init_drag_selection_action);
 
 	binding_func_t drag_selection{
-		[&, pick_entity](const event_arguments &args,
+		[simulation, time_loop, camera, pick_entity, create_entity_event](const event_arguments &args,
 	        const std::shared_ptr<Controller> controller) {
+			if (controller->is_tower_placement_active()) {
+				controller->reset_drag_select();
+				create_entity_event(args, controller);
+				return;
+			}
 			auto drag_start = controller->get_drag_select_start();
 			auto drag_delta = args.mouse - drag_start;
 			auto drag_threshold = QGuiApplication::styleHints()->startDragDistance();

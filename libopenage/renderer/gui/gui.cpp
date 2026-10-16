@@ -126,6 +126,10 @@ void GUI::resize(size_t width, size_t height) {
 }
 
 
+void GUI::set_context_property(const QString &name, QObject *object) {
+	this->engine->set_context_property(name, object);
+}
+
 void GUI::render() {
 	// this->render_updater.process_callbacks();
 

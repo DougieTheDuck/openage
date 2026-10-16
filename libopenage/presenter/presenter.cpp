@@ -3,6 +3,10 @@
 #include "presenter.h"
 
 #include <eigen3/Eigen/Dense>
+#include <QEvent>
+#include <QMouseEvent>
+#include <QQmlPropertyMap>
+#include <QVariant>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -22,6 +26,7 @@
 #include "log/log.h"
 #include "renderer/camera/camera.h"
 #include "renderer/gui/gui.h"
+#include "renderer/gui/guisys/public/gui_input.h"
 #include "renderer/gui/integration/public/gui_application_with_logger.h"
 #include "renderer/render_factory.h"
 #include "renderer/render_pass.h"
@@ -64,7 +69,6 @@ void Presenter::run(const renderer::window_settings window_settings) {
 			util::StallProfiler profile{"presenter.process_events"};
 			this->gui_app->process_events();
 		}
-		// TODO: pass button presses and events from GUI to controller
 
 		{
 			util::StallProfiler profile{"presenter.render"};
@@ -265,10 +269,27 @@ void Presenter::init_input() {
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_button_callback([&](const QMouseEvent &ev) {
+		// Qt Quick receives the event first. The left HUD panel is
+		// interactive and must not also command units in the world.
+		if (this->gui) {
+			this->gui->get_input_handler()->process(
+				std::shared_ptr<QEvent>{ev.clone()});
+		}
+		if (this->fvd_hud_state) {
+			auto window_size = this->window->get_size();
+			if (ev.position().x() < 284
+			    and ev.position().y() > static_cast<double>(window_size[1]) - 148) {
+				return;
+			}
+		}
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_move_callback([&](const QMouseEvent &ev) {
 		this->input_manager->set_mouse(ev.position().x(), ev.position().y());
+		if (this->gui) {
+			this->gui->get_input_handler()->process(
+				std::shared_ptr<QEvent>{ev.clone()});
+		}
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_wheel_callback([&](const QWheelEvent &ev) {
@@ -296,6 +317,15 @@ void Presenter::init_input() {
 					input::input_action{input::input_action_t::GAME});
 			}
 			game_controller = std::make_shared<input::game::Controller>(players, 2);
+
+			// The global input context must forward placement keys to
+			// the FVD-specific game binding context.
+			for (auto key : {Qt::Key_B, Qt::Key_Escape}) {
+				input_ctx->bind(
+					input::Event{input::event_class::KEYBOARD, key,
+					             Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+					input::input_action{input::input_action_t::GAME});
+			}
 		}
 		auto engine_context = std::make_shared<input::game::BindingContext>();
 		input::game::setup_defaults(
@@ -316,6 +346,30 @@ void Presenter::init_input() {
 		this->input_manager->set_game_controller(game_controller);
 		this->game_controller = game_controller;
 		input_ctx->set_game_bindings(engine_context);
+		if (fvd and this->gui) {
+			this->fvd_hud_state = std::make_shared<QQmlPropertyMap>();
+			this->fvd_hud_state->insert("controlled", 2);
+			this->fvd_hud_state->insert("selection", QString{"No unit selected"});
+			this->fvd_hud_state->insert("canBuild", false);
+			this->fvd_hud_state->insert("placing", false);
+			this->fvd_hud_state->insert("kills", 0);
+			this->fvd_hud_state->insert("action", QString{});
+			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
+			QObject::connect(this->fvd_hud_state.get(), &QQmlPropertyMap::valueChanged,
+			                 [hud = this->fvd_hud_state.get(), game_controller](
+			                     const QString &key, const QVariant &value) {
+				                 if (key != "action") {
+					                 return;
+				                 }
+				                 if (value.toString() == "build") {
+					                 game_controller->begin_tower_placement();
+				                 }
+				                 else if (value.toString() == "cancel") {
+					                 game_controller->cancel_tower_placement();
+				                 }
+				                 hud->insert("action", QString{});
+			                 });
+		}
 	}
 
 	// attach GUI if it's initialized
@@ -388,7 +442,20 @@ void Presenter::render() {
 		this->world_renderer->update();
 	}
 	if (this->game_controller) {
-		this->hud_renderer->set_selected(this->game_controller->get_selected());
+		auto selected = this->game_controller->get_selected();
+		this->hud_renderer->set_selected(selected);
+		if (this->fvd_hud_state) {
+			auto controlled = this->game_controller->get_controlled();
+			this->fvd_hud_state->insert("controlled", static_cast<int>(controlled));
+			this->fvd_hud_state->insert(
+				"selection", selected.empty()
+				    ? QString{"No unit selected"}
+				    : QString{"%1 unit selected"}.arg(static_cast<int>(selected.size())));
+			this->fvd_hud_state->insert(
+				"canBuild", controlled >= 2 and selected.size() == 1);
+			this->fvd_hud_state->insert(
+				"placing", this->game_controller->is_tower_placement_active());
+		}
 	}
 	{
 		util::StallProfiler profile{"render.hud_update"};

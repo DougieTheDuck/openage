@@ -8,6 +8,9 @@
 
 #include "renderer/gui/guisys/public/gui_subtree.h"
 
+class QObject;
+class QString;
+
 namespace qtgui {
 class GuiInput;
 class GuiRenderer;
@@ -67,6 +70,9 @@ public:
 	 * Render the GUI texture.
 	 */
 	void render();
+
+	/** Provide a presenter-owned state and action bridge to QML. */
+	void set_context_property(const QString &name, QObject *object);
 
 private:
 	/**
