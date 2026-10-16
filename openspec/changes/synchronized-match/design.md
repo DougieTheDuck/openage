@@ -25,13 +25,42 @@ one per second. Clients must not schedule independent horse spawns.
 
 ## Investigation before implementation
 
-- Choose a Windows-compatible transport and packet framing/serialization.
 - Prove loopback command -> host simulation -> remote observable state on
   two distinct processes, before integrating all combat and HUD systems.
-- Define state bootstrap, asset/version compatibility, ordering/reliability,
-  input rate limits, replay protection and disconnect handling.
+- Define input rate limits and disconnect handling.
 - Distinguish disconnect before and after game start; decide whether
   abandoned Builder entities persist or matches pause/end.
+
+## Transport and protocol
+
+Use direct TCP connections through native Winsock for the required Windows
+implementation.
+TCP supplies ordered, reliable lobby, command and replication delivery without
+adding a dependency.
+The networking subsystem owns sockets and framing and remains independent from
+Qt Quick and the renderer.
+
+Frames use a fixed 32-byte network-order header containing `FVDN` magic,
+protocol major/minor, message type, flags, payload length, session ID and
+per-direction sequence number.
+Payloads are capped at 1 MiB.
+See [the networking documentation](../../../doc/code/network/README.md) for the
+wire layout and message set.
+
+The host assigns a random nonzero session ID when accepting a compatible
+`ClientHello` and binds the connection to its lobby participant and later
+player assignment.
+Protocol major and gameplay asset manifests must match; minor compatibility is
+explicitly advertised.
+Sequence numbers reject repeated or regressing messages after the handshake.
+
+Clients submit player-independent command intents and receive a result for each
+intent.
+The host stamps accepted work with authoritative simulation time and a
+monotonic world revision.
+Clients bootstrap from a full snapshot, apply only contiguous ordered deltas,
+and request another snapshot after a revision gap.
+The first version uses no client-side prediction.
 
 ## Risks
 

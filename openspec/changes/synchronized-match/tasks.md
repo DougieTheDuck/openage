@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] 1.1 Evaluate Windows-compatible transport and define a versioned protocol with sessions, command framing and replication.
+- [x] 1.1 Evaluate Windows-compatible transport and define a versioned protocol with sessions, command framing and replication.
 - [ ] 1.2 Prove loopback and two-process movement command-to-authoritative-state synchronization.
 - [ ] 1.3 Bind each connection to its lobby-assigned Hunter/Builder identity; reject spoofed Builder orders and Hunter horse Move/AttackMove attempts.
 - [ ] 1.4 Replicate initial map/players, movement, building orders, tile reservations and completed towers.

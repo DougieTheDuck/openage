@@ -23,7 +23,7 @@ All of them need to be revisited to implement the goal architecture.
 * [Coordinate system](coordinate-systems.md)
 * [Converter](converter/)
 * [Input system](input/)
-* Networking
+* [Networking](network/)
 * [Game data database](/doc/nyan/)
 * [Rendering](renderer/)
 * [Simulation](game_simulation/)
