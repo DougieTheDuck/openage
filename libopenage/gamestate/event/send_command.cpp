@@ -2,6 +2,7 @@
 
 #include "send_command.h"
 
+#include <functional>
 #include <vector>
 
 #include "coord/phys.h"
@@ -61,6 +62,7 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 	auto command_type = params.get("type", component::command::command_t::NONE);
 	std::vector<gamestate::entity_id_t> ids = params.get("entity_ids",
 	                                                     std::vector<gamestate::entity_id_t>{});
+	auto result_cb = params.get("result_cb", std::function<void(bool)>{});
 	auto fvd = gstate->get_fvd();
 	if (fvd) {
 		if (not params.check_type<player_id_t>("owner")) {
@@ -71,16 +73,20 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			if (not params.check_type<coord::phys3>("target")) {
 				throw Error{ERR << "BuildTower requires a target position"};
 			}
-			fvd->request_build(
+			auto accepted = fvd->request_build(
 				gstate,
 				owner,
 				ids,
 				params.get<coord::phys3>("target", coord::phys3{0, 0, 0}),
 				time);
+			if (result_cb) {
+				result_cb(accepted);
+			}
 			return;
 		}
 	}
 
+	bool accepted = false;
 	for (auto id : ids) {
 		auto found = gstate->get_game_entities().find(id);
 		if (fvd and found == gstate->get_game_entities().end()) {
@@ -112,6 +118,7 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 		switch (command_type) {
 		case component::command::command_t::IDLE:
 			command_queue->add_command(time, std::make_shared<component::command::IdleCommand>());
+			accepted = true;
 			break;
 		case component::command::command_t::MOVE:
 			command_queue->add_command(
@@ -119,10 +126,14 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 				std::make_shared<component::command::MoveCommand>(
 					params.get("target",
 			                   coord::phys3{0, 0, 0})));
+			accepted = true;
 			break;
 		default:
 			break;
 		}
+	}
+	if (result_cb) {
+		result_cb(accepted);
 	}
 }
 

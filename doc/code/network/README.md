@@ -45,6 +45,50 @@ After acceptance, each direction starts at sequence one and the receiver rejects
 The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping` and `Pong`.
 Payload schemas use fixed-width network-order integers, length-prefixed UTF-8 strings and length-prefixed arrays.
 
+### Command intent payload
+
+The connection supplies player identity, so the payload cannot claim an owner.
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 8 | Client-generated command ID |
+| 8 | 2 | Command kind: move `1`, attack-move `2` or build-tower `3` |
+| 10 | 2 | Flags, currently zero |
+| 12 | 4 | Entity count, at most 1,024 |
+| 16 | `8 * count` | Entity IDs |
+| `16 + 8 * count` | 8 | Target northeast coordinate |
+| `24 + 8 * count` | 8 | Target southeast coordinate |
+| `32 + 8 * count` | 8 | Target height coordinate |
+
+Coordinates are signed Q16.16 fixed-point values serialized from their raw 64-bit representation.
+
+### Command result payload
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 8 | Client-generated command ID |
+| 8 | 2 | Status: accepted `1` or rejected `2` |
+| 10 | 2 | Flags, currently zero |
+| 12 | 8 | Authoritative world revision |
+| 20 | 8 | Authoritative simulation time as its raw signed fixed-point value |
+| 28 | 4 | Rejection-reason byte length, at most 4,096 |
+| 32 | variable | UTF-8 rejection reason |
+
+### World state payload
+
+`WorldSnapshot` and `WorldDelta` use the same position payload.
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 8 | Base world revision |
+| 8 | 8 | World revision carried by this message |
+| 16 | 8 | Authoritative simulation time as its raw signed fixed-point value |
+| 24 | 4 | Position count, at most 32,767 |
+| 28 | `32 * count` | Position records |
+
+Each position record contains an 8-byte entity ID followed by its three signed Q16.16 coordinates.
+The position-count limit keeps the complete payload within the 1 MiB frame limit.
+
 ## Compatibility handshake
 
 `ClientHello` supplies the participant name, protocol version, game build version and an FVD asset manifest digest.

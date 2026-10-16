@@ -80,8 +80,13 @@ def tests_cpp():
     yield "openage::datastructure::tests::constexpr_map"
     yield "openage::datastructure::tests::pairing_heap"
     yield "openage::job::tests::test_job_manager"
+    yield "openage::network::tests::messages"
     yield "openage::network::tests::protocol"
     yield "openage::network::tests::transport"
+    yield (
+        "openage::network::tests::fvd_loopback",
+        "FVD movement intent and authoritative state over loopback TCP",
+    )
     yield "openage::path::tests::path_node", "pathfinding"
     yield "openage::path::tests::flow_field", "pathfinding"
     yield "openage::pyinterface::tests::pyobject"
