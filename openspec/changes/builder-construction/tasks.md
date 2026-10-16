@@ -14,8 +14,8 @@
 
 ## 3. Developer flow and checks
 
-- [ ] 3.1 Retarget Ctrl-left-click to BuildTower for the existing solo mode (Hunter/Builder hotkey role switching stays available).
-- [ ] 3.2 Update FVD gameplay documentation to describe travel, completion and cancellation.
+- [x] 3.1 Retarget Ctrl-left-click to BuildTower for the existing solo mode (Hunter/Builder hotkey role switching stays available).
+- [x] 3.2 Update FVD gameplay documentation to describe travel, completion and cancellation.
 - [ ] 3.3 Run focused simulation tests, make tests and available quality checks; visually verify in FVD where a graphics runtime is available.
 
 ## Follow-up

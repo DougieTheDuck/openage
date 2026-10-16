@@ -100,6 +100,7 @@ def tests_cpp():
     yield "openage::curve::tests::container"
     yield "openage::curve::tests::curve_types"
     yield "openage::event::tests::eventtrigger"
+    yield "openage::input::game::tests::tower_placement_mode"
     yield (
         "openage::gamestate::tests::fvd_scenario",
         "FVD plains, starting players and tower placement",

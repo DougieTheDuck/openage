@@ -10,6 +10,8 @@
 #include "util/path.h"
 
 
+class QQmlPropertyMap;
+
 namespace qtgui {
 class GuiApplication;
 }
@@ -188,6 +190,9 @@ protected:
 	 * Qt-based GUI for interface.
 	 */
 	std::shared_ptr<renderer::gui::GUI> gui;
+
+	/** Qt bridge for FVD player HUD state and build-button actions. */
+	std::shared_ptr<QQmlPropertyMap> fvd_hud_state;
 
 	/**
 	 * Camera manager for camera controls.

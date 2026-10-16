@@ -71,6 +71,15 @@ public:
 	 */
 	void set_selected(const std::vector<gamestate::entity_id_t> ids);
 
+	/** Enter FVD tower placement mode when a Builder has been selected. */
+	bool begin_tower_placement();
+
+	/** Cancel a tower placement without issuing a world command. */
+	void cancel_tower_placement();
+
+	/** Whether the next normal map click should place a tower. */
+	bool is_tower_placement_active() const;
+
 	/**
 	 * Process an input event from the input manager.
 	 *
@@ -115,6 +124,9 @@ private:
 	 * Currently selected entities.
 	 */
 	std::vector<gamestate::entity_id_t> selected;
+
+	/** Controller-local input mode, not authoritative simulation state. */
+	bool placing_tower = false;
 
 	/**
 	 * Start position of a drag selection.

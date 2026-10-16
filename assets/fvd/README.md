@@ -24,7 +24,12 @@ Hunter unit spawning is not implemented yet.
 
 The local view initially controls player 2.
 Press keys 1 through 8 to switch the controlled player and return the camera to the common start location.
-Drag with the left mouse button to select your Builder, right-click to move it, and Ctrl-left-click to submit a tower build order for a vacant tile.
+Drag with the left mouse button to select your Builder and right-click to move it.
+The lower-left HUD displays the controlled player and selection.
+Select a Builder, click **Build Tower** (or press **B**), then click a map tile to place a tower order.
+Right-click or press **Escape** while choosing a tile to cancel placement without moving the Builder.
+The original Ctrl-left-click build shortcut remains available for development.
+Valid/invalid footprint previews and construction progress are not yet displayed in the HUD.
 The simulation validates ownership and reserves the target tile, so the Hunter and other Builders cannot claim the same site.
 The Builder walks to an available neighboring tile and constructs for the configured duration.
 A foundation marker appears as soon as the order reserves the intended tile, then the tower replaces it when construction starts.
