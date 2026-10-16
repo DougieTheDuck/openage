@@ -57,3 +57,30 @@ commands.
 #### Scenario: Build button clicked
 - **WHEN** the user clicks a Build Tower HUD control
 - **THEN** the button action occurs without a world click or order
+
+### Requirement: Selected towers show information, not construction actions
+
+The HUD SHALL distinguish a selected Tower from a selected Builder using
+the entity type reported by the simulation. Only a selected owned Builder
+SHALL enable tower construction, whether activated by QML, B or Ctrl-click.
+A selected tower SHALL display current HP and its configured damage and
+armour when available; unavailable combat attributes SHALL be labelled
+as not defined rather than guessed.
+
+#### Scenario: Tower is selected
+- **WHEN** the current player selects an owned Tower
+- **THEN** the HUD shows the Tower title and HP, damage and armour fields,
+  and no Build Tower action is offered
+
+#### Scenario: Tower selected and build hotkey pressed
+- **WHEN** the current player has a Tower selected and presses B or Ctrl-clicks
+- **THEN** no Builder construction order is issued and placement mode stays off
+
+#### Scenario: Builder replaces Tower selection
+- **WHEN** an owned Builder is selected after a Tower
+- **THEN** the Build Tower action becomes available and the Tower-only
+  damage and armour fields are hidden
+
+#### Scenario: Health changes after selection
+- **WHEN** a selected Tower's health changes during construction or combat
+- **THEN** the HUD shows the updated current health and maximum health

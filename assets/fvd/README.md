@@ -25,7 +25,10 @@ Hunter unit spawning is not implemented yet.
 The local view initially controls player 2.
 Press keys 1 through 8 to switch the controlled player and return the camera to the common start location.
 Drag with the left mouse button to select your Builder and right-click to move it.
-The lower-left HUD displays the controlled player and selection.
+The lower-left HUD displays the controlled player and selected entity.
+Selecting a tower shows its live HP and its damage and armour fields instead of a build action.
+Damage and armour currently read "Not defined" because tower combat data has not yet been added.
+Only a selected Builder can enter tower placement mode, including when using the B key or Ctrl-left-click shortcut.
 Select a Builder, click **Build Tower** (or press **B**), then click a map tile to place a tower order.
 Right-click or press **Escape** while choosing a tile to cancel placement without moving the Builder.
 The original Ctrl-left-click build shortcut remains available for development.

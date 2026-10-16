@@ -45,6 +45,10 @@ void GameEntity::set_render_entity(const std::shared_ptr<renderer::world::Render
 	this->render_entity = entity;
 }
 
+const std::shared_ptr<renderer::world::RenderEntity> &GameEntity::get_render_entity() const {
+	return this->render_entity;
+}
+
 void GameEntity::set_manager(const std::shared_ptr<GameEntityManager> &manager) {
 	this->manager = manager;
 }
