@@ -996,35 +996,57 @@ void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	                   time + this->horse_spawn_interval);
 }
 
-bool FVD::can_command_units(const std::shared_ptr<GameState> &state,
-                            player_id_t owner, const std::vector<entity_id_t> &ids,
-                            const time::time_t &time) const {
+std::optional<std::vector<entity_id_t>> FVD::resolve_command_units(
+	const std::shared_ptr<GameState> &state, player_id_t owner,
+	const std::vector<entity_id_t> &ids, const time::time_t &time) const {
 	if (owner < 1 or owner > this->player_count or ids.empty() or ids.size() > 1024) {
-		return false;
+		return std::nullopt;
 	}
 	std::unordered_set<entity_id_t> seen;
+	std::vector<entity_id_t> survivors;
+	survivors.reserve(ids.size());
 	for (auto id : ids) {
 		if (not seen.insert(id).second) {
-			return false;
+			return std::nullopt;
+		}
+		// Only a horse known to have died can be pruned from an old
+		// selection. An unknown or forged entity ID must still fail.
+		if (owner == 1 and this->dead_horses.contains(id)) {
+			continue;
 		}
 		auto found = state->get_game_entities().find(id);
 		if (found == state->get_game_entities().end()) {
-			return false;
+			return std::nullopt;
 		}
 		auto entity = found->second;
 		if (entity->get_definition() != (owner == 1 ? this->horse : this->builder)
 		    or not entity->has_component(component::component_t::MOVE)
-		    or not entity->has_component(component::component_t::OWNERSHIP)
-		    or not builder_alive(entity, time)) {
-			return false;
+		    or not entity->has_component(component::component_t::OWNERSHIP)) {
+			return std::nullopt;
 		}
 		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
 		if (ownership->get_owners().get(time) != owner) {
-			return false;
+			return std::nullopt;
 		}
+		if (not builder_alive(entity, time)) {
+			if (owner == 1) {
+				continue;
+			}
+			return std::nullopt;
+		}
+		survivors.push_back(id);
 	}
-	return true;
+	if (survivors.empty()) {
+		return std::nullopt;
+	}
+	return survivors;
+}
+
+bool FVD::can_command_units(const std::shared_ptr<GameState> &state,
+                            player_id_t owner, const std::vector<entity_id_t> &ids,
+                            const time::time_t &time) const {
+	return this->resolve_command_units(state, owner, ids, time).has_value();
 }
 
 void FVD::cancel_attack_move(entity_id_t id) {
@@ -1034,15 +1056,18 @@ void FVD::cancel_attack_move(entity_id_t id) {
 bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
                             player_id_t owner, const std::vector<entity_id_t> &ids,
                             const coord::phys3 &destination, const time::time_t &time) {
-	if (owner != 1 or not this->can_command_units(state, owner, ids, time)
-	    or destination.ne < 0 or destination.se < 0
+	if (owner != 1 or destination.ne < 0 or destination.se < 0
 	    or destination.ne >= this->map_size or destination.se >= this->map_size
 	    or destination.up != 0) {
 		return false;
 	}
+	auto survivors = this->resolve_command_units(state, owner, ids, time);
+	if (not survivors) {
+		return false;
+	}
 	auto pathfinder = state->get_map()->get_pathfinder();
 	auto grid = state->get_map()->get_grid_id("fvd.data.terrain.Land");
-	for (auto id : ids) {
+	for (auto id : *survivors) {
 		auto entity = state->get_game_entity(id);
 		auto position = std::dynamic_pointer_cast<component::Position>(
 			entity->get_component(component::component_t::POSITION));
@@ -1052,7 +1077,7 @@ bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
 			return false;
 		}
 	}
-	auto ordered = ids;
+	auto ordered = *survivors;
 	std::sort(ordered.begin(), ordered.end());
 	for (auto id : ordered) {
 		auto entity = state->get_game_entity(id);

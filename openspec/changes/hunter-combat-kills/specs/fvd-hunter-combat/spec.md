@@ -70,7 +70,12 @@ selected living horses owned by that Hunter SHALL receive the orders.
 
 #### Scenario: Hunter attack-moves a group
 - **WHEN** the Hunter selects several horses and issues AttackMove to a target location
-- **THEN** each selected horse begins progressing toward the location under an AttackMove order
+- **THEN** each surviving selected horse begins progressing toward the location under an AttackMove order
+
+#### Scenario: A selected horse dies before the order is issued
+- **WHEN** a Hunter horse dies after it was selected but before the Hunter issues Move or AttackMove
+- **THEN** the dead horse is skipped and each remaining living selected Hunter horse receives the order
+- **AND** unknown IDs, foreign entities, duplicate IDs and selections containing no living horses are still rejected
 
 #### Scenario: Hunter orders ordinary movement
 - **WHEN** the Hunter commands Move to a destination
@@ -84,8 +89,11 @@ selected living horses owned by that Hunter SHALL receive the orders.
 
 An attack-moving horse SHALL attack eligible enemy Builder-owned entities
 encountered en route, then resume travel toward its original destination
-after the engagement. Reaching the destination SHALL leave it awaiting
-another Hunter order.
+after the engagement. The horse SHALL detect a completed enemy tower
+within three tiles during the journey or at the destination, pause its
+original route and move to an accessible melee position before attacking.
+Reaching the destination SHALL leave it stationary but alert for towers
+within three tiles until another Hunter order replaces the AttackMove.
 
 #### Scenario: Horse encounters an opponent
 - **WHEN** a horse under AttackMove encounters an eligible opposing unit or structure
@@ -95,9 +103,21 @@ another Hunter order.
 - **WHEN** an AttackMove target dies or is no longer eligible
 - **THEN** a surviving horse resumes travel toward its original destination
 
-#### Scenario: Horse reaches its destination
-- **WHEN** an attack-moving horse finishes moving to its destination
-- **THEN** it waits there for the next human-issued order
+#### Scenario: Horse encounters a tower while travelling
+- **WHEN** a horse on AttackMove passes within three tiles of a completed enemy tower
+- **THEN** it interrupts its original travel and approaches the tower to deal melee damage
+
+#### Scenario: Horse reaches its destination near a tower
+- **WHEN** a horse arrives at the AttackMove destination with a completed enemy tower within three tiles
+- **THEN** it approaches and attacks the tower even though its original travel has ended
+
+#### Scenario: Horse reaches its destination without an enemy tower
+- **WHEN** a horse finishes AttackMove with no tower within three tiles
+- **THEN** it remains stationary, watches for nearby towers, and awaits another Hunter command
+
+#### Scenario: Target tower is destroyed
+- **WHEN** the engaged tower is destroyed
+- **THEN** an attack-moving horse resumes its original destination if still en route, or remains at the destination otherwise
 
 ### Requirement: Completed towers fire arrows and can kill horses
 
