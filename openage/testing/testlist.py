@@ -81,6 +81,7 @@ def tests_cpp():
     yield "openage::datastructure::tests::pairing_heap"
     yield "openage::job::tests::test_job_manager"
     yield "openage::network::tests::protocol"
+    yield "openage::network::tests::transport"
     yield "openage::path::tests::path_node", "pathfinding"
     yield "openage::path::tests::flow_field", "pathfinding"
     yield "openage::pyinterface::tests::pyobject"

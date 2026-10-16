@@ -41,6 +41,7 @@
 #include "renderer/stages/terrain/render_stage.h"
 #include "renderer/stages/world/render_entity.h"
 #include "renderer/stages/world/render_stage.h"
+#include "time/clock.h"
 #include "time/time_loop.h"
 #include "util/path.h"
 #include "util/stall_profiler.h"

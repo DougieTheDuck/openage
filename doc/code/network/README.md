@@ -12,6 +12,10 @@ TCP matches the low-volume lobby, command and state-replication traffic and prov
 The socket implementation belongs in `libopenage/network/` and must not depend on the presenter, renderer or Qt Quick.
 A BSD-socket implementation can provide the same interface later without changing the wire protocol.
 
+`network::TcpListener` binds a host endpoint and accepts `network::TcpConnection` objects.
+Connections send and receive complete `Frame` values while handling partial TCP reads and writes internally.
+An orderly peer shutdown returns no frame; socket failures and truncated frames raise an `Error`.
+
 Each accepted guest has one connection and one host-generated, nonzero 64-bit session ID.
 The host binds that connection to the lobby participant and assigned player; messages never carry a client-selected player identity.
 The session ID detects stale messages and routing mistakes but is not a security credential.

@@ -3,4 +3,6 @@
 add_sources(libopenage
 	protocol.cpp
 	protocol_test.cpp
+	transport.cpp
+	transport_test.cpp
 )
