@@ -34,6 +34,10 @@ def tests_py():
     yield ("openage.util.fslike.test.test", "test the filesystem abstraction subsystem")
     yield "openage.util.threading.test_concurrent_chain"
     yield "openage.nyan.tests.object_reference_members"
+    yield (
+        "openage.testing.network_two_process.test",
+        "FVD movement synchronization across host and guest processes",
+    )
     yield "openage.convert.processor.conversion.de2.tests.diplomatic_effects"
     yield "openage.convert.processor.conversion.de2.tests.branching_upgrade_techs"
 
@@ -86,6 +90,11 @@ def tests_cpp():
     yield (
         "openage::network::tests::fvd_loopback",
         "FVD movement intent and authoritative state over loopback TCP",
+    )
+    yield (
+        "openage::network::tests::fvd_process_worker",
+        "Internal worker for the FVD two-process network test",
+        lambda _env: False,
     )
     yield "openage::path::tests::path_node", "pathfinding"
     yield "openage::path::tests::flow_field", "pathfinding"
