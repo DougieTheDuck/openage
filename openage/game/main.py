@@ -34,7 +34,7 @@ def init_subparser(cli: ArgumentParser) -> None:
         "--window-size",
         nargs=2,
         type=int,
-        default=[1024, 768],
+        default=[1331, 998],
         metavar=("WIDTH", "HEIGHT"),
         help="Initial window size in pixels",
     )

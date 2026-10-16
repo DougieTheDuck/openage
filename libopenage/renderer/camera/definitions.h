@@ -43,7 +43,7 @@ static constexpr float DEFAULT_FAR_DISTANCE = 100.0f;
 /**
  * Default zoom level of the camera.
  */
-static constexpr float DEFAULT_ZOOM = 1.0f;
+static constexpr float DEFAULT_ZOOM = 1.5f;
 
 /**
  * Maximum zoom out level of the camera.
