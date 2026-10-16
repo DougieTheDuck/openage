@@ -587,4 +587,92 @@ void fvd_horse_spawn_blocked() {
 	// the new horse into nearby accessible terrain instead.
 	TESTEQUALS(position->get_positions().get(t(20.4)) != fvd->get_centre(), true);
 }
+
+void fvd_hunter_combat() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+
+	entity_id_t builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto owner = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (owner->get_owners().get(time::TIME_ZERO) == player_id_t{5}) {
+			builder = id;
+			break;
+		}
+	}
+	TESTEQUALS(builder != 0, true);
+	TESTEQUALS(fvd->request_build(state, 5, {builder}, {68, 69, 0}, at(0)), true);
+	loop->reach_time(at(15), state);
+	entity_id_t tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			tower = id;
+		}
+	}
+	TESTEQUALS(tower != 0, true);
+	auto tower_entity = state->get_game_entity(tower);
+	auto tower_health = std::dynamic_pointer_cast<component::Live>(
+		tower_entity->get_component(component::component_t::LIVE));
+	TESTEQUALS(tower_health->get_attribute(at(15), "fvd.data.entities.Health")->get(at(15)), int64_t{100});
+	TESTEQUALS(fvd->get_kills(5), uint64_t{0});
+
+	// The host validates an entire Hunter group; mixed player ownership
+	// rejects the command without moving any of the horses.
+	auto one = entities->spawn_game_entity(loop, state, 1, "fvd.data.entities.Horse",
+	                                      {71, 69, 0}, at(15));
+	auto two = entities->spawn_game_entity(loop, state, 1, "fvd.data.entities.Horse",
+	                                      {72, 69, 0}, at(15));
+	TESTEQUALS(fvd->issue_attack_move(state, 2, {one->get_id()}, {73, 69, 0}, at(15)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {one->get_id(), builder}, {73, 69, 0}, at(15)), false);
+	TESTEQUALS(fvd->can_command_units(state, 1, {one->get_id(), two->get_id()}, at(15)), true);
+	TESTEQUALS(fvd->can_command_units(state, 5, {one->get_id()}, at(15)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {one->get_id(), two->get_id()},
+	                                  {70, 69, 0}, at(15)), true);
+	auto horse_pos = std::dynamic_pointer_cast<component::Position>(
+		one->get_component(component::component_t::POSITION));
+	TESTEQUALS(horse_pos->get_positions().get(at(15.25)).ne != coord::phys_t::from_int(71), true);
+
+	// Completed towers automatically fire at Hunter units.
+	fvd->combat_tick(state, at(15));
+	loop->reach_time(at(15.2), state);
+	auto horse_live = std::dynamic_pointer_cast<component::Live>(
+		one->get_component(component::component_t::LIVE));
+	TESTEQUALS(horse_live->get_attribute(at(15.2), "fvd.data.entities.Health")->get(at(15.2)) < 25, true);
+
+	// An in-flight shot resolves once; extra hits against a corpse cannot
+	// award another kill even if several towers fire simultaneously.
+	for (int i = 0; i < 15 and state->get_game_entities().contains(one->get_id()); ++i) {
+		const auto when = at(16 + i);
+		fvd->combat_tick(state, when);
+		loop->reach_time(when + at(0.2), state);
+	}
+	TESTEQUALS(state->get_game_entities().contains(one->get_id()), false);
+	auto kills = fvd->get_kills(5);
+	TESTEQUALS(kills >= 1, true);
+	fvd->arrow_hit(state, one->get_id(), 5, 100, at(32));
+	TESTEQUALS(fvd->get_kills(5), kills);
+	TESTEQUALS(fvd->get_kills(4), uint64_t{0});
+
+	// A separate horse in melee range damages a tower, with armour
+	// reducing but not preventing all damage.
+	auto melee = entities->spawn_game_entity(loop, state, 1, "fvd.data.entities.Horse",
+	                                        {67, 69, 0}, at(33));
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {melee->get_id()},
+	                                  {67, 70, 0}, at(33)), true);
+	fvd->combat_tick(state, at(33));
+	TESTEQUALS(tower_health->get_attribute(at(33), "fvd.data.entities.Health")->get(at(33)) < 100, true);
+}
 }
