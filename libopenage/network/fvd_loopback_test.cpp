@@ -28,6 +28,7 @@
 #include "gamestate/terrain_factory.h"
 #include "network/messages.h"
 #include "network/protocol.h"
+#include "network/session.h"
 #include "network/transport.h"
 #include "testing/testing.h"
 #include "util/fslike/directory.h"
@@ -73,25 +74,23 @@ void run_host(TcpListener &listener) {
 	other_builder_id.has_value() or TESTFAIL;
 
 	auto connection = listener.accept();
-	Frame snapshot_frame{};
-	snapshot_frame.message_type = MessageType::WORLD_SNAPSHOT;
-	snapshot_frame.session_id = TEST_SESSION_ID;
-	snapshot_frame.sequence = 1;
-	snapshot_frame.payload = encode_world_state(
-		capture_positions(state, {*builder_id, *other_builder_id}, time::TIME_ZERO, 0, 0));
+	ConnectionSession session{{TEST_SESSION_ID, 2}};
+	auto snapshot_frame = session.make_frame(
+		MessageType::WORLD_SNAPSHOT,
+		encode_world_state(
+			capture_positions(state, {*builder_id, *other_builder_id}, time::TIME_ZERO, 0, 0)));
 	connection.send_frame(snapshot_frame);
 
 	auto command_frame = connection.receive_frame();
 	command_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*command_frame);
 	command_frame->message_type == MessageType::COMMAND_INTENT or TESTFAIL;
-	TESTEQUALS(command_frame->session_id, TEST_SESSION_ID);
-	TESTEQUALS(command_frame->sequence, uint64_t{1});
 	auto intent = decode_command_intent(command_frame->payload);
 
 	std::optional<bool> accepted{};
 	submit_command_intent(
 		intent,
-		2,
+		session.get_identity().player_id,
 		loop,
 		commander,
 		state,
@@ -106,36 +105,31 @@ void run_host(TcpListener &listener) {
 	command_result.world_revision = *accepted ? 1 : 0;
 	command_result.simulation_time = time::TIME_ZERO;
 	command_result.reason = *accepted ? "" : "command rejected by authoritative simulation";
-	Frame result_frame{};
-	result_frame.message_type = MessageType::COMMAND_RESULT;
-	result_frame.session_id = TEST_SESSION_ID;
-	result_frame.sequence = 2;
-	result_frame.payload = encode_command_result(command_result);
+	auto result_frame = session.make_frame(
+		MessageType::COMMAND_RESULT,
+		encode_command_result(command_result));
 	connection.send_frame(result_frame);
 
 	if (*accepted) {
 		auto sample_time = time::time_t::from_int(30);
 		loop->reach_time(sample_time, state);
-		Frame delta_frame{};
-		delta_frame.message_type = MessageType::WORLD_DELTA;
-		delta_frame.session_id = TEST_SESSION_ID;
-		delta_frame.sequence = 3;
-		delta_frame.payload = encode_world_state(
-			capture_positions(state, intent.entity_ids, sample_time, 0, 1));
+		auto delta_frame = session.make_frame(
+			MessageType::WORLD_DELTA,
+			encode_world_state(
+				capture_positions(state, intent.entity_ids, sample_time, 0, 1)));
 		connection.send_frame(delta_frame);
 
 		auto spoofed_frame = connection.receive_frame();
 		spoofed_frame.has_value() or TESTFAIL;
+		session.validate_incoming(*spoofed_frame);
 		spoofed_frame->message_type == MessageType::COMMAND_INTENT or TESTFAIL;
-		TESTEQUALS(spoofed_frame->session_id, TEST_SESSION_ID);
-		TESTEQUALS(spoofed_frame->sequence, uint64_t{2});
 		auto spoofed = decode_command_intent(spoofed_frame->payload);
 		auto before = capture_positions(
 			state, spoofed.entity_ids, sample_time, 0, 1);
 		std::optional<bool> spoofed_accepted{};
 		submit_command_intent(
 			spoofed,
-			2,
+			session.get_identity().player_id,
 			loop,
 			commander,
 			state,
@@ -154,22 +148,20 @@ void run_host(TcpListener &listener) {
 		spoofed_result.world_revision = 1;
 		spoofed_result.simulation_time = sample_time;
 		spoofed_result.reason = "entity is not owned by this session";
-		Frame spoofed_result_frame{};
-		spoofed_result_frame.message_type = MessageType::COMMAND_RESULT;
-		spoofed_result_frame.session_id = TEST_SESSION_ID;
-		spoofed_result_frame.sequence = 4;
-		spoofed_result_frame.payload = encode_command_result(spoofed_result);
+		auto spoofed_result_frame = session.make_frame(
+			MessageType::COMMAND_RESULT,
+			encode_command_result(spoofed_result));
 		connection.send_frame(spoofed_result_frame);
 	}
 }
 
 void run_guest(uint16_t port) {
 	auto client = TcpConnection::connect("127.0.0.1", port);
+	ConnectionSession session{{TEST_SESSION_ID, 2}};
 	auto snapshot_frame = client.receive_frame();
 	snapshot_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*snapshot_frame);
 	snapshot_frame->message_type == MessageType::WORLD_SNAPSHOT or TESTFAIL;
-	TESTEQUALS(snapshot_frame->session_id, TEST_SESSION_ID);
-	TESTEQUALS(snapshot_frame->sequence, uint64_t{1});
 	auto snapshot = decode_world_state(snapshot_frame->payload);
 	TESTEQUALS(snapshot.positions.size(), 2);
 	auto initial = snapshot.positions.front();
@@ -184,18 +176,15 @@ void run_guest(uint16_t port) {
 	intent.kind = CommandKind::MOVE;
 	intent.entity_ids = {initial.entity_id};
 	intent.target = target;
-	Frame command_frame{};
-	command_frame.message_type = MessageType::COMMAND_INTENT;
-	command_frame.session_id = TEST_SESSION_ID;
-	command_frame.sequence = 1;
-	command_frame.payload = encode_command_intent(intent);
+	auto command_frame = session.make_frame(
+		MessageType::COMMAND_INTENT,
+		encode_command_intent(intent));
 	client.send_frame(command_frame);
 
 	auto result_frame = client.receive_frame();
 	result_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*result_frame);
 	result_frame->message_type == MessageType::COMMAND_RESULT or TESTFAIL;
-	TESTEQUALS(result_frame->session_id, TEST_SESSION_ID);
-	TESTEQUALS(result_frame->sequence, uint64_t{2});
 	auto result = decode_command_result(result_frame->payload);
 	TESTEQUALS(result.command_id, intent.command_id);
 	result.status == CommandStatus::ACCEPTED or TESTFAIL;
@@ -203,9 +192,8 @@ void run_guest(uint16_t port) {
 
 	auto delta_frame = client.receive_frame();
 	delta_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*delta_frame);
 	delta_frame->message_type == MessageType::WORLD_DELTA or TESTFAIL;
-	TESTEQUALS(delta_frame->session_id, TEST_SESSION_ID);
-	TESTEQUALS(delta_frame->sequence, uint64_t{3});
 	auto delta = decode_world_state(delta_frame->payload);
 	TESTEQUALS(delta.base_revision, uint64_t{0});
 	TESTEQUALS(delta.world_revision, uint64_t{1});
@@ -221,18 +209,15 @@ void run_guest(uint16_t port) {
 		other.position.ne,
 		other.position.se + coord::phys_t::from_int(3),
 		other.position.up};
-	Frame spoofed_frame{};
-	spoofed_frame.message_type = MessageType::COMMAND_INTENT;
-	spoofed_frame.session_id = TEST_SESSION_ID;
-	spoofed_frame.sequence = 2;
-	spoofed_frame.payload = encode_command_intent(spoofed);
+	auto spoofed_frame = session.make_frame(
+		MessageType::COMMAND_INTENT,
+		encode_command_intent(spoofed));
 	client.send_frame(spoofed_frame);
 
 	auto spoofed_result_frame = client.receive_frame();
 	spoofed_result_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*spoofed_result_frame);
 	spoofed_result_frame->message_type == MessageType::COMMAND_RESULT or TESTFAIL;
-	TESTEQUALS(spoofed_result_frame->session_id, TEST_SESSION_ID);
-	TESTEQUALS(spoofed_result_frame->sequence, uint64_t{4});
 	auto spoofed_result = decode_command_result(spoofed_result_frame->payload);
 	TESTEQUALS(spoofed_result.command_id, spoofed.command_id);
 	spoofed_result.status == CommandStatus::REJECTED or TESTFAIL;

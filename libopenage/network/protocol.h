@@ -47,6 +47,9 @@ enum class MessageType : uint16_t {
 	PONG = 12,
 };
 
+/** Whether a message type is defined by this protocol version. */
+bool is_known_message_type(MessageType message_type);
+
 /**
  * One decoded protocol frame.
  *

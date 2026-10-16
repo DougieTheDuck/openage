@@ -1,0 +1,57 @@
+// Copyright 2026 the openage authors. See copying.md for legal info.
+
+#pragma once
+
+#include <cstdint>
+#include <vector>
+
+#include "gamestate/types.h"
+#include "network/protocol.h"
+
+namespace openage::network {
+
+/** Immutable identity assigned to one accepted match connection. */
+struct SessionIdentity {
+	uint64_t session_id{0};
+	gamestate::player_id_t player_id{0};
+};
+
+/**
+ * Protocol state for one accepted match connection.
+ *
+ * The connection thread owns this object.
+ * It binds every decoded command to one player and enforces independent,
+ * contiguous frame sequences in both directions.
+ */
+class ConnectionSession {
+public:
+	/** Create an accepted session with a nonzero session and player ID. */
+	explicit ConnectionSession(SessionIdentity identity);
+
+	/** Get the host-assigned connection identity. */
+	const SessionIdentity &get_identity() const;
+
+	/**
+	 * Create the next outbound frame for this session.
+	 *
+	 * @throws Error if the message is handshake-only, the payload is too large
+	 * or the sequence space is exhausted.
+	 */
+	Frame make_frame(MessageType message_type,
+	                 std::vector<uint8_t> payload = {});
+
+	/**
+	 * Validate and consume the next inbound frame.
+	 *
+	 * @throws Error if protocol version, session ID, message phase or sequence
+	 * does not match this connection.
+	 */
+	void validate_incoming(const Frame &frame);
+
+private:
+	const SessionIdentity identity;
+	uint64_t next_incoming_sequence;
+	uint64_t next_outgoing_sequence;
+};
+
+} // namespace openage::network

@@ -86,6 +86,7 @@ def tests_cpp():
     yield "openage::job::tests::test_job_manager"
     yield "openage::network::tests::messages"
     yield "openage::network::tests::protocol"
+    yield "openage::network::tests::session"
     yield "openage::network::tests::transport"
     yield (
         "openage::network::tests::fvd_loopback",

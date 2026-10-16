@@ -21,6 +21,19 @@ The host binds that connection to the lobby participant and assigned player; mes
 The session ID detects stale messages and routing mistakes but is not a security credential.
 The direct-IP prototype does not encrypt traffic or authenticate the host.
 
+## Session and gameplay boundary
+
+`network::ConnectionSession` is created after a successful handshake with a host-assigned nonzero session ID and player ID.
+The binding is immutable for the connection lifetime.
+The connection thread owns the session object and uses it to validate every inbound session ID, protocol version and contiguous sequence number.
+The same object creates outbound frames with the correct session ID and next sequence number.
+
+Gameplay payloads never contain a claimed player ID.
+The network boundary passes the decoded `CommandIntent` and the session's assigned player to `submit_command_intent`.
+The bridge schedules work on the authoritative event loop and returns a `CommandResult` decision.
+Gameplay code can add command behavior and replicated records without reading sockets, framing bytes or maintaining connection counters.
+Network code can change connection management without changing horse, projectile, damage or building simulation.
+
 ## Frame format
 
 TCP is a byte stream, so receivers use `network::FrameParser` to handle partial and coalesced reads.

@@ -11,7 +11,7 @@ namespace openage::network {
 
 namespace {
 
-bool is_known_message_type(uint16_t value) {
+bool is_known_message_type_value(uint16_t value) {
 	return value >= static_cast<uint16_t>(MessageType::CLIENT_HELLO)
 	    && value <= static_cast<uint16_t>(MessageType::PONG);
 }
@@ -22,7 +22,7 @@ size_t checked_frame_size(const uint8_t *header) {
 	}
 
 	auto message_type = read_u16(header + 8);
-	if (not is_known_message_type(message_type)) {
+	if (not is_known_message_type_value(message_type)) {
 		throw Error{MSG(err) << "Unknown FVD network message type " << message_type};
 	}
 
@@ -54,11 +54,15 @@ Frame decode_validated_frame(const uint8_t *bytes, size_t frame_size) {
 
 } // namespace
 
+bool is_known_message_type(MessageType message_type) {
+	return is_known_message_type_value(static_cast<uint16_t>(message_type));
+}
+
 std::vector<uint8_t> encode_frame(const Frame &frame) {
 	if (frame.flags != 0) {
 		throw Error{MSG(err) << "Unsupported FVD network frame flags " << frame.flags};
 	}
-	if (not is_known_message_type(static_cast<uint16_t>(frame.message_type))) {
+	if (not is_known_message_type(frame.message_type)) {
 		throw Error{MSG(err) << "Unknown FVD network message type "
 		                     << static_cast<uint16_t>(frame.message_type)};
 	}

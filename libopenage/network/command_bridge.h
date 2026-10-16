@@ -28,8 +28,8 @@ using command_result_callback_t = std::function<void(bool)>;
 /**
  * Translate a player-independent network intent into a simulation event.
  *
- * Ownership is supplied by the authenticated connection and never read from
- * the payload.
+ * Ownership is supplied by the accepted ConnectionSession identity and never
+ * read from the payload.
  */
 void submit_command_intent(
 	const CommandIntent &intent,
