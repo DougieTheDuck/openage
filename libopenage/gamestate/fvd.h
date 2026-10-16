@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -103,6 +105,31 @@ public:
 	void spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	                       const time::time_t &time);
 
+	/** Validate a complete group of player-owned movable units. */
+	bool can_command_units(const std::shared_ptr<GameState> &state,
+	                       player_id_t owner, const std::vector<entity_id_t> &ids,
+	                       const time::time_t &time) const;
+
+	/** Start Hunter AttackMove for every selected horse, or reject all. */
+	bool issue_attack_move(const std::shared_ptr<GameState> &state,
+	                       player_id_t owner, const std::vector<entity_id_t> &ids,
+	                       const coord::phys3 &destination, const time::time_t &time);
+
+	/** Remove the autonomous engagement portion when superseded by another order. */
+	void cancel_attack_move(entity_id_t id);
+
+	/** Authoritative combat simulation; called on a fixed simulation-time tick. */
+	void combat_tick(const std::shared_ptr<GameState> &state, const time::time_t &time);
+
+	/** Apply a scheduled tower arrow hit. */
+	void arrow_hit(const std::shared_ptr<GameState> &state, entity_id_t target,
+	               player_id_t owner, int64_t damage, const time::time_t &time);
+
+	/** Local HUD-facing read-only state. */
+	uint64_t get_kills(player_id_t owner) const;
+	int64_t get_tower_damage() const;
+	int64_t get_tower_armor() const;
+
 	/** Get the common camera start location. */
 	coord::phys3 get_centre() const;
 
@@ -110,6 +137,12 @@ public:
 	size_t get_player_count() const;
 
 private:
+	struct AttackOrder {
+		coord::phys3 destination;
+		std::optional<entity_id_t> target;
+		time::time_t next_attack;
+	};
+
 	struct PendingBuild {
 		std::shared_ptr<component::command::BuildTowerCommand> order;
 		coord::phys3 stand;
@@ -129,6 +162,11 @@ private:
 		std::vector<FootprintCell> cells;
 		bool under_construction;
 	};
+
+	/** Apply damage once and remove dead units. */
+	bool apply_damage(const std::shared_ptr<GameState> &state, entity_id_t target,
+	                  int64_t damage, player_id_t owner, bool tower_shot,
+	                  const time::time_t &time);
 
 	/** Check occupancy, optionally excluding the constructing Builder. */
 	bool tile_occupied(const std::shared_ptr<GameState> &state,
@@ -161,6 +199,12 @@ private:
 	time::time_t horse_spawn_delay;
 	time::time_t horse_spawn_interval;
 	double horse_collision_radius;
+	int64_t tower_damage;
+	int64_t tower_armor;
+	int64_t horse_damage;
+	time::time_t arrow_travel;
+	time::time_t tower_cooldown;
+	time::time_t horse_cooldown;
 	time::time_t horse_shove_duration;
 	std::string hunter;
 	std::string builders;
@@ -178,6 +222,9 @@ private:
 	std::shared_ptr<openage::event::EventEntity> horse_spawn_target;
 	bool hunter_wave_started = false;
 	uint64_t next_build_id = 1;
+	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
+	std::unordered_map<entity_id_t, time::time_t> tower_next_shot;
+	std::array<std::atomic<uint64_t>, 9> player_kills{};
 	std::unordered_map<entity_id_t, PendingBuild> build_orders;
 	std::unordered_map<coord::tile, entity_id_t> reserved_tiles;
 	std::unordered_map<entity_id_t, TowerFootprint> tower_footprints;

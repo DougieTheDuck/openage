@@ -46,6 +46,18 @@ void tower_placement_mode() {
 	TESTEQUALS(controller.get_selection_details().kind == SelectionKind::NONE, true);
 	controller.set_selected({43}, SelectionKind::TOWER);
 	TESTEQUALS(controller.begin_tower_placement(), false);
+
+	controller.set_control(1);
+	controller.set_selected({101}, SelectionKind::HORSE);
+	TESTEQUALS(controller.begin_attack_move(), true);
+	TESTEQUALS(controller.is_attack_move_active(), true);
+	controller.cancel_attack_move();
+	TESTEQUALS(controller.is_attack_move_active(), false);
+	controller.set_selected({101, 102, 103}, SelectionKind::GROUP_HORSES);
+	TESTEQUALS(controller.begin_attack_move(), true);
+	controller.set_control(2);
+	TESTEQUALS(controller.is_attack_move_active(), false);
+	TESTEQUALS(controller.begin_attack_move(), false);
 }
 
 } // namespace openage::input::game::tests

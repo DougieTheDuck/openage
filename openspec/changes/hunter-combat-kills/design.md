@@ -63,9 +63,10 @@ The HUD displays only the local player's credited total.
 
 ## Open Decisions
 
-- Exact horse/tower damage, attack ranges/rates, projectile travel time,
-  targeting priorities and health are balance parameters to establish
-  before their final implementation.
+- The first playable balance defaults are tower damage 8, tower armour 1,
+  horse melee damage 3, tower range 7 and an arrow travel time of 0.2
+  simulation seconds. Tune these after playing; visual arrow replication
+  and client state delivery remain out of scope here.
 - Extend spawn-time circle separation into continuous moving-unit
   avoidance when AttackMove and combat movement are implemented.
 - Map the human AttackMove action into the current controller UX with a

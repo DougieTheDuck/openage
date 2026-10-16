@@ -84,6 +84,23 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			}
 			return;
 		}
+		if (command_type == component::command::command_t::ATTACK_MOVE) {
+			bool accepted = params.check_type<coord::phys3>("target")
+			             and fvd->issue_attack_move(gstate, owner, ids,
+			                 params.get("target", coord::phys3{0, 0, 0}), time);
+			if (result_cb) {
+				result_cb(accepted);
+			}
+			return;
+		}
+		if ((command_type == component::command::command_t::MOVE
+		     or command_type == component::command::command_t::IDLE)
+		    and not fvd->can_command_units(gstate, owner, ids, time)) {
+			if (result_cb) {
+				result_cb(false);
+			}
+			return;
+		}
 	}
 
 	bool accepted = false;
@@ -110,6 +127,7 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			    and not entity->has_component(component::component_t::MOVE)) {
 				continue;
 			}
+			fvd->cancel_attack_move(id);
 			fvd->cancel_build(gstate, id, time);
 		}
 		auto command_queue = std::dynamic_pointer_cast<component::CommandQueue>(

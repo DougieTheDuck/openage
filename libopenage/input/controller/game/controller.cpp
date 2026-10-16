@@ -3,6 +3,7 @@
 #include "controller.h"
 
 #include <cstdlib>
+#include <algorithm>
 
 #include <QGuiApplication>
 #include <QStyleHints>
@@ -46,6 +47,7 @@ void Controller::set_control(size_t faction_id) {
 		this->selected_kind = SelectionKind::NONE;
 		this->selected_render_entity.reset();
 		this->placing_tower = false;
+		this->attacking = false;
 	}
 }
 
@@ -70,9 +72,11 @@ void Controller::set_selected(
 	log::log(DBG << "Selected " << ids.size() << " entities");
 
 	this->selected = ids;
-	this->selected_kind = ids.size() == 1 ? kind : SelectionKind::NONE;
+	this->selected_kind = (ids.size() == 1 or kind == SelectionKind::GROUP_HORSES)
+	                         ? kind : SelectionKind::NONE;
 	this->selected_render_entity = ids.size() == 1 ? render_entity : nullptr;
 	this->placing_tower = false;
+	this->attacking = false;
 }
 
 SelectionDetails Controller::get_selection_details() const {
@@ -86,6 +90,7 @@ bool Controller::begin_tower_placement() {
 	    or this->selected_kind != SelectionKind::BUILDER) {
 		return false;
 	}
+	this->attacking = false;
 	this->placing_tower = true;
 	return true;
 }
@@ -98,6 +103,28 @@ void Controller::cancel_tower_placement() {
 bool Controller::is_tower_placement_active() const {
 	std::unique_lock lock{this->mutex};
 	return this->placing_tower;
+}
+
+bool Controller::begin_attack_move() {
+	std::unique_lock lock{this->mutex};
+	if (this->active_faction_id != 1 or this->selected.empty()
+	    or (this->selected_kind != SelectionKind::HORSE
+	        and this->selected_kind != SelectionKind::GROUP_HORSES)) {
+		return false;
+	}
+	this->placing_tower = false;
+	this->attacking = true;
+	return true;
+}
+
+void Controller::cancel_attack_move() {
+	std::unique_lock lock{this->mutex};
+	this->attacking = false;
+}
+
+bool Controller::is_attack_move_active() const {
+	std::unique_lock lock{this->mutex};
+	return this->attacking;
 }
 
 bool Controller::process(const event_arguments &ev_args, const std::shared_ptr<BindingContext> &ctx) {
@@ -147,8 +174,21 @@ namespace {
 void apply_selection(const std::shared_ptr<Controller> &controller,
                      const std::shared_ptr<gamestate::GameState> &state,
                      const std::vector<gamestate::entity_id_t> &ids) {
-	if (not state->get_fvd() or ids.size() != 1) {
+	if (not state->get_fvd()) {
 		controller->set_selected(ids);
+		return;
+	}
+	if (ids.size() > 1) {
+		bool all_horses = std::all_of(ids.begin(), ids.end(), [&](auto id) {
+			auto found = state->get_game_entities().find(id);
+			return found != state->get_game_entities().end()
+			    and found->second->get_definition() == "fvd.data.entities.Horse";
+		});
+		controller->set_selected(ids, all_horses ? SelectionKind::GROUP_HORSES : SelectionKind::NONE);
+		return;
+	}
+	if (ids.empty()) {
+		controller->set_selected({});
 		return;
 	}
 	auto found = state->get_game_entities().find(ids.front());
@@ -160,6 +200,9 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 	auto kind = SelectionKind::OTHER;
 	if (definition == "fvd.data.entities.Builder") {
 		kind = SelectionKind::BUILDER;
+	}
+	else if (definition == "fvd.data.entities.Horse") {
+		kind = SelectionKind::HORSE;
 	}
 	else if (definition == "fvd.data.entities.Tower") {
 		kind = SelectionKind::TOWER;
@@ -207,6 +250,24 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			time_loop->get_clock()->get_time(), params);
 	}};
 
+	binding_func_t attack_move_event{[simulation, time_loop, camera](
+		const event_arguments &args, const std::shared_ptr<Controller> controller) {
+		if (not controller->is_attack_move_active()) {
+			return;
+		}
+		controller->cancel_attack_move();
+		event::EventHandler::param_map::map_t params{
+			{"type", gamestate::component::command::command_t::ATTACK_MOVE},
+			{"target", args.mouse.to_phys3(camera)},
+			{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
+			{"entity_ids", controller->get_selected()},
+		};
+		simulation->get_event_loop()->submit_event(
+			"game.send_command", simulation->get_commander(),
+			simulation->get_game()->get_state(),
+			time_loop->get_clock()->get_time(), params);
+	}};
+
 	binding_action create_entity_action{forward_action_t::SEND, create_entity_event};
 	Event ev_mouse_lmb_ctrl{
 		event_class::MOUSE_BUTTON,
@@ -225,7 +286,15 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		binding_func_t cancel_placement{[](const event_arguments &,
 		                                  const std::shared_ptr<Controller> controller) {
 			controller->cancel_tower_placement();
+			controller->cancel_attack_move();
 		}};
+		binding_func_t start_attack_move{[](const event_arguments &,
+		                                    const std::shared_ptr<Controller> controller) {
+			controller->begin_attack_move();
+		}};
+		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_A,
+		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+		          binding_action{forward_action_t::CLEAR, start_attack_move});
 		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_B,
 		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
 		          binding_action{forward_action_t::CLEAR, start_placement});
@@ -250,6 +319,10 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 	                               const std::shared_ptr<Controller> controller) {
 		if (controller->is_tower_placement_active()) {
 			controller->cancel_tower_placement();
+			return;
+		}
+		if (controller->is_attack_move_active()) {
+			controller->cancel_attack_move();
 			return;
 		}
 		auto mouse_pos = args.mouse.to_phys3(camera);
@@ -292,11 +365,16 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 	ctx->bind(ev_mouse_lmb_press, init_drag_selection_action);
 
 	binding_func_t drag_selection{
-		[simulation, time_loop, camera, pick_entity, create_entity_event](const event_arguments &args,
+		[simulation, time_loop, camera, pick_entity, create_entity_event, attack_move_event](const event_arguments &args,
 	        const std::shared_ptr<Controller> controller) {
 			if (controller->is_tower_placement_active()) {
 				controller->reset_drag_select();
 				create_entity_event(args, controller);
+				return;
+			}
+			if (controller->is_attack_move_active()) {
+				controller->reset_drag_select();
+				attack_move_event(args, controller);
 				return;
 			}
 			auto drag_start = controller->get_drag_select_start();

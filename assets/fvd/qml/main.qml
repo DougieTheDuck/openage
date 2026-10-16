@@ -10,6 +10,8 @@ Item {
 	readonly property bool placing: hud !== null && hud.placing
 	readonly property bool canBuild: hud !== null && hud.canBuild
 	readonly property bool isTower: hud !== null && hud.isTower
+	readonly property bool canAttack: hud !== null && hud.canAttack
+	readonly property bool attacking: hud !== null && hud.attacking
 
 	Rectangle {
 		anchors.top: parent.top
@@ -26,6 +28,7 @@ Item {
 			font.pixelSize: 14
 			text: root.placing
 			    ? "Tower placement: click a map tile | Right-click or Esc to cancel"
+			    : root.attacking ? "Attack-move: click map | Right-click or Esc cancels"
 			    : "Flat plains | 1: Hunter | 2-8: Builders | Drag to select | Right-click to move"
 			horizontalAlignment: Text.AlignHCenter
 		}
@@ -61,7 +64,7 @@ Item {
 				text: root.hud === null ? "No unit selected" : root.hud.selection
 			}
 			Text {
-				visible: root.isTower || root.canBuild
+				visible: root.isTower || root.canBuild || root.canAttack
 				color: "#d6e6db"
 				font.pixelSize: 13
 				text: "HP: " + (root.hud === null ? "—" : root.hud.health)
@@ -84,11 +87,11 @@ Item {
 				text: "Tower kills: " + (root.hud === null ? 0 : root.hud.kills)
 			}
 			Rectangle {
-				visible: root.canBuild
+				visible: root.canBuild || root.canAttack
 				width: 252
 				height: 32
 				radius: 4
-				color: root.placing ? "#ae6e30" : "#3e7862"
+				color: root.placing || root.attacking ? "#ae6e30" : "#3e7862"
 				border.width: 1
 				border.color: "#b5d9c4"
 
@@ -97,14 +100,14 @@ Item {
 					color: "#ffffff"
 					font.bold: true
 					font.pixelSize: 14
-					text: root.placing ? "Cancel placement (Esc)" : "Build Tower (B)"
+					text: root.placing || root.attacking ? "Cancel (Esc)" : root.canAttack ? "Attack-move (A)" : "Build Tower (B)"
 				}
 
 				MouseArea {
 					anchors.fill: parent
 					onClicked: {
 						if (root.hud !== null)
-							root.hud.action = root.placing ? "cancel" : "build"
+							root.hud.action = root.placing || root.attacking ? "cancel" : root.canAttack ? "attack" : "build"
 					}
 				}
 			}

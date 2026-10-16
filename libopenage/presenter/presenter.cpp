@@ -322,7 +322,7 @@ void Presenter::init_input() {
 
 			// The global input context must forward placement keys to
 			// the FVD-specific game binding context.
-			for (auto key : {Qt::Key_B, Qt::Key_Escape}) {
+			for (auto key : {Qt::Key_B, Qt::Key_A, Qt::Key_Escape}) {
 				input_ctx->bind(
 					input::Event{input::event_class::KEYBOARD, key,
 					             Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
@@ -357,6 +357,8 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("damage", QString{"Not defined"});
 			this->fvd_hud_state->insert("armor", QString{"Not defined"});
 			this->fvd_hud_state->insert("canBuild", false);
+			this->fvd_hud_state->insert("canAttack", false);
+			this->fvd_hud_state->insert("attacking", false);
 			this->fvd_hud_state->insert("placing", false);
 			this->fvd_hud_state->insert("kills", 0);
 			this->fvd_hud_state->insert("action", QString{});
@@ -372,6 +374,10 @@ void Presenter::init_input() {
 				                 }
 				                 else if (value.toString() == "cancel") {
 					                 game_controller->cancel_tower_placement();
+					                 game_controller->cancel_attack_move();
+				                 }
+				                 else if (value.toString() == "attack") {
+					                 game_controller->begin_attack_move();
 				                 }
 				                 hud->insert("action", QString{});
 			                 });
@@ -454,6 +460,8 @@ void Presenter::render() {
 			auto controlled = this->game_controller->get_controlled();
 			auto tower = selected.kind == input::game::SelectionKind::TOWER;
 			auto builder = selected.kind == input::game::SelectionKind::BUILDER;
+			auto hunter_horse = selected.kind == input::game::SelectionKind::HORSE
+			                 or selected.kind == input::game::SelectionKind::GROUP_HORSES;
 			QString selection_label{"No unit selected"};
 			if (selected.ids.size() > 1) {
 				selection_label = QString{"%1 units selected"}.arg(static_cast<int>(selected.ids.size()));
@@ -463,6 +471,9 @@ void Presenter::render() {
 			}
 			else if (tower) {
 				selection_label = QString{"Tower"};
+			}
+			else if (hunter_horse) {
+				selection_label = QString{"Horse"};
 			}
 			else if (not selected.ids.empty()) {
 				selection_label = QString{"Unit selected"};
@@ -482,6 +493,17 @@ void Presenter::render() {
 			this->fvd_hud_state->insert("isTower", tower);
 			this->fvd_hud_state->insert("health", health);
 			this->fvd_hud_state->insert("canBuild", controlled >= 2 and builder);
+			this->fvd_hud_state->insert("canAttack", controlled == 1 and hunter_horse);
+			this->fvd_hud_state->insert("attacking", this->game_controller->is_attack_move_active());
+			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
+			if (fvd) {
+				this->fvd_hud_state->insert("kills",
+					static_cast<qulonglong>(fvd->get_kills(controlled)));
+				this->fvd_hud_state->insert("damage",
+					static_cast<qlonglong>(fvd->get_tower_damage()));
+				this->fvd_hud_state->insert("armor",
+					static_cast<qlonglong>(fvd->get_tower_armor()));
+			}
 			this->fvd_hud_state->insert(
 				"placing", this->game_controller->is_tower_placement_active());
 		}

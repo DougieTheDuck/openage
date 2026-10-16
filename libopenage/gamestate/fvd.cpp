@@ -106,6 +106,50 @@ public:
 	}
 };
 
+/** Fixed-time authoritative combat tick. */
+class FVDCombatHandler : public openage::event::RepeatEventHandler {
+public:
+	FVDCombatHandler() : RepeatEventHandler{"game.fvd_combat_tick"} {}
+	void setup_event(const std::shared_ptr<openage::event::Event> &,
+	                 const std::shared_ptr<openage::event::State> &) override {}
+	void invoke(openage::event::EventLoop &,
+	            const std::shared_ptr<openage::event::EventEntity> &,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time, const param_map &) override {
+		auto gstate = std::dynamic_pointer_cast<GameState>(state);
+		gstate->get_fvd()->combat_tick(gstate, time);
+	}
+	time::time_t predict_invoke_time(
+		const std::shared_ptr<openage::event::EventEntity> &,
+		const std::shared_ptr<openage::event::State> &,
+		const time::time_t &at) override {
+		return at + time::time_t::from_double(0.2);
+	}
+};
+
+/** A launched arrow deals damage at its predicted impact time. */
+class FVDArrowHitHandler : public openage::event::OnceEventHandler {
+public:
+	FVDArrowHitHandler() : OnceEventHandler{"game.fvd_arrow_hit"} {}
+	void setup_event(const std::shared_ptr<openage::event::Event> &,
+	                 const std::shared_ptr<openage::event::State> &) override {}
+	void invoke(openage::event::EventLoop &,
+	            const std::shared_ptr<openage::event::EventEntity> &,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time, const param_map &params) override {
+		auto gstate = std::dynamic_pointer_cast<GameState>(state);
+		gstate->get_fvd()->arrow_hit(gstate, params.get<entity_id_t>("target"),
+		                           params.get<player_id_t>("owner"),
+		                           params.get<int64_t>("damage"), time);
+	}
+	time::time_t predict_invoke_time(
+		const std::shared_ptr<openage::event::EventEntity> &,
+		const std::shared_ptr<openage::event::State> &,
+		const time::time_t &at) override {
+		return at;
+	}
+};
+
 /** Recalculate active routes at a low fixed frequency. */
 class RefreshPathsHandler : public openage::event::RepeatEventHandler {
 public:
@@ -154,6 +198,10 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	auto horse_interval = settings.get_int("horse_spawn_interval");
 	auto collision_radius = settings.get_float("horse_collision_radius");
 	auto shove_duration = settings.get_float("horse_shove_duration");
+	auto arrow_damage = settings.get_int("tower_arrow_damage");
+	auto armor = settings.get_int("tower_armor");
+	auto melee_damage = settings.get_int("horse_melee_damage");
+	auto arrow_duration = settings.get_float("arrow_travel_time");
 	if (size < 16 or size > 512 or chunk < 4 or chunk > size
 	    or chunk > MAX_CHUNK_WIDTH or chunk > MAX_CHUNK_HEIGHT
 	    or size % chunk != 0 or players < 2 or players > 8
@@ -161,7 +209,11 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	    or horse_delay < 0 or horse_delay > 600
 	    or horse_interval < 1 or horse_interval > 60
 	    or collision_radius < 0.1 or collision_radius > 0.49
-	    or shove_duration <= 0.0 or shove_duration >= 0.9) {
+	    or shove_duration <= 0.0 or shove_duration >= 0.9
+	    or arrow_damage < 1 or arrow_damage > 100
+	    or armor < 0 or armor > 50
+	    or melee_damage < 1 or melee_damage > 100
+	    or arrow_duration < 0.01 or arrow_duration > 3.0) {
 		throw Error{ERR << "Invalid FVD settings: map 16..512, chunk 4.."
 		                << MAX_CHUNK_WIDTH << ", players 2..8, construction >0..300 seconds"};
 	}
@@ -173,6 +225,15 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->horse_spawn_interval = time::time_t::from_int(horse_interval);
 	this->horse_collision_radius = collision_radius;
 	this->horse_shove_duration = time::time_t::from_double(shove_duration);
+	this->tower_damage = arrow_damage;
+	this->tower_armor = armor;
+	this->horse_damage = melee_damage;
+	this->arrow_travel = time::time_t::from_double(arrow_duration);
+	this->tower_cooldown = time::time_t::from_double(0.8);
+	this->horse_cooldown = time::time_t::from_double(0.6);
+	for (auto &kills : this->player_kills) {
+		kills.store(0);
+	}
 	this->hunter = settings.get_object("hunter").get_name();
 	this->builders = settings.get_object("builders").get_name();
 	this->builder = settings.get_object("builder").get_name();
@@ -218,6 +279,8 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 	this->entity_factory = entities;
 	this->horse_spawn_target = std::make_shared<event::Spawner>(loop);
 	loop->add_event_handler(std::make_shared<SpawnHorseHandler>());
+	loop->add_event_handler(std::make_shared<FVDCombatHandler>());
+	loop->add_event_handler(std::make_shared<FVDArrowHitHandler>());
 	loop->add_event_handler(std::make_shared<BuildProgressHandler>());
 	loop->add_event_handler(std::make_shared<RefreshPathsHandler>());
 
@@ -643,6 +706,7 @@ void FVD::refresh_paths(const std::shared_ptr<GameState> &state,
 
 	for (const auto &[entity_id, entity] : state->get_game_entities()) {
 		if (this->build_orders.contains(entity_id)
+		    or this->attack_orders.contains(entity_id)
 		    or not entity->has_component(component::component_t::MOVE)) {
 			continue;
 		}
@@ -913,6 +977,7 @@ void FVD::start_hunter_wave(const std::shared_ptr<GameState> &state,
 	this->hunter_wave_started = true;
 	loop->create_event("game.fvd_spawn_horse", this->horse_spawn_target, state,
 	                   match_start + this->horse_spawn_delay);
+	loop->create_event("game.fvd_combat_tick", this->horse_spawn_target, state, match_start);
 }
 
 void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
@@ -929,6 +994,83 @@ void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	this->relax_horse_crowd(state, spawned->get_id(), time);
 	loop->create_event("game.fvd_spawn_horse", this->horse_spawn_target, state,
 	                   time + this->horse_spawn_interval);
+}
+
+bool FVD::can_command_units(const std::shared_ptr<GameState> &state,
+                            player_id_t owner, const std::vector<entity_id_t> &ids,
+                            const time::time_t &time) const {
+	if (owner < 1 or owner > this->player_count or ids.empty() or ids.size() > 1024) {
+		return false;
+	}
+	std::unordered_set<entity_id_t> seen;
+	for (auto id : ids) {
+		if (not seen.insert(id).second) {
+			return false;
+		}
+		auto found = state->get_game_entities().find(id);
+		if (found == state->get_game_entities().end()) {
+			return false;
+		}
+		auto entity = found->second;
+		if (entity->get_definition() != (owner == 1 ? this->horse : this->builder)
+		    or not entity->has_component(component::component_t::MOVE)
+		    or not entity->has_component(component::component_t::OWNERSHIP)
+		    or not builder_alive(entity, time)) {
+			return false;
+		}
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (ownership->get_owners().get(time) != owner) {
+			return false;
+		}
+	}
+	return true;
+}
+
+void FVD::cancel_attack_move(entity_id_t id) {
+	this->attack_orders.erase(id);
+}
+
+bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
+                            player_id_t owner, const std::vector<entity_id_t> &ids,
+                            const coord::phys3 &destination, const time::time_t &time) {
+	if (owner != 1 or not this->can_command_units(state, owner, ids, time)
+	    or destination.ne < 0 or destination.se < 0
+	    or destination.ne >= this->map_size or destination.se >= this->map_size
+	    or destination.up != 0) {
+		return false;
+	}
+	auto pathfinder = state->get_map()->get_pathfinder();
+	auto grid = state->get_map()->get_grid_id("fvd.data.terrain.Land");
+	for (auto id : ids) {
+		auto entity = state->get_game_entity(id);
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		auto route = system::find_path(pathfinder, grid,
+		                              position->get_positions().get(time), destination, time);
+		if (route.empty()) {
+			return false;
+		}
+	}
+	auto ordered = ids;
+	std::sort(ordered.begin(), ordered.end());
+	for (auto id : ordered) {
+		auto entity = state->get_game_entity(id);
+		auto activity = std::dynamic_pointer_cast<component::Activity>(
+			entity->get_component(component::component_t::ACTIVITY));
+		auto queue = std::dynamic_pointer_cast<component::CommandQueue>(
+			entity->get_component(component::component_t::COMMANDQUEUE));
+		activity->cancel_events(time);
+		while (not queue->get_queue().empty(time)) {
+			queue->pop_command(time);
+		}
+		activity->init(time);
+		entity->get_manager()->run_activity_system(time);
+		this->attack_orders.insert_or_assign(
+			id, AttackOrder{destination, std::nullopt, time});
+		system::Move::move_default(entity, state, destination, time);
+	}
+	return true;
 }
 
 coord::phys3 FVD::get_centre() const {

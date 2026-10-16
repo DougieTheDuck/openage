@@ -2,6 +2,7 @@ add_sources(libopenage
     definitions.cpp
     entity_factory.cpp
 	fvd.cpp
+	fvd_combat.cpp
 	fvd_test.cpp
 	game_entity.cpp
     game_state.cpp

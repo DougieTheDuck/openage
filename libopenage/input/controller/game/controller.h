@@ -38,6 +38,8 @@ enum class SelectionKind {
 	NONE,
 	BUILDER,
 	TOWER,
+	HORSE,
+	GROUP_HORSES,
 	OTHER,
 };
 
@@ -103,6 +105,11 @@ public:
 	/** Cancel a tower placement without issuing a world command. */
 	void cancel_tower_placement();
 
+	/** Prepare a human Hunter attack-move destination from the next map click. */
+	bool begin_attack_move();
+	void cancel_attack_move();
+	bool is_attack_move_active() const;
+
 	/** Whether the next normal map click should place a tower. */
 	bool is_tower_placement_active() const;
 
@@ -157,6 +164,7 @@ private:
 
 	/** Controller-local input mode, not authoritative simulation state. */
 	bool placing_tower = false;
+	bool attacking = false;
 
 	/**
 	 * Start position of a drag selection.

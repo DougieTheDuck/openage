@@ -138,6 +138,11 @@ def tests_cpp():
         "FVD horse spawn with blocked centre",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_combat",
+        "FVD Hunter AttackMove, tower damage and lethal kill credit",
+        lambda env: env["has_assets"],
+    )
 
 
 def demos_cpp():

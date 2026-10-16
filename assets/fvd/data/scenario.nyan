@@ -28,6 +28,10 @@ Scenario(engine.root.Object):
     horse_spawn_interval : int = 1
     horse_collision_radius : float = 0.38
     horse_shove_duration : float = 0.3
+    tower_arrow_damage : int = 8
+    tower_armor : int = 1
+    horse_melee_damage : int = 3
+    arrow_travel_time : float = 0.2
     hunter : Civilisation = Hunter
     builders : Civilisation = Builders
     builder : engine.util.game_entity.GameEntity = fvd.data.entities.Builder
