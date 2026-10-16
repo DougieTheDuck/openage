@@ -151,6 +151,11 @@ def tests_cpp():
         "FVD stale Hunter selections and three-tile tower pursuit",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_builder_aggro",
+        "FVD Builder detection, pursuit and tower targeting priority",
+        lambda env: env["has_assets"],
+    )
 
 
 def demos_cpp():

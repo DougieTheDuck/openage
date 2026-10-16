@@ -27,7 +27,9 @@ The crowd push respects blocked tower footprints and reserved construction sites
 Horses with an active movement order are not redirected by the spawn shove.
 The 20-second delay, one-second interval, horse collision radius and shove duration can be changed in the scenario settings.
 Horses are controlled by the human Hunter. Select one or drag to select a group, press A or the HUD's Attack-move button, then left-click a destination.
-Horses attack nearby Builders and aggressively acquire completed enemy towers within three tiles, approaching to melee range before striking.
+Attack-moving horses detect Builders and completed enemy towers within three tiles and approach to melee range before striking.
+Towers always take automatic targeting priority over Builders when both are nearby, even if a Builder is closer.
+An explicit focus-attack order to override that priority is planned but not yet available; ordinary Move and Attack-move do not currently allow forcing a nearby Builder target.
 They resume their original destination after an engagement, or stay there alert for nearby towers after arriving.
 If a selected horse dies before a group command is issued, its surviving teammates still carry out the order.
 Right-click issues an ordinary Move without seeking enemies; Escape cancels attack-move targeting.

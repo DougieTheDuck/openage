@@ -716,6 +716,14 @@ void fvd_hunter_attack_move_regressions() {
 	auto health = std::dynamic_pointer_cast<component::Live>(
 		tower_entity->get_component(component::component_t::LIVE));
 
+	// Tower priority must beat even a closer Builder at melee range.
+	auto protected_builder = entities->spawn_game_entity(
+		loop, state, 2, "fvd.data.entities.Builder", {72, 69, 0}, at(15));
+	auto protected_health = std::dynamic_pointer_cast<component::Live>(
+		protected_builder->get_component(component::component_t::LIVE));
+	auto protected_hp = protected_health->get_attribute(
+		at(15), "fvd.data.entities.Health")->get(at(15));
+
 	// Notice a tower within three tiles and approach it instead of
 	// following an attack-move path that leads away from the tower.
 	auto approaching = entities->spawn_game_entity(
@@ -729,6 +737,8 @@ void fvd_hunter_attack_move_regressions() {
 	auto tower_at = tower_position->get_positions().get(at(15));
 	auto before = approach_position->get_positions().get(at(15)) - tower_at;
 	fvd->combat_tick(state, at(15));
+	TESTEQUALS(protected_health->get_attribute(
+		at(15), "fvd.data.entities.Health")->get(at(15)), protected_hp);
 	auto after = approach_position->get_positions().get(at(15.2)) - tower_at;
 	TESTEQUALS(after.length() < before.length(), true);
 	fvd->combat_tick(state, at(16));
@@ -787,5 +797,75 @@ void fvd_hunter_attack_move_regressions() {
 		                  accepted = result;
 	                  }}}});
 	TESTEQUALS(accepted, true);
+}
+
+void fvd_hunter_builder_aggro() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+
+	// A Builder in the three-tile alert radius must be pursued even
+	// when the Hunter clicked a destination in the opposite direction.
+	auto builder = entities->spawn_game_entity(
+		loop, state, 2, "fvd.data.entities.Builder", {105, 105, 0}, at(0));
+	auto horse = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {102.5, 105, 0}, at(0));
+	auto builder_health = std::dynamic_pointer_cast<component::Live>(
+		builder->get_component(component::component_t::LIVE));
+	auto hp = builder_health->get_attribute(
+		at(0), "fvd.data.entities.Health")->get(at(0));
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {horse->get_id()},
+	                                  {99, 105, 0}, at(0)), true);
+	auto builder_position = std::dynamic_pointer_cast<component::Position>(
+		builder->get_component(component::component_t::POSITION));
+	auto horse_position = std::dynamic_pointer_cast<component::Position>(
+		horse->get_component(component::component_t::POSITION));
+	auto builder_at = builder_position->get_positions().get(at(0));
+	auto before = horse_position->get_positions().get(at(0)) - builder_at;
+	fvd->combat_tick(state, at(0));
+	auto after = horse_position->get_positions().get(at(0.25)) - builder_at;
+	TESTEQUALS(after.length() < before.length(), true);
+	fvd->combat_tick(state, at(1.2));
+	TESTEQUALS(builder_health->get_attribute(
+		at(1.2), "fvd.data.entities.Health")->get(at(1.2)) < hp, true);
+
+	// Detection continues after arrival when a Builder enters the
+	// three-tile radius; it is not limited to passing enemies en route.
+	auto finished = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {110, 110, 0}, at(3));
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {finished->get_id()},
+	                                  {111, 110, 0}, at(3)), true);
+	fvd->combat_tick(state, at(4));
+	auto finished_position = std::dynamic_pointer_cast<component::Position>(
+		finished->get_component(component::component_t::POSITION));
+	auto destination = finished_position->get_positions().get(at(4));
+	TESTEQUALS(destination.ne == coord::phys_t::from_int(111), true);
+	auto late_builder = entities->spawn_game_entity(
+		loop, state, 3, "fvd.data.entities.Builder", {113, 110, 0}, at(4.1));
+	auto late_position = std::dynamic_pointer_cast<component::Position>(
+		late_builder->get_component(component::component_t::POSITION));
+	auto late_at = late_position->get_positions().get(at(4.1));
+	fvd->combat_tick(state, at(4.1));
+	auto late_before = finished_position->get_positions().get(at(4.1)) - late_at;
+	auto late_after = finished_position->get_positions().get(at(4.35)) - late_at;
+	TESTEQUALS(late_after.length() < late_before.length(), true);
+	auto late_health = std::dynamic_pointer_cast<component::Live>(
+		late_builder->get_component(component::component_t::LIVE));
+	auto late_hp = late_health->get_attribute(
+		at(4.1), "fvd.data.entities.Health")->get(at(4.1));
+	fvd->combat_tick(state, at(5.1));
+	TESTEQUALS(late_health->get_attribute(
+		at(5.1), "fvd.data.entities.Health")->get(at(5.1)) < late_hp, true);
 }
 }

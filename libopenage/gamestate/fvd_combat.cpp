@@ -80,19 +80,19 @@ void halt_for_engagement(const std::shared_ptr<GameEntity> &horse,
 }
 
 /**
- * Find an accessible tile in melee range of an impassable tower.
+ * Find an accessible tile in melee range of a target unit or tower.
  * Destinations are ranked deterministically by travel proximity.
  */
-std::optional<coord::phys3> tower_approach(
+std::optional<coord::phys3> melee_approach(
 	const std::shared_ptr<GameState> &state,
 	const std::shared_ptr<GameEntity> &horse,
-	const std::shared_ptr<GameEntity> &tower,
+	const std::shared_ptr<GameEntity> &target,
 	const time::time_t &time, size_t map_size) {
-	const auto tower_position = std::dynamic_pointer_cast<component::Position>(
-		tower->get_component(component::component_t::POSITION))->get_positions().get(time);
+	const auto target_position = std::dynamic_pointer_cast<component::Position>(
+		target->get_component(component::component_t::POSITION))->get_positions().get(time);
 	const auto horse_position = std::dynamic_pointer_cast<component::Position>(
 		horse->get_component(component::component_t::POSITION))->get_positions().get(time);
-	const auto site = tower_position.to_tile();
+	const auto site = target_position.to_tile();
 	const std::array<coord::tile_delta, 8> offsets{{
 		{-1, 0}, {1, 0}, {0, -1}, {0, 1},
 		{-1, -1}, {-1, 1}, {1, -1}, {1, 1},
@@ -110,8 +110,8 @@ std::optional<coord::phys3> tower_approach(
 			continue;
 		}
 		auto destination = tile.to_phys3_center();
-		auto to_tower = destination - tower_position;
-		if (to_tower.length() > 1.45) {
+		auto to_target = destination - target_position;
+		if (to_target.length() > 1.45) {
 			continue;
 		}
 		auto to_horse = destination - horse_position;
@@ -211,8 +211,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 	const auto builders = entities_by_definition(state, this->builder);
 	const auto towers = entities_by_definition(state, this->tower);
 
-	// AttackMove searches three tiles for towers, including while idle at
-	// its destination. Horses close to a target before dealing melee damage.
+	// AttackMove searches three tiles for towers and Builders, even after
+	// arrival. Towers take priority; horses approach before striking.
 	for (auto id : horses) {
 		auto order_it = this->attack_orders.find(id);
 		if (order_it == this->attack_orders.end()) {
@@ -256,9 +256,11 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 					continue;
 				}
 				auto tower_entity = state->get_game_entity(tower_id);
-				if (distance_squared(horse, tower_entity, time) <= 3.0 * 3.0
-				    and tower_approach(state, horse, tower_entity,
-				                       time, this->map_size).has_value()) {
+				auto distance = distance_squared(horse, tower_entity, time);
+				if (distance <= 3.0 * 3.0
+				    and (distance <= 1.45 * 1.45
+				         or melee_approach(state, horse, tower_entity,
+				                           time, this->map_size).has_value())) {
 					order.target.reset();
 					break;
 				}
@@ -284,7 +286,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				auto distance = distance_squared(horse, tower_entity, time);
 				if (distance <= closest) {
 					if (distance <= 1.45 * 1.45
-					    or tower_approach(state, horse, tower_entity,
+					    or melee_approach(state, horse, tower_entity,
 					                      time, this->map_size).has_value()) {
 						nearest = tower_id;
 						closest = distance;
@@ -292,14 +294,19 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				}
 			}
 			if (nearest == 0) {
-				closest = 1.45 * 1.45;
+				// Builders have the same three-tile alert radius, but only
+				// become automatic targets when no tower takes precedence.
+				closest = 3.0 * 3.0;
 				for (auto enemy : builders) {
 					if (not eligible(enemy)) {
 						continue;
 					}
-					auto distance = distance_squared(
-						horse, state->get_game_entity(enemy), time);
-					if (distance <= closest) {
+					auto builder_entity = state->get_game_entity(enemy);
+					auto distance = distance_squared(horse, builder_entity, time);
+					if (distance <= closest
+					    and (distance <= 1.45 * 1.45
+					         or melee_approach(state, horse, builder_entity,
+					                           time, this->map_size).has_value())) {
 						closest = distance;
 						nearest = enemy;
 					}
@@ -319,22 +326,19 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			}
 			auto distance = distance_squared(horse, enemy->second, time);
 			if (distance > 1.45 * 1.45) {
-				if (enemy->second->get_definition() == this->tower) {
-					if (not move->get_active_target()
-					    or move->get_active_arrival() <= time) {
-						auto approach = tower_approach(
-							state, horse, enemy->second, time, this->map_size);
-						if (approach) {
-							system::Move::move_default(horse, state, *approach, time);
-						}
-						else {
-							order.target.reset();
-						}
+				// Both Builders and towers are pursued to melee range.
+				// A moving Builder may require another approach after
+				// the current route reaches its last-known position.
+				if (not move->get_active_target()
+				    or move->get_active_arrival() <= time) {
+					auto approach = melee_approach(
+						state, horse, enemy->second, time, this->map_size);
+					if (approach) {
+						system::Move::move_default(horse, state, *approach, time);
 					}
-				}
-				else {
-					// Builders remain a short-range melee target.
-					order.target.reset();
+					else {
+						order.target.reset();
+					}
 				}
 				continue;
 			}
@@ -353,7 +357,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			continue;
 		}
 
-		// After reaching the destination, remain alert for towers within
+		// After reaching the destination, remain alert to enemies within
 		// three tiles until a human issues another command.
 		if (order.reached_destination) {
 			if (move->get_active_target()) {
