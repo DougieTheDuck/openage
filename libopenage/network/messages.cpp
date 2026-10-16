@@ -2,6 +2,7 @@
 
 #include "messages.h"
 
+#include <algorithm>
 #include <limits>
 
 #include "error/error.h"
@@ -59,6 +60,16 @@ public:
 		return value;
 	}
 
+	AssetDigest asset_digest() {
+		this->require(ASSET_DIGEST_SIZE);
+		AssetDigest value{};
+		std::copy_n(this->payload.data() + this->offset,
+		            ASSET_DIGEST_SIZE,
+		            value.begin());
+		this->offset += ASSET_DIGEST_SIZE;
+		return value;
+	}
+
 	void finish() const {
 		if (this->offset != this->payload.size()) {
 			throw Error{MSG(err) << "Unexpected trailing bytes in FVD network payload"};
@@ -112,6 +123,93 @@ void append_string(std::vector<uint8_t> &output,
 }
 
 } // namespace
+
+std::vector<uint8_t> encode_client_hello(const ClientHello &hello) {
+	if (hello.participant_name.empty()) {
+		throw Error{MSG(err) << "FVD participant name must not be empty"};
+	}
+	if (hello.build_version.empty()) {
+		throw Error{MSG(err) << "FVD build version must not be empty"};
+	}
+
+	std::vector<uint8_t> output{};
+	append_u16(output, hello.minimum_protocol_minor);
+	append_u16(output, 0);
+	append_string(output, hello.participant_name, MAX_PARTICIPANT_NAME_SIZE);
+	append_string(output, hello.build_version, MAX_BUILD_VERSION_SIZE);
+	output.insert(output.end(), hello.asset_digest.begin(), hello.asset_digest.end());
+	return output;
+}
+
+ClientHello decode_client_hello(const std::vector<uint8_t> &payload) {
+	PayloadReader reader{payload};
+	ClientHello hello{};
+	hello.minimum_protocol_minor = reader.u16();
+	if (reader.u16() != 0) {
+		throw Error{MSG(err) << "Unsupported FVD client hello flags"};
+	}
+	hello.participant_name = reader.string(MAX_PARTICIPANT_NAME_SIZE);
+	if (hello.participant_name.empty()) {
+		throw Error{MSG(err) << "FVD participant name must not be empty"};
+	}
+	hello.build_version = reader.string(MAX_BUILD_VERSION_SIZE);
+	if (hello.build_version.empty()) {
+		throw Error{MSG(err) << "FVD build version must not be empty"};
+	}
+	hello.asset_digest = reader.asset_digest();
+	reader.finish();
+	return hello;
+}
+
+std::vector<uint8_t> encode_server_accept(const ServerAccept &accept) {
+	if (accept.session_id == 0) {
+		throw Error{MSG(err) << "Accepted FVD session ID must be nonzero"};
+	}
+	if (accept.player_id == 0) {
+		throw Error{MSG(err) << "Accepted FVD player ID must be nonzero"};
+	}
+
+	std::vector<uint8_t> output{};
+	append_u64(output, accept.session_id);
+	append_u64(output, accept.player_id);
+	return output;
+}
+
+ServerAccept decode_server_accept(const std::vector<uint8_t> &payload) {
+	PayloadReader reader{payload};
+	ServerAccept accept{};
+	accept.session_id = reader.u64();
+	accept.player_id = reader.u64();
+	reader.finish();
+	if (accept.session_id == 0) {
+		throw Error{MSG(err) << "Accepted FVD session ID must be nonzero"};
+	}
+	if (accept.player_id == 0) {
+		throw Error{MSG(err) << "Accepted FVD player ID must be nonzero"};
+	}
+	return accept;
+}
+
+std::vector<uint8_t> encode_server_reject(const ServerReject &reject) {
+	if (reject.reason.empty()) {
+		throw Error{MSG(err) << "FVD handshake rejection reason must not be empty"};
+	}
+
+	std::vector<uint8_t> output{};
+	append_string(output, reject.reason, MAX_HANDSHAKE_REJECTION_SIZE);
+	return output;
+}
+
+ServerReject decode_server_reject(const std::vector<uint8_t> &payload) {
+	PayloadReader reader{payload};
+	ServerReject reject{};
+	reject.reason = reader.string(MAX_HANDSHAKE_REJECTION_SIZE);
+	reader.finish();
+	if (reject.reason.empty()) {
+		throw Error{MSG(err) << "FVD handshake rejection reason must not be empty"};
+	}
+	return reject;
+}
 
 std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 	if (intent.entity_ids.size() > MAX_COMMAND_ENTITIES) {
@@ -233,6 +331,19 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 	}
 	reader.finish();
 	return state;
+}
+
+std::vector<uint8_t> encode_snapshot_request(const SnapshotRequest &request) {
+	std::vector<uint8_t> output{};
+	append_u64(output, request.last_applied_revision);
+	return output;
+}
+
+SnapshotRequest decode_snapshot_request(const std::vector<uint8_t> &payload) {
+	PayloadReader reader{payload};
+	SnapshotRequest request{reader.u64()};
+	reader.finish();
+	return request;
 }
 
 } // namespace openage::network

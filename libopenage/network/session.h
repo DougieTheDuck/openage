@@ -26,10 +26,15 @@ struct SessionIdentity {
 class ConnectionSession {
 public:
 	/** Create an accepted session with a nonzero session and player ID. */
-	explicit ConnectionSession(SessionIdentity identity);
+	explicit ConnectionSession(
+		SessionIdentity identity,
+		ProtocolVersion protocol_version = {PROTOCOL_MAJOR, PROTOCOL_MINOR});
 
 	/** Get the host-assigned connection identity. */
 	const SessionIdentity &get_identity() const;
+
+	/** Get the protocol version negotiated during the handshake. */
+	const ProtocolVersion &get_protocol_version() const;
 
 	/**
 	 * Create the next outbound frame for this session.
@@ -50,6 +55,7 @@ public:
 
 private:
 	const SessionIdentity identity;
+	const ProtocolVersion protocol_version;
 	uint64_t next_incoming_sequence;
 	uint64_t next_outgoing_sequence;
 };

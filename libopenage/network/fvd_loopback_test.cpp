@@ -26,8 +26,11 @@
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
 #include "gamestate/terrain_factory.h"
+#include "network/command_mailbox.h"
+#include "network/handshake.h"
 #include "network/messages.h"
 #include "network/protocol.h"
+#include "network/replication.h"
 #include "network/session.h"
 #include "network/transport.h"
 #include "testing/testing.h"
@@ -38,7 +41,13 @@ namespace openage::network::tests {
 
 namespace {
 
-constexpr uint64_t TEST_SESSION_ID = 42;
+AssetDigest test_asset_digest() {
+	AssetDigest digest{};
+	for (size_t i = 0; i < digest.size(); ++i) {
+		digest[i] = static_cast<uint8_t>(i);
+	}
+	return digest;
+}
 
 void run_host(TcpListener &listener) {
 	auto root = util::Path{
@@ -74,7 +83,10 @@ void run_host(TcpListener &listener) {
 	other_builder_id.has_value() or TESTFAIL;
 
 	auto connection = listener.accept();
-	ConnectionSession session{{TEST_SESSION_ID, 2}};
+	auto accepted_session = host_handshake(connection, 2, test_asset_digest());
+	accepted_session.has_value() or TESTFAIL;
+	auto &session = *accepted_session;
+	CommandMailbox command_mailbox{16};
 	auto snapshot_frame = session.make_frame(
 		MessageType::WORLD_SNAPSHOT,
 		encode_world_state(
@@ -85,12 +97,19 @@ void run_host(TcpListener &listener) {
 	command_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*command_frame);
 	command_frame->message_type == MessageType::COMMAND_INTENT or TESTFAIL;
-	auto intent = decode_command_intent(command_frame->payload);
+	command_mailbox.try_push({
+		session.get_identity(),
+		decode_command_intent(command_frame->payload)})
+		or TESTFAIL;
+	auto commands = command_mailbox.drain(1);
+	TESTEQUALS(commands.size(), size_t{1});
+	auto &command = commands.front();
+	auto &intent = command.intent;
 
 	std::optional<bool> accepted{};
 	submit_command_intent(
 		intent,
-		session.get_identity().player_id,
+		command.identity.player_id,
 		loop,
 		commander,
 		state,
@@ -123,13 +142,20 @@ void run_host(TcpListener &listener) {
 		spoofed_frame.has_value() or TESTFAIL;
 		session.validate_incoming(*spoofed_frame);
 		spoofed_frame->message_type == MessageType::COMMAND_INTENT or TESTFAIL;
-		auto spoofed = decode_command_intent(spoofed_frame->payload);
+		command_mailbox.try_push({
+			session.get_identity(),
+			decode_command_intent(spoofed_frame->payload)})
+			or TESTFAIL;
+		auto spoofed_commands = command_mailbox.drain(1);
+		TESTEQUALS(spoofed_commands.size(), size_t{1});
+		auto &spoofed_command = spoofed_commands.front();
+		auto &spoofed = spoofed_command.intent;
 		auto before = capture_positions(
 			state, spoofed.entity_ids, sample_time, 0, 1);
 		std::optional<bool> spoofed_accepted{};
 		submit_command_intent(
 			spoofed,
-			session.get_identity().player_id,
+			spoofed_command.identity.player_id,
 			loop,
 			commander,
 			state,
@@ -157,12 +183,19 @@ void run_host(TcpListener &listener) {
 
 void run_guest(uint16_t port) {
 	auto client = TcpConnection::connect("127.0.0.1", port);
-	ConnectionSession session{{TEST_SESSION_ID, 2}};
+	auto session = client_handshake(
+		client,
+		{PROTOCOL_MINIMUM_COMPATIBLE_MINOR,
+		 "Builder",
+		 "fvd-test",
+		 test_asset_digest()});
 	auto snapshot_frame = client.receive_frame();
 	snapshot_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*snapshot_frame);
 	snapshot_frame->message_type == MessageType::WORLD_SNAPSHOT or TESTFAIL;
 	auto snapshot = decode_world_state(snapshot_frame->payload);
+	ReplicationTracker replication{};
+	replication.accept_snapshot(snapshot);
 	TESTEQUALS(snapshot.positions.size(), 2);
 	auto initial = snapshot.positions.front();
 	auto other = snapshot.positions.back();
@@ -195,6 +228,7 @@ void run_guest(uint16_t port) {
 	session.validate_incoming(*delta_frame);
 	delta_frame->message_type == MessageType::WORLD_DELTA or TESTFAIL;
 	auto delta = decode_world_state(delta_frame->payload);
+	replication.accept_delta(delta) == DeltaDisposition::APPLY or TESTFAIL;
 	TESTEQUALS(delta.base_revision, uint64_t{0});
 	TESTEQUALS(delta.world_revision, uint64_t{1});
 	TESTEQUALS(delta.positions.size(), 1);

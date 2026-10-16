@@ -25,8 +25,11 @@ The direct-IP prototype does not encrypt traffic or authenticate the host.
 
 `network::ConnectionSession` is created after a successful handshake with a host-assigned nonzero session ID and player ID.
 The binding is immutable for the connection lifetime.
-The connection thread owns the session object and uses it to validate every inbound session ID, protocol version and contiguous sequence number.
-The same object creates outbound frames with the correct session ID and next sequence number.
+The connection thread owns the session object and uses it to validate every inbound session ID, negotiated protocol version and contiguous sequence number.
+The same object creates outbound frames with the negotiated version, correct session ID and next sequence number.
+After validation and payload decoding, connection threads place authenticated commands into a bounded `CommandMailbox`.
+The simulation thread drains this mailbox in FIFO arrival order and supplies its authoritative time when scheduling commands.
+A full mailbox is explicit backpressure: the connection handler must reject the command or disconnect the peer rather than dropping it silently.
 
 Gameplay payloads never contain a claimed player ID.
 The network boundary passes the decoded `CommandIntent` and the session's assigned player to `submit_command_intent`.
@@ -55,7 +58,7 @@ Payloads are limited to 1 MiB.
 The handshake uses session and sequence zero.
 After acceptance, each direction starts at sequence one and the receiver rejects duplicates, regressions and a session ID that does not match the connection.
 
-The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping` and `Pong`.
+The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping`, `Pong` and `SnapshotRequest`.
 Payload schemas use fixed-width network-order integers, length-prefixed UTF-8 strings and length-prefixed arrays.
 
 ### Command intent payload
@@ -102,13 +105,44 @@ Coordinates are signed Q16.16 fixed-point values serialized from their raw 64-bi
 Each position record contains an 8-byte entity ID followed by its three signed Q16.16 coordinates.
 The position-count limit keeps the complete payload within the 1 MiB frame limit.
 
+### Snapshot request payload
+
+`SnapshotRequest` carries the client's last applied world revision as one 8-byte unsigned integer.
+It is sent once when a client receives a delta whose base does not match that revision.
+The client suppresses later deltas until a complete recovery snapshot arrives.
+
 ## Compatibility handshake
 
 `ClientHello` supplies the participant name, protocol version, game build version and an FVD asset manifest digest.
 The host answers with `ServerAccept` and the assigned session ID or `ServerReject` and a displayable reason.
 Protocol major versions and the required asset digest must match.
 A newer minor version may connect only when its advertised minimum compatible minor includes the peer's version.
+The host selects the highest minor version supported by both peers and writes it into `ServerAccept` and all subsequent frames.
+The accepted payload supplies both the generated session ID and the lobby-assigned player ID, allowing each side to construct the same immutable `ConnectionSession`.
 Unknown message types or flags are protocol errors after acceptance.
+
+### Client hello payload
+
+| Field | Encoding |
+|---|---|
+| Minimum compatible protocol minor | 2-byte unsigned integer |
+| Flags | 2-byte zero value |
+| Participant name | 4-byte length and at most 128 UTF-8 bytes |
+| Game build version | 4-byte length and at most 128 UTF-8 bytes |
+| Gameplay asset manifest digest | 32-byte SHA-256 digest |
+
+The build version is diagnostic information; protocol compatibility and the gameplay asset digest determine whether the host accepts the client.
+
+### Server accept payload
+
+| Field | Encoding |
+|---|---|
+| Session ID | 8-byte nonzero unsigned integer |
+| Assigned player ID | 8-byte nonzero unsigned integer |
+
+### Server reject payload
+
+The rejection payload is a 4-byte length followed by at most 4,096 UTF-8 bytes suitable for display to the connecting player.
 
 The asset digest covers the selected modpack manifests and gameplay data, not generated build paths or graphics that do not affect simulation.
 
@@ -124,6 +158,7 @@ Accepted mutations appear in ordered `WorldDelta` messages.
 `WorldSnapshot` contains the initial state and is also the recovery boundary if a client misses a revision.
 Both replication messages carry the authoritative simulation time, world revision and the base revision needed to apply a delta.
 Clients apply only contiguous revisions and request a snapshot after a gap.
+`network::ReplicationTracker` owns this client-side revision state and prevents repeated recovery requests while a snapshot is in flight.
 
 The initial implementation has no client prediction.
 Clients render authoritative state and may interpolate presentation positions without changing simulation state.

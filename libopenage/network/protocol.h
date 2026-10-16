@@ -19,6 +19,15 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 constexpr uint16_t PROTOCOL_MAJOR = 1;
 constexpr uint16_t PROTOCOL_MINOR = 0;
 
+/** Oldest protocol minor version compatible with this implementation. */
+constexpr uint16_t PROTOCOL_MINIMUM_COMPATIBLE_MINOR = 0;
+
+/** Protocol version advertised during handshake or selected for a session. */
+struct ProtocolVersion {
+	uint16_t major{PROTOCOL_MAJOR};
+	uint16_t minor{PROTOCOL_MINOR};
+};
+
 /**
  * Size of the fixed frame header in bytes.
  */
@@ -45,6 +54,7 @@ enum class MessageType : uint16_t {
 	PARTICIPANT_DISCONNECTED = 10,
 	PING = 11,
 	PONG = 12,
+	SNAPSHOT_REQUEST = 13,
 };
 
 /** Whether a message type is defined by this protocol version. */

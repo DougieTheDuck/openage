@@ -30,8 +30,10 @@ void require_session_message(MessageType message_type) {
 
 } // namespace
 
-ConnectionSession::ConnectionSession(SessionIdentity identity) :
+ConnectionSession::ConnectionSession(SessionIdentity identity,
+                                     ProtocolVersion protocol_version) :
 	identity{identity},
+	protocol_version{protocol_version},
 	next_incoming_sequence{1},
 	next_outgoing_sequence{1} {
 	if (identity.session_id == 0) {
@@ -40,10 +42,20 @@ ConnectionSession::ConnectionSession(SessionIdentity identity) :
 	if (identity.player_id == 0) {
 		throw Error{MSG(err) << "Accepted FVD session player ID must be nonzero"};
 	}
+	if (protocol_version.major != PROTOCOL_MAJOR
+	    or protocol_version.minor < PROTOCOL_MINIMUM_COMPATIBLE_MINOR
+	    or protocol_version.minor > PROTOCOL_MINOR) {
+		throw Error{MSG(err) << "Incompatible negotiated FVD protocol version "
+		                     << protocol_version.major << "." << protocol_version.minor};
+	}
 }
 
 const SessionIdentity &ConnectionSession::get_identity() const {
 	return this->identity;
+}
+
+const ProtocolVersion &ConnectionSession::get_protocol_version() const {
+	return this->protocol_version;
 }
 
 Frame ConnectionSession::make_frame(MessageType message_type,
@@ -58,6 +70,8 @@ Frame ConnectionSession::make_frame(MessageType message_type,
 	}
 
 	Frame frame{};
+	frame.protocol_major = this->protocol_version.major;
+	frame.protocol_minor = this->protocol_version.minor;
 	frame.message_type = message_type;
 	frame.session_id = this->identity.session_id;
 	frame.sequence = this->next_outgoing_sequence;
@@ -67,11 +81,12 @@ Frame ConnectionSession::make_frame(MessageType message_type,
 }
 
 void ConnectionSession::validate_incoming(const Frame &frame) {
-	if (frame.protocol_major != PROTOCOL_MAJOR
-	    or frame.protocol_minor != PROTOCOL_MINOR) {
+	if (frame.protocol_major != this->protocol_version.major
+	    or frame.protocol_minor != this->protocol_version.minor) {
 		throw Error{MSG(err) << "FVD session protocol version mismatch: received "
 		                     << frame.protocol_major << "." << frame.protocol_minor
-		                     << ", expected " << PROTOCOL_MAJOR << "." << PROTOCOL_MINOR};
+		                     << ", expected " << this->protocol_version.major << "."
+		                     << this->protocol_version.minor};
 	}
 	require_session_message(frame.message_type);
 	if (frame.session_id != this->identity.session_id) {

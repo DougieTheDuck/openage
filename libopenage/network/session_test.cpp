@@ -17,6 +17,10 @@ void session() {
 	ConnectionSession connection{{42, 3}};
 	TESTEQUALS(connection.get_identity().session_id, uint64_t{42});
 	TESTEQUALS(connection.get_identity().player_id, gamestate::player_id_t{3});
+	TESTEQUALS(connection.get_protocol_version().major, PROTOCOL_MAJOR);
+	TESTEQUALS(connection.get_protocol_version().minor, PROTOCOL_MINOR);
+	TESTTHROWS(ConnectionSession({42, 3}, {PROTOCOL_MAJOR + 1, PROTOCOL_MINOR}));
+	TESTTHROWS(ConnectionSession({43, 3}, {PROTOCOL_MAJOR, PROTOCOL_MINOR + 1}));
 
 	auto first = connection.make_frame(MessageType::COMMAND_RESULT, {1, 2});
 	TESTEQUALS(first.session_id, uint64_t{42});

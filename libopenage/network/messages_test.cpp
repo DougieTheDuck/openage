@@ -10,6 +10,52 @@
 namespace openage::network::tests {
 
 void messages() {
+	ClientHello hello{};
+	hello.minimum_protocol_minor = 0;
+	hello.participant_name = "Builder";
+	hello.build_version = "fvd-test";
+	for (size_t i = 0; i < hello.asset_digest.size(); ++i) {
+		hello.asset_digest[i] = static_cast<uint8_t>(i);
+	}
+	auto encoded_hello = encode_client_hello(hello);
+	auto decoded_hello = decode_client_hello(encoded_hello);
+	TESTEQUALS(decoded_hello.minimum_protocol_minor, hello.minimum_protocol_minor);
+	TESTEQUALS(decoded_hello.participant_name, hello.participant_name);
+	TESTEQUALS(decoded_hello.build_version, hello.build_version);
+	decoded_hello.asset_digest == hello.asset_digest or TESTFAIL;
+
+	auto invalid_hello_flags = encoded_hello;
+	invalid_hello_flags[3] = 1;
+	TESTTHROWS(decode_client_hello(invalid_hello_flags));
+	auto truncated_hello = encoded_hello;
+	truncated_hello.pop_back();
+	TESTTHROWS(decode_client_hello(truncated_hello));
+	auto trailing_hello = encoded_hello;
+	trailing_hello.push_back(0);
+	TESTTHROWS(decode_client_hello(trailing_hello));
+	ClientHello invalid_hello{};
+	invalid_hello.build_version = "fvd-test";
+	TESTTHROWS(encode_client_hello(invalid_hello));
+	invalid_hello.participant_name = std::string(MAX_PARTICIPANT_NAME_SIZE + 1, 'x');
+	TESTTHROWS(encode_client_hello(invalid_hello));
+
+	ServerAccept accept{42, 3};
+	auto decoded_accept = decode_server_accept(encode_server_accept(accept));
+	TESTEQUALS(decoded_accept.session_id, accept.session_id);
+	TESTEQUALS(decoded_accept.player_id, accept.player_id);
+	TESTTHROWS(encode_server_accept({0, 3}));
+	TESTTHROWS(encode_server_accept({42, 0}));
+	auto trailing_accept = encode_server_accept(accept);
+	trailing_accept.push_back(0);
+	TESTTHROWS(decode_server_accept(trailing_accept));
+
+	ServerReject reject{"gameplay asset manifest does not match host"};
+	TESTEQUALS(decode_server_reject(encode_server_reject(reject)).reason,
+	           reject.reason);
+	TESTTHROWS(encode_server_reject({}));
+	TESTTHROWS(encode_server_reject(
+		{std::string(MAX_HANDSHAKE_REJECTION_SIZE + 1, 'x')}));
+
 	CommandIntent intent{};
 	intent.command_id = 0x0102030405060708;
 	intent.kind = CommandKind::MOVE;
@@ -125,6 +171,14 @@ void messages() {
 	maximum_payload.size() <= MAX_PAYLOAD_SIZE or TESTFAIL;
 	maximum_state.positions.emplace_back();
 	TESTTHROWS(encode_world_state(maximum_state));
+
+	SnapshotRequest snapshot_request{17};
+	auto encoded_snapshot_request = encode_snapshot_request(snapshot_request);
+	TESTEQUALS(encoded_snapshot_request.size(), size_t{8});
+	TESTEQUALS(decode_snapshot_request(encoded_snapshot_request).last_applied_revision,
+	           snapshot_request.last_applied_revision);
+	encoded_snapshot_request.push_back(0);
+	TESTTHROWS(decode_snapshot_request(encoded_snapshot_request));
 }
 
 } // namespace openage::network::tests

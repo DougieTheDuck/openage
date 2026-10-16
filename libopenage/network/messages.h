@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -12,6 +14,18 @@
 #include "time/time.h"
 
 namespace openage::network {
+
+/** Byte length of the gameplay asset manifest digest. */
+constexpr size_t ASSET_DIGEST_SIZE = 32;
+
+/** Largest participant name accepted during the handshake. */
+constexpr uint32_t MAX_PARTICIPANT_NAME_SIZE = 128;
+
+/** Largest game build version accepted during the handshake. */
+constexpr uint32_t MAX_BUILD_VERSION_SIZE = 128;
+
+/** Largest displayable handshake rejection reason. */
+constexpr uint32_t MAX_HANDSHAKE_REJECTION_SIZE = 4096;
 
 /** Largest entity selection accepted in one network command. */
 constexpr uint32_t MAX_COMMAND_ENTITIES = 1024;
@@ -33,6 +47,28 @@ enum class CommandKind : uint16_t {
 enum class CommandStatus : uint16_t {
 	ACCEPTED = 1,
 	REJECTED = 2,
+};
+
+/** SHA-256 digest of gameplay-affecting modpack manifests and data. */
+using AssetDigest = std::array<uint8_t, ASSET_DIGEST_SIZE>;
+
+/** Compatibility information sent by a connecting participant. */
+struct ClientHello {
+	uint16_t minimum_protocol_minor{PROTOCOL_MINIMUM_COMPATIBLE_MINOR};
+	std::string participant_name{};
+	std::string build_version{};
+	AssetDigest asset_digest{};
+};
+
+/** Identity assigned by the host to an accepted connection. */
+struct ServerAccept {
+	uint64_t session_id{0};
+	gamestate::player_id_t player_id{0};
+};
+
+/** Displayable reason why the host refused a connection. */
+struct ServerReject {
+	std::string reason{};
 };
 
 /** Player-independent client intent. Ownership comes from the connection. */
@@ -66,6 +102,29 @@ struct WorldState {
 	std::vector<EntityPosition> positions{};
 };
 
+/** Request for a full snapshot after a client cannot apply a world delta. */
+struct SnapshotRequest {
+	uint64_t last_applied_revision{0};
+};
+
+/** Encode a ClientHello payload. */
+std::vector<uint8_t> encode_client_hello(const ClientHello &hello);
+
+/** Decode and validate a ClientHello payload. */
+ClientHello decode_client_hello(const std::vector<uint8_t> &payload);
+
+/** Encode a ServerAccept payload. */
+std::vector<uint8_t> encode_server_accept(const ServerAccept &accept);
+
+/** Decode and validate a ServerAccept payload. */
+ServerAccept decode_server_accept(const std::vector<uint8_t> &payload);
+
+/** Encode a ServerReject payload. */
+std::vector<uint8_t> encode_server_reject(const ServerReject &reject);
+
+/** Decode and validate a ServerReject payload. */
+ServerReject decode_server_reject(const std::vector<uint8_t> &payload);
+
 /** Encode a CommandIntent payload. */
 std::vector<uint8_t> encode_command_intent(const CommandIntent &intent);
 
@@ -83,5 +142,11 @@ std::vector<uint8_t> encode_world_state(const WorldState &state);
 
 /** Decode and validate a WorldSnapshot or WorldDelta payload. */
 WorldState decode_world_state(const std::vector<uint8_t> &payload);
+
+/** Encode a SnapshotRequest payload. */
+std::vector<uint8_t> encode_snapshot_request(const SnapshotRequest &request);
+
+/** Decode and validate a SnapshotRequest payload. */
+SnapshotRequest decode_snapshot_request(const std::vector<uint8_t> &payload);
 
 } // namespace openage::network
