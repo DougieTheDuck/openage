@@ -15,6 +15,7 @@
 #include "error/error.h"
 #include "event/event_loop.h"
 #include "event/eventhandler.h"
+#include "gamestate/event/spawn_entity.h"
 #include "gamestate/component/api/live.h"
 #include "gamestate/component/api/move.h"
 #include "gamestate/component/internal/activity.h"
@@ -74,6 +75,32 @@ public:
 	}
 };
 
+/** Schedule Hunter-owned horses without assigning automatic movement. */
+class SpawnHorseHandler : public openage::event::OnceEventHandler {
+public:
+	SpawnHorseHandler() :
+		OnceEventHandler{"game.fvd_spawn_horse"} {}
+
+	void setup_event(const std::shared_ptr<openage::event::Event> &,
+	                 const std::shared_ptr<openage::event::State> &) override {}
+
+	void invoke(openage::event::EventLoop &,
+	            const std::shared_ptr<openage::event::EventEntity> &,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time,
+	            const param_map &) override {
+		auto game_state = std::dynamic_pointer_cast<GameState>(state);
+		game_state->get_fvd()->spawn_hunter_horse(game_state, time);
+	}
+
+	time::time_t predict_invoke_time(
+		const std::shared_ptr<openage::event::EventEntity> &,
+		const std::shared_ptr<openage::event::State> &,
+		const time::time_t &at) override {
+		return at;
+	}
+};
+
 /** Recalculate active routes at a low fixed frequency. */
 class RefreshPathsHandler : public openage::event::RepeatEventHandler {
 public:
@@ -118,10 +145,14 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	auto chunk = settings.get_int("chunk_size");
 	auto players = settings.get_int("player_count");
 	auto build_time = settings.get_float("construction_time");
+	auto horse_delay = settings.get_int("horse_spawn_delay");
+	auto horse_interval = settings.get_int("horse_spawn_interval");
 	if (size < 16 or size > 512 or chunk < 4 or chunk > size
 	    or chunk > MAX_CHUNK_WIDTH or chunk > MAX_CHUNK_HEIGHT
 	    or size % chunk != 0 or players < 2 or players > 8
-	    or build_time <= 0.0 or build_time > 300.0) {
+	    or build_time <= 0.0 or build_time > 300.0
+	    or horse_delay < 0 or horse_delay > 600
+	    or horse_interval < 1 or horse_interval > 60) {
 		throw Error{ERR << "Invalid FVD settings: map 16..512, chunk 4.."
 		                << MAX_CHUNK_WIDTH << ", players 2..8, construction >0..300 seconds"};
 	}
@@ -129,9 +160,12 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->chunk_size = chunk;
 	this->player_count = players;
 	this->construction_time = time::time_t::from_double(build_time);
+	this->horse_spawn_delay = time::time_t::from_int(horse_delay);
+	this->horse_spawn_interval = time::time_t::from_int(horse_interval);
 	this->hunter = settings.get_object("hunter").get_name();
 	this->builders = settings.get_object("builders").get_name();
 	this->builder = settings.get_object("builder").get_name();
+	this->horse = settings.get_object("horse").get_name();
 	this->foundation = settings.get_object("foundation").get_name();
 	this->tower = settings.get_object("tower").get_name();
 	this->plains = settings.get_object("terrain").get_name();
@@ -171,6 +205,8 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
                      const std::shared_ptr<TerrainFactory> &terrain) {
 	this->event_loop = loop;
 	this->entity_factory = entities;
+	this->horse_spawn_target = std::make_shared<event::Spawner>(loop);
+	loop->add_event_handler(std::make_shared<SpawnHorseHandler>());
 	loop->add_event_handler(std::make_shared<BuildProgressHandler>());
 	loop->add_event_handler(std::make_shared<RefreshPathsHandler>());
 
@@ -642,6 +678,35 @@ std::shared_ptr<component::command::BuildTowerCommand> FVD::get_build_order(
 
 bool FVD::is_tile_reserved(const coord::tile &tile) const {
 	return this->reserved_tiles.contains(tile);
+}
+
+void FVD::start_hunter_wave(const std::shared_ptr<GameState> &state,
+                            const time::time_t &match_start) {
+	if (this->hunter_wave_started) {
+		return;
+	}
+	auto loop = this->event_loop.lock();
+	if (not loop or not this->horse_spawn_target) {
+		throw Error{ERR << "Cannot start the Hunter wave before FVD initialization"};
+	}
+	this->hunter_wave_started = true;
+	loop->create_event("game.fvd_spawn_horse", this->horse_spawn_target, state,
+	                   match_start + this->horse_spawn_delay);
+}
+
+void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
+                            const time::time_t &time) {
+	if (not this->hunter_wave_started) {
+		return;
+	}
+	auto loop = this->event_loop.lock();
+	auto factory = this->entity_factory.lock();
+	if (not loop or not factory or not this->horse_spawn_target) {
+		throw Error{ERR << "Cannot spawn a Hunter horse without FVD services"};
+	}
+	factory->spawn_game_entity(loop, state, 1, this->horse, this->get_centre(), time);
+	loop->create_event("game.fvd_spawn_horse", this->horse_spawn_target, state,
+	                   time + this->horse_spawn_interval);
 }
 
 coord::phys3 FVD::get_centre() const {

@@ -113,6 +113,11 @@ def tests_cpp():
         "FVD Builder movement, timed construction and cancellation",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_spawning",
+        "FVD Hunter horse spawn cadence and idle behavior",
+        lambda env: env["has_assets"],
+    )
 
 
 def demos_cpp():

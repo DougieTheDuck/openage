@@ -20,7 +20,10 @@ The FVD renderer draws the exact tile boundaries over the plains for placement r
 All eight players start with their camera centred at (64, 64).
 Player 1 has the Hunter civilisation, starts without units and cannot place buildings.
 Players 2 through 8 have the Builders civilisation and each receive exactly one Builder near the centre, with distinct starting positions.
-Hunter unit spawning is not implemented yet.
+After 20 seconds of match time, the first Hunter horse spawns at the centre of the map; one more spawns every second thereafter.
+Horses belong to Hunter player 1 and remain idle at the centre until the human Hunter selects and commands them.
+The 20-second delay and one-second interval can be changed in the scenario settings.
+Automatic horse movement, attack-move and a gather point are not implemented yet.
 
 The local view initially controls player 2.
 Press keys 1 through 8 to switch the controlled player and return the camera to the common start location.

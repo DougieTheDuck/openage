@@ -21,6 +21,7 @@
 
 namespace openage::event {
 class EventLoop;
+class EventEntity;
 }
 
 namespace openage::gamestate {
@@ -91,6 +92,17 @@ public:
 	                   entity_id_t tower_id,
 	                   const time::time_t &time);
 
+	/**
+	 * Start the local match's Hunter spawn schedule at match simulation time.
+	 * Safe to call more than once; no horses spawn while waiting to start.
+	 */
+	void start_hunter_wave(const std::shared_ptr<GameState> &state,
+	                       const time::time_t &match_start);
+
+	/** Spawn an idle Hunter horse and schedule the next one. */
+	void spawn_hunter_horse(const std::shared_ptr<GameState> &state,
+	                       const time::time_t &time);
+
 	/** Get the common camera start location. */
 	coord::phys3 get_centre() const;
 
@@ -141,9 +153,12 @@ private:
 	size_t chunk_size;
 	size_t player_count;
 	time::time_t construction_time;
+	time::time_t horse_spawn_delay;
+	time::time_t horse_spawn_interval;
 	std::string hunter;
 	std::string builders;
 	std::string builder;
+	std::string horse;
 	std::string foundation;
 	std::string tower;
 	std::string plains;
@@ -153,6 +168,8 @@ private:
 
 	std::weak_ptr<openage::event::EventLoop> event_loop;
 	std::weak_ptr<EntityFactory> entity_factory;
+	std::shared_ptr<openage::event::EventEntity> horse_spawn_target;
+	bool hunter_wave_started = false;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, PendingBuild> build_orders;
 	std::unordered_map<coord::tile, entity_id_t> reserved_tiles;

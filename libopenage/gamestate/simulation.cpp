@@ -15,6 +15,7 @@
 #include "time/time_loop.h"
 
 // TODO
+#include "gamestate/fvd.h"
 #include "gamestate/game.h"
 #include "gamestate/game_state.h"
 
@@ -66,6 +67,10 @@ void GameSimulation::start() {
 	                                               this->entity_factory,
 	                                               this->terrain_factory);
 
+	if (auto fvd = this->game->get_state()->get_fvd()) {
+		fvd->start_hunter_wave(this->game->get_state(),
+		                       this->time_loop->get_clock()->get_time());
+	}
 	this->running = true;
 
 	log::log(MSG(info) << "Game simulation started");
