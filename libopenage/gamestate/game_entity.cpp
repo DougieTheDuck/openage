@@ -96,6 +96,12 @@ void GameEntity::render_update(const time::time_t &time,
 	}
 }
 
+void GameEntity::deactivate_render(const time::time_t &time) {
+	if (this->render_entity != nullptr) {
+		this->render_entity->deactivate(time);
+	}
+}
+
 void GameEntity::set_id(entity_id_t id) {
 	this->id = id;
 }

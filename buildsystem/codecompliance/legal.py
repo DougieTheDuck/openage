@@ -6,7 +6,7 @@ Checks the legal headers of all files.
 
 import re
 
-from .util import SHEBANG, findfiles, has_ext, readfile
+from .util import SHEBANG, filter_files, findfiles, has_ext, readfile
 
 # The last-modification year is optional; only the creation year is required.
 OPENAGE_AUTHORS = "Copyright (?P<crstart>\\d{4})(-(?P<crend>\\d{4}))? the openage authors\\."
@@ -70,10 +70,11 @@ def match_legalheader(data):
     raise ValueError("no match found")
 
 
-def test_headers(paths, third_party_files):
+def test_headers(paths, third_party_files, check_files=None):
     """Tests all in-sourcefile legal headers."""
 
-    for filename in findfiles(paths, EXTENSIONS_REQUIRING_LEGAL_HEADERS):
+    filenames = filter_files(findfiles(paths, EXTENSIONS_REQUIRING_LEGAL_HEADERS), check_files)
+    for filename in filenames:
         try:
             headertype, _ = match_legalheader(readfile(filename))
         except ValueError:
@@ -84,14 +85,17 @@ def test_headers(paths, third_party_files):
             third_party_files.add(filename)
 
 
-def find_issues(paths):
+def find_issues(paths, check_files=None):
     """
     Tests all source files for the required legal headers.
     """
 
     third_party_files = set()
+    copying_changed = check_files is not None and "copying.md" in check_files
 
-    yield from test_headers(paths, third_party_files)
+    # Changes to copying.md must be compared with every third-party header.
+    header_files = None if copying_changed else check_files
+    yield from test_headers(paths, third_party_files, header_files)
 
     # test whether all third-party files are listed in copying.md
     listed_files = set()
@@ -102,6 +106,9 @@ def find_issues(paths):
 
         filename = match.group(1)
         listed_files.add(filename)
+
+    if check_files is not None and not copying_changed:
+        listed_files.intersection_update(check_files)
 
     # file listed, but has no 3rd-party header?
     for filename in sorted(listed_files - third_party_files):

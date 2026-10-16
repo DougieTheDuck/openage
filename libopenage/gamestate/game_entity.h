@@ -118,6 +118,9 @@ public:
 	void render_update(const time::time_t &time,
 	                   const std::string &animation_path);
 
+	/** Stop rendering and picking this entity after it is removed. */
+	void deactivate_render(const time::time_t &time);
+
 protected:
 	/**
 	 * A game entity cannot be default copied because of their unique ID.

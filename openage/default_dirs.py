@@ -10,6 +10,7 @@ All access to game assets should happen through objects obtained from get().
 import os
 import pathlib
 import sys
+from typing import cast
 
 # TODO: use os.pathsep for multipath variables
 
@@ -78,7 +79,9 @@ def get_dir(which):
         raise ValueError(f"unknown directory requested: '{which}'")
 
     # fetch the directory template
-    env_var, (default_template, required_envs) = platform_table[which]
+    env_var, (default_template, required_envs) = cast(
+        tuple[str, tuple[str | None, set[str] | None]], platform_table[which]
+    )
 
     # then create the result from the environment
     env_val = os.environ.get(env_var)
@@ -87,6 +90,9 @@ def get_dir(which):
         path = env_val
 
     elif default_template:
+        if required_envs is None:
+            raise RuntimeError(f"invalid directory configuration for '{which}'")
+
         env_vars = {var: os.environ.get(var) for var in required_envs}
         if not all(env_vars.values()):
             env_var_str = ", ".join([var for (var, val) in env_vars.items() if val is None])

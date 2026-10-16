@@ -7,7 +7,9 @@
 
 #include <nyan/nyan.h>
 
+#include "coord/tile.h"
 #include "pathfinding/types.h"
+#include "time/time.h"
 #include "util/vector.h"
 
 
@@ -64,6 +66,19 @@ public:
 	 * @return Grid ID.
 	 */
 	path::grid_id_t get_grid_id(const nyan::fqon_t &path_grid) const;
+
+	/**
+	 * Change one pathfinding cell and invalidate cached fields.
+	 *
+	 * @return Previous cost of the cell.
+	 */
+	path::cost_t set_path_cost(const nyan::fqon_t &path_grid,
+	                           const coord::tile &tile,
+	                           path::cost_t cost,
+	                           const time::time_t &time);
+
+	/** Rebuild the high-level portal graph for a changed path grid. */
+	void rebuild_path_grid(const nyan::fqon_t &path_grid);
 
 private:
 	/**

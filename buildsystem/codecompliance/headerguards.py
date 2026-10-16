@@ -6,7 +6,7 @@ Verifies the guard macros of all C++ header files.
 
 import re
 
-from .util import findfiles, readfile
+from .util import filter_files, findfiles, readfile
 
 
 class HeaderError(Exception):
@@ -32,11 +32,12 @@ NO_GUARD_REQUIRED_RE = re.compile(
 )
 
 
-def find_issues(dirname):
+def find_issues(dirname, check_files=None):
     """
     checks all headerguards in header files in the cpp folders.
     """
-    for fname in findfiles((dirname,), (".h",)):
+    filenames = filter_files(findfiles((dirname,), (".h",)), check_files)
+    for fname in filenames:
         try:
             data = readfile(fname)
 

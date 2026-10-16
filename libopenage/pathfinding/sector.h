@@ -82,6 +82,9 @@ public:
 	 */
 	void add_portal(const std::shared_ptr<Portal> &portal);
 
+	/** Remove all portals before rebuilding the grid's portal graph. */
+	void clear_portals();
+
 	/**
 	 * Find portals connecting this sector to another sector.
 	 *

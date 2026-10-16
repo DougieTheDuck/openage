@@ -13,6 +13,16 @@ FILECACHE = {}
 BADUTF8FILES = set()
 
 
+def normalize_path(filename):
+    """Return a repository path with separators that are stable across platforms."""
+    return os.path.normpath(filename).replace("\\", "/")
+
+
+def normalize_newlines(data):
+    """Return text with all supported line endings represented by ``\n``."""
+    return data.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def log_setup(setting, default=1):
     """
     Perform setup for the logger.
@@ -67,7 +77,7 @@ def has_ext(fname, exts):
 
 def readfile(filename):
     """
-    reads the file, and returns it as a str object.
+    reads the file, normalizes line endings, and returns it as a str object.
 
     if the file has already been read in the past,
     returns it from the cache.
@@ -82,7 +92,7 @@ def readfile(filename):
             data = data.decode("utf-8", errors="replace")
             BADUTF8FILES.add(filename)
 
-        FILECACHE[filename] = data
+        FILECACHE[filename] = normalize_newlines(data)
 
     return FILECACHE[filename]
 
@@ -94,7 +104,9 @@ def writefile(filename, new_content):
     if filename in BADUTF8FILES:
         raise ValueError(f"{filename}: cannot write due to utf8-errors.")
 
-    with open(filename, "w", encoding="utf8") as fileobj:
+    new_content = normalize_newlines(new_content)
+
+    with open(filename, "w", encoding="utf8", newline="\n") as fileobj:
         fileobj.write(new_content)
 
     FILECACHE[filename] = new_content
@@ -120,7 +132,19 @@ def findfiles(paths, exts=None):
                 continue
 
             if exts is None or has_ext(filename, exts):
-                yield filename
+                yield normalize_path(filename)
+
+
+def filter_files(filenames, check_files):
+    """Yield files selected by a normalized repository-path allowlist."""
+    if check_files is None:
+        yield from filenames
+        return
+
+    selected_files = {normalize_path(filename) for filename in check_files}
+    for filename in filenames:
+        if normalize_path(filename) in selected_files:
+            yield filename
 
 
 def issue_str(title, filename, fix=None):

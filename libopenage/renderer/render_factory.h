@@ -59,9 +59,10 @@ public:
 	/**
 	 * Create a new world render entity and register it at the world renderer.
 	 *
-	 * @return Render entity for pushing terrain updates.
+	 * @param pickable Whether pixel picking may return the entity.
+	 * @return Render entity for pushing world updates.
 	 */
-	std::shared_ptr<world::RenderEntity> add_world_render_entity();
+	std::shared_ptr<world::RenderEntity> add_world_render_entity(bool pickable = true);
 
 private:
 	/**

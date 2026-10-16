@@ -6,7 +6,7 @@ Checks some general whitespace rules and the encoding for text files.
 
 import re
 
-from .util import BADUTF8FILES, findfiles, has_ext, issue_str_line, readfile
+from .util import BADUTF8FILES, filter_files, findfiles, has_ext, issue_str_line, readfile
 
 TRAIL_WHITESPACE_RE = re.compile(
     (
@@ -25,11 +25,12 @@ IMMEDIATE_TODO_RE = re.compile(
 IMMEDIATE_TODO_MARKER = "as" + "df"
 
 
-def find_issues(dirnames, exts):
+def find_issues(dirnames, exts, check_files=None):
     """
     Checks all files ending in exts in dirnames.
     """
-    for filename in findfiles(dirnames, exts):
+    filenames = filter_files(findfiles(dirnames, exts), check_files)
+    for filename in filenames:
         data = readfile(filename)
         analyse_each_line = False
 
@@ -40,9 +41,6 @@ def find_issues(dirnames, exts):
         if filename.startswith("openage/") and filename.endswith(".cpp"):
             # allow issues for Cython-generated files.
             continue
-
-        if "\r\n" in data:
-            yield "Windows EOL format", filename, None
 
         if data.endswith("\n\n"):
             yield "Trailing newline at file end", filename, None

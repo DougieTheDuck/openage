@@ -121,4 +121,13 @@ void Grid::init_portal_nodes() {
 	}
 }
 
+void Grid::rebuild_portals() {
+	this->portal_nodes.clear();
+	for (auto &sector : this->sectors) {
+		sector->clear_portals();
+	}
+	this->init_portals();
+	this->init_portal_nodes();
+}
+
 } // namespace openage::path

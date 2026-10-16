@@ -20,7 +20,12 @@ namespace openage::renderer::world {
  */
 class RenderEntity final : public renderer::RenderEntity {
 public:
-	RenderEntity();
+	/**
+	 * Create a world render entity.
+	 *
+	 * @param pickable Whether pixel picking may return this entity.
+	 */
+	explicit RenderEntity(bool pickable = true);
 	~RenderEntity() = default;
 
 	/**
@@ -64,7 +69,7 @@ public:
 	 * @param max_health Maximum health value.
 	 * @param time Simulation time of the update.
 	 */
-	void update_health(const curve::Discrete<int64_t> &health,
+	void update_health(const curve::Segmented<int64_t> &health,
 	                   int64_t max_health,
 	                   const time::time_t time = 0.0);
 
@@ -113,6 +118,15 @@ public:
 	 * @return true if health data is available, else false.
 	 */
 	bool has_health();
+
+	/** Mark this entity inactive so render stages stop displaying and picking it. */
+	void deactivate(const time::time_t time);
+
+	/** Whether this entity is still active. */
+	bool is_active();
+
+	/** Whether pixel picking may return this entity. */
+	bool is_pickable() const;
 
 	/**
 	 * Get the entity position at a given time.
@@ -163,10 +177,16 @@ private:
 	 */
 	bool health_available;
 
+	/** Whether the corresponding game entity still exists. */
+	bool active;
+
+	/** Whether the corresponding game entity can be selected. */
+	const bool pickable;
+
 	/**
 	 * Current health value.
 	 */
-	curve::Discrete<int64_t> health;
+	curve::Segmented<int64_t> health;
 
 	/**
 	 * Maximum health value.

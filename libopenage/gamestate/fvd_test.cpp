@@ -30,6 +30,11 @@
 #include "gamestate/terrain_chunk.h"
 #include "gamestate/terrain_factory.h"
 #include "gamestate/terrain_tile.h"
+#include "pathfinding/cost_field.h"
+#include "pathfinding/definitions.h"
+#include "pathfinding/grid.h"
+#include "pathfinding/pathfinder.h"
+#include "pathfinding/sector.h"
 #include "renderer/resources/parser/parse_sprite.h"
 #include "renderer/resources/parser/parse_terrain.h"
 #include "renderer/resources/texture_data.h"
@@ -46,12 +51,15 @@ void fvd_scenario() {
 	auto graphics = root / "assets" / "fvd" / "graphics";
 	auto plains_graphics = renderer::resources::parser::parse_terrain_file(graphics / "grass.terrain");
 	auto builder_graphics = renderer::resources::parser::parse_sprite_file(graphics / "builder.sprite");
+	auto foundation_graphics = renderer::resources::parser::parse_sprite_file(graphics / "foundation.sprite");
 	auto tower_graphics = renderer::resources::parser::parse_sprite_file(graphics / "tower.sprite");
 	TESTEQUALS(plains_graphics.get_texture_count(), 1);
 	TESTEQUALS(builder_graphics.get_texture_count(), 1);
+	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
 	for (const auto &info : {plains_graphics.get_texture(0),
 	                        builder_graphics.get_texture(0),
+	                        foundation_graphics.get_texture(0),
 	                        tower_graphics.get_texture(0)}) {
 		auto texture = renderer::resources::Texture2dData{info->get_image_path().value()};
 		TESTEQUALS(info->get_cbits(), false);
@@ -179,7 +187,24 @@ void fvd_scenario() {
 	TESTEQUALS(order->get_owner(), player_id_t{2});
 	TESTEQUALS(order->get_builder(), builders[2]);
 	TESTEQUALS(order->get_target(), (coord::tile{10, 10}));
-	TESTEQUALS(state->get_game_entities().size(), 7);
+	TESTEQUALS(state->get_game_entities().size(), 8);
+	entity_id_t first_foundation = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Foundation") {
+			continue;
+		}
+		first_foundation = id;
+		TESTEQUALS(entity->has_component(component::component_t::SELECTABLE), false);
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		TESTEQUALS(position->get_positions().get(time::TIME_ZERO).to_tile(), (coord::tile{10, 10}));
+		auto render = std::make_shared<renderer::world::RenderEntity>();
+		entity->set_render_entity(render);
+		system::Idle::idle(entity, time::TIME_ZERO);
+		auto lock = render->get_read_lock();
+		TESTEQUALS(render->get_animation_path().get(time::TIME_ZERO).ends_with("foundation.sprite"), true);
+	}
+	TESTEQUALS(first_foundation != 0, true);
 
 	// A conflicting reservation must not overwrite or cancel the first order.
 	TESTEQUALS(place(3, {builders[3]}, {10, 10, 0}), false);
@@ -190,11 +215,12 @@ void fvd_scenario() {
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{10, 10}), false);
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{12, 12}), true);
 	TESTEQUALS(fvd->get_build_order(builders[2])->get_id() != order->get_id(), true);
+	TESTEQUALS(state->get_game_entities().contains(first_foundation), false);
 
 	// Other Builders may claim a tile released by the replaced order.
 	TESTEQUALS(place(3, {builders[3]}, {10, 10, 0}), true);
 	TESTEQUALS(fvd->get_build_order(builders[3])->get_owner(), player_id_t{3});
-	TESTEQUALS(state->get_game_entities().size(), 7);
+	TESTEQUALS(state->get_game_entities().size(), 9);
 
 	// Dead Builders cannot initiate new construction.
 	auto live = std::dynamic_pointer_cast<component::Live>(
@@ -273,13 +299,58 @@ void fvd_construction() {
 		return fvd->request_build(state, owner, {builders.at(owner)}, tile, t(seconds));
 	};
 
-	// An adjacent Builder starts building at once but cannot spawn a
-	// functional tower before the configured fractional duration.
+	// Start a route that crosses the future tower tile. The refresh must
+	// replace its remaining position curve once construction blocks the tile.
+	event::SendCommandHandler route_commander;
+	route_commander.invoke(*loop, nullptr, state, time::TIME_ZERO,
+	                       {{"type", component::command::command_t::MOVE},
+	                        {"owner", player_id_t{3}},
+	                        {"entity_ids", std::vector<entity_id_t>{builders[3]}},
+	                        {"target", coord::phys3{60.5, 67.5, 0}}});
+	loop->reach_time(time::TIME_ZERO, state);
+	auto routed_position = std::dynamic_pointer_cast<component::Position>(
+		state->get_game_entity(builders[3])->get_component(component::component_t::POSITION));
+	TESTEQUALS(routed_position->get_positions().get(t(0.5)).to_tile(), (coord::tile{61, 66}));
+
+	// An adjacent Builder starts building at once. Its footprint becomes
+	// impassable immediately while health rises over the configured duration.
 	TESTEQUALS(build(2, {61, 66, 0}, 0), true);
 	TESTEQUALS(fvd->is_tile_reserved({61, 66}), true);
-	TESTEQUALS(state->get_game_entities().size(), 7);
-	loop->reach_time(t(0.09), state);
-	TESTEQUALS(state->get_game_entities().size(), 7);
+	TESTEQUALS(state->get_game_entities().size(), 8);
+	bool planned = false;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Foundation") {
+			planned = true;
+		}
+	}
+	TESTEQUALS(planned, true);
+	loop->reach_time(t(0.05), state);
+	TESTEQUALS(state->get_game_entities().size(), 8);
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		TESTNOTEQUALS(entity->get_definition(), "fvd.data.entities.Foundation");
+	}
+	auto land_grid = state->get_map()->get_pathfinder()->get_grid(
+		state->get_map()->get_grid_id("fvd.data.terrain.Land"));
+	auto sector_size = land_grid->get_sector_size();
+	auto tower_sector = land_grid->get_sector(61 / sector_size, 66 / sector_size);
+	auto tower_local = coord::tile{61, 66}
+	                 - tower_sector->get_position().to_tile(sector_size);
+	TESTEQUALS(tower_sector->get_cost_field()->get_cost(tower_local), path::COST_IMPASSABLE);
+	entity_id_t first_tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Tower") {
+			continue;
+		}
+		first_tower = id;
+		auto tower_live = std::dynamic_pointer_cast<component::Live>(
+			entity->get_component(component::component_t::LIVE));
+		auto mid_health = tower_live->get_attribute(
+			 t(0.05), "fvd.data.entities.Health")->get(t(0.05));
+		TESTEQUALS(mid_health > 0 and mid_health < 100, true);
+	}
+	TESTEQUALS(first_tower != 0, true);
+	fvd->refresh_paths(state, t(0.05));
+	TESTEQUALS((routed_position->get_positions().get(t(0.5)).to_tile() != coord::tile{61, 66}), true);
 	loop->reach_time(t(0.1), state);
 	TESTEQUALS(state->get_game_entities().size(), 8);
 	TESTEQUALS(fvd->is_tile_reserved({61, 66}), false);
@@ -293,6 +364,9 @@ void fvd_construction() {
 				auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 					entity->get_component(component::component_t::OWNERSHIP));
 				TESTEQUALS(ownership->get_owners().get(t(0.1)), player_id_t{2});
+				auto tower_live = std::dynamic_pointer_cast<component::Live>(
+					entity->get_component(component::component_t::LIVE));
+				TESTEQUALS(tower_live->get_attribute(t(0.1), "fvd.data.entities.Health")->get(t(0.1)), 100);
 				completed = true;
 			}
 		}
@@ -307,7 +381,7 @@ void fvd_construction() {
 	auto start = position->get_positions().get(t(4));
 	TESTEQUALS(position->get_positions().get(t(5)) != start, true);
 	loop->reach_time(t(5), state);
-	TESTEQUALS(state->get_game_entities().size(), 8);
+	TESTEQUALS(state->get_game_entities().size(), 9);
 	loop->reach_time(t(30), state);
 	TESTEQUALS(fvd->is_tile_reserved({75, 75}), false);
 	TESTEQUALS(state->get_game_entities().size(), 9);
@@ -373,5 +447,15 @@ void fvd_construction() {
 	loop->reach_time(t(220), state);
 	TESTEQUALS(fvd->is_tile_reserved({66, 66}), false);
 	TESTEQUALS(state->get_game_entities().size(), 18);
+	auto canceled_sector = land_grid->get_sector(66 / sector_size, 66 / sector_size);
+	auto canceled_local = coord::tile{66, 66}
+	                   - canceled_sector->get_position().to_tile(sector_size);
+	TESTEQUALS(canceled_sector->get_cost_field()->get_cost(canceled_local), path::cost_t{1});
+
+	// Destruction removes the entity and restores the terrain's original path cost.
+	TESTEQUALS(fvd->destroy_tower(state, first_tower, t(221)), true);
+	TESTEQUALS(state->get_game_entities().size(), 17);
+	TESTEQUALS(tower_sector->get_cost_field()->get_cost(tower_local), path::cost_t{1});
+	TESTEQUALS(fvd->destroy_tower(state, first_tower, t(222)), false);
 }
 }

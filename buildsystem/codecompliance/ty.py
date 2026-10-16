@@ -25,8 +25,8 @@ def find_issues(
 
     yield from _run_tool(
         ty,
-        ["check", "--output-format=github"],
+        ["check", "--python-platform=all", "--output-format=github"],
         _python_files(check_files, dirnames),
         "python type issue",
-        fix_args=["check", "--fix"],
+        fix_args=["check", "--python-platform=all", "--fix"],
     )

@@ -6,6 +6,7 @@ import engine.ability.type
 import engine.util.attribute
 import engine.util.game_entity
 import engine.util.graphics
+import engine.util.hitbox
 import engine.util.language.translated.type
 import engine.util.selection_box.type
 import fvd.data.terrain
@@ -60,9 +61,24 @@ Builder(engine.util.game_entity.GameEntity):
             Rectangle.width = 0.5
             Rectangle.height = 0.5
 
+Foundation(engine.util.game_entity.GameEntity):
+    GameEntity.types = {}
+    GameEntity.abilities = {Idle}
+    GameEntity.modifiers = {}
+    GameEntity.variants = {}
+
+    Idle(engine.ability.type.Idle):
+        Ability.properties = {engine.ability.property.type.Animated: Animated}
+
+        Animated(engine.ability.property.type.Animated):
+            Animated.animations = {Animation}
+
+            Animation(engine.util.graphics.Animation):
+                Animation.sprite = "../../../fvd/graphics/foundation.sprite"
+
 Tower(engine.util.game_entity.GameEntity):
     GameEntity.types = {}
-    GameEntity.abilities = {Idle, Selectable}
+    GameEntity.abilities = {Idle, Live, Pathable, Selectable}
     GameEntity.modifiers = {}
     GameEntity.variants = {}
 
@@ -74,6 +90,24 @@ Tower(engine.util.game_entity.GameEntity):
 
             Animation(engine.util.graphics.Animation):
                 Animation.sprite = "../../../fvd/graphics/tower.sprite"
+
+    Live(engine.ability.type.Live):
+        Live.attributes = {HealthSetting}
+
+        HealthSetting(engine.util.attribute.AttributeSetting):
+            AttributeSetting.attribute = Health
+            AttributeSetting.min_value = 0
+            AttributeSetting.max_value = 100
+            AttributeSetting.starting_value = 0
+
+    Pathable(engine.ability.type.Pathable):
+        Pathable.hitbox = Hitbox
+        Pathable.path_costs = {fvd.data.terrain.Land: 255}
+
+        Hitbox(engine.util.hitbox.Hitbox):
+            Hitbox.radius_x = 0.5
+            Hitbox.radius_y = 0.5
+            Hitbox.radius_z = 1.0
 
     Selectable(engine.ability.type.Selectable):
         Selectable.selection_box = Box

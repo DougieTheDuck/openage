@@ -13,6 +13,7 @@
 #include "gamestate/api/property.h"
 #include "gamestate/api/types.h"
 #include "gamestate/component/api/idle.h"
+#include "gamestate/component/api/move.h"
 #include "gamestate/component/types.h"
 #include "gamestate/game_entity.h"
 
@@ -39,6 +40,11 @@ const time::time_t Idle::idle(const std::shared_ptr<gamestate::GameEntity> &enti
 	}
 
 	// TODO: play sound
+	if (entity->has_component(component::component_t::MOVE)) {
+		auto move = std::dynamic_pointer_cast<component::Move>(
+			entity->get_component(component::component_t::MOVE));
+		move->clear_active_route();
+	}
 
 	return time::time_t::from_int(0);
 }

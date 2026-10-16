@@ -26,8 +26,8 @@ The local view initially controls player 2.
 Press keys 1 through 8 to switch the controlled player and return the camera to the common start location.
 Drag with the left mouse button to select your Builder, right-click to move it, and Ctrl-left-click to submit a tower build order for a vacant tile.
 The simulation validates ownership and reserves the target tile, so the Hunter and other Builders cannot claim the same site.
-The Builder walks to an available neighboring tile and constructs for the configured duration (three simulation seconds by default).
-A completed tower appears only when construction finishes; the intended tile is reserved meanwhile.
+The Builder walks to an available neighboring tile and constructs for the configured duration.
+A foundation marker appears as soon as the order reserves the intended tile, then the tower replaces it when construction starts.
 Right-clicking to move interrupts building, and invalid, unreachable, or abandoned construction sites produce no tower.
 
 The bundled modpack lives outside `converted/`.

@@ -78,4 +78,22 @@ path::grid_id_t Map::get_grid_id(const nyan::fqon_t &path_grid) const {
 	return this->grid_lookup.at(path_grid);
 }
 
+path::cost_t Map::set_path_cost(const nyan::fqon_t &path_grid,
+                                const coord::tile &tile,
+                                path::cost_t cost,
+                                const time::time_t &time) {
+	auto grid = this->pathfinder->get_grid(this->get_grid_id(path_grid));
+	auto sector_size = grid->get_sector_size();
+	auto sector = grid->get_sector(tile.ne / sector_size, tile.se / sector_size);
+	auto local = tile - sector->get_position().to_tile(sector_size);
+	auto field = sector->get_cost_field();
+	auto previous = field->get_cost(local);
+	field->set_cost(local, cost, time);
+	return previous;
+}
+
+void Map::rebuild_path_grid(const nyan::fqon_t &path_grid) {
+	this->pathfinder->get_grid(this->get_grid_id(path_grid))->rebuild_portals();
+}
+
 } // namespace openage::gamestate

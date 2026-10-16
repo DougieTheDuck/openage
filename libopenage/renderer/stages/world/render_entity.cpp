@@ -10,13 +10,15 @@
 
 namespace openage::renderer::world {
 
-RenderEntity::RenderEntity() :
+RenderEntity::RenderEntity(bool pickable) :
 	renderer::RenderEntity{},
 	ref_id{0},
 	position{nullptr, 0, "", nullptr, SCENE_ORIGIN},
 	angle{nullptr, 0, "", nullptr, 0},
 	animation_path{nullptr, 0},
 	health_available{false},
+	active{true},
+	pickable{pickable},
 	health{nullptr, 0, "", nullptr, 0},
 	max_health{0} {
 }
@@ -43,7 +45,7 @@ void RenderEntity::update(const uint32_t ref_id,
 	this->last_update = time;
 }
 
-void RenderEntity::update_health(const curve::Discrete<int64_t> &health,
+void RenderEntity::update_health(const curve::Segmented<int64_t> &health,
                                  int64_t max_health,
                                  const time::time_t time) {
 	std::unique_lock lock{this->mutex};
@@ -90,6 +92,24 @@ bool RenderEntity::has_health() {
 	std::shared_lock lock{this->mutex};
 
 	return this->health_available;
+}
+
+void RenderEntity::deactivate(const time::time_t time) {
+	std::unique_lock lock{this->mutex};
+
+	this->active = false;
+	this->changed = true;
+	this->last_update = time;
+}
+
+bool RenderEntity::is_active() {
+	std::shared_lock lock{this->mutex};
+
+	return this->active;
+}
+
+bool RenderEntity::is_pickable() const {
+	return this->pickable;
 }
 
 coord::scene3 RenderEntity::get_position_at(const time::time_t &time) {

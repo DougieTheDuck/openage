@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import sys
 
-from .util import log_setup
+from .util import log_setup, normalize_path
 
 
 def parse_args():
@@ -29,7 +29,7 @@ def parse_args():
     cli.add_argument(
         "--only-changed-files",
         metavar="GITREF",
-        help=("slow checks are only done on files that have changed since GITREF."),
+        help=("file checks are only done on files that have changed since GITREF."),
     )
     cli.add_argument(
         "--authors",
@@ -144,7 +144,7 @@ def get_changed_files(gitref):
     """
     return a list of changed files
     """
-    invocation = ["git", "diff", "--name-only", "--diff-filter=ACMRTUXB", gitref]
+    invocation = ["git", "diff", "-z", "--name-only", "--diff-filter=ACMRTUXB", gitref, "--"]
 
     try:
         file_list = subprocess.check_output(invocation)
@@ -152,7 +152,7 @@ def get_changed_files(gitref):
     except subprocess.CalledProcessError as exc:
         raise RuntimeError("could not determine list of recently-changed files with git") from exc
 
-    return set(file_list.decode("ascii").strip().split("\n"))
+    return {normalize_path(filename.decode("utf-8")) for filename in file_list.split(b"\0") if filename}
 
 
 def main(args):
@@ -218,9 +218,8 @@ def find_all_issues(args, check_files=None):
     Invokes all the individual issue checkers, and yields their returned
     issues.
 
-    If check_files is not None, all other files are ignored during the
-    more resource-intense checks.
-    That is, check_files is the set of files to verify.
+    If check_files is not None, it is the set of files to verify. Checks
+    that operate on the repository as a whole are still run globally.
 
     Yields tuples of (title, text) that are displayed as warnings.
     """
@@ -228,7 +227,7 @@ def find_all_issues(args, check_files=None):
     if args.headerguards:
         from .headerguards import find_issues
 
-        yield from find_issues("libopenage")
+        yield from find_issues("libopenage", check_files)
 
     if args.authors:
         from .authors import find_issues
@@ -278,12 +277,13 @@ def find_all_issues(args, check_files=None):
                 ".supp",
                 ".desktop",
             ),
+            check_files,
         )
 
     if args.legal:
         from .legal import find_issues
 
-        yield from find_issues(("openage", "buildsystem", "libopenage", "etc/gdb_pretty"))
+        yield from find_issues(("openage", "buildsystem", "libopenage", "etc/gdb_pretty"), check_files)
 
     if args.filemodes:
         from .modes import find_issues

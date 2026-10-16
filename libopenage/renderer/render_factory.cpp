@@ -26,8 +26,8 @@ std::shared_ptr<terrain::RenderEntity> RenderFactory::add_terrain_render_entity(
 	return entity;
 }
 
-std::shared_ptr<world::RenderEntity> RenderFactory::add_world_render_entity() {
-	auto entity = std::make_shared<world::RenderEntity>();
+std::shared_ptr<world::RenderEntity> RenderFactory::add_world_render_entity(bool pickable) {
+	auto entity = std::make_shared<world::RenderEntity>(pickable);
 	this->world_renderer->add_render_entity(entity);
 	if (this->hud_renderer) {
 		this->hud_renderer->add_health_entity(entity);

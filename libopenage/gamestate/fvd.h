@@ -8,11 +8,15 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+#include <nyan/nyan.h>
 
 #include "coord/phys.h"
 #include "coord/tile.h"
 #include "gamestate/types.h"
+#include "pathfinding/types.h"
 #include "time/time.h"
 
 namespace openage::event {
@@ -74,7 +78,17 @@ public:
 	void advance_build(const std::shared_ptr<GameState> &state,
 	                   entity_id_t builder,
 	                   uint64_t order_id,
+	                   uint64_t route_revision,
 	                   bool finish,
+	                   const time::time_t &time);
+
+	/** Recalculate current routes and release footprints of destroyed towers. */
+	void refresh_paths(const std::shared_ptr<GameState> &state,
+	                   const time::time_t &time);
+
+	/** Destroy a tower and restore the path costs under its footprint. */
+	bool destroy_tower(const std::shared_ptr<GameState> &state,
+	                   entity_id_t tower_id,
 	                   const time::time_t &time);
 
 	/** Get the common camera start location. */
@@ -88,6 +102,20 @@ private:
 		std::shared_ptr<component::command::BuildTowerCommand> order;
 		coord::phys3 stand;
 		time::time_t arrival;
+		uint64_t route_revision;
+		entity_id_t foundation_id;
+		std::optional<entity_id_t> tower_id;
+	};
+
+	struct FootprintCell {
+		coord::tile tile;
+		nyan::fqon_t path_type;
+		path::cost_t previous_cost;
+	};
+
+	struct TowerFootprint {
+		std::vector<FootprintCell> cells;
+		bool under_construction;
 	};
 
 	/** Check occupancy, optionally excluding the constructing Builder. */
@@ -96,6 +124,19 @@ private:
 	                   const time::time_t &time,
 	                   std::optional<entity_id_t> ignore = std::nullopt) const;
 
+	/** Get all tiles intersected by the configured tower hitbox. */
+	std::vector<coord::tile> get_tower_footprint(const coord::tile &site) const;
+
+	/** Apply or restore a tower footprint in the map path grids. */
+	void block_tower(const std::shared_ptr<GameState> &state,
+	                 entity_id_t tower_id,
+	                 const coord::tile &site,
+	                 bool under_construction,
+	                 const time::time_t &time);
+	void unblock_tower(const std::shared_ptr<GameState> &state,
+	                   entity_id_t tower_id,
+	                   const time::time_t &time);
+
 	size_t map_size;
 	size_t chunk_size;
 	size_t player_count;
@@ -103,13 +144,18 @@ private:
 	std::string hunter;
 	std::string builders;
 	std::string builder;
+	std::string foundation;
 	std::string tower;
 	std::string plains;
+	double tower_radius_ne;
+	double tower_radius_se;
+	std::unordered_map<nyan::fqon_t, path::cost_t> tower_path_costs;
 
 	std::weak_ptr<openage::event::EventLoop> event_loop;
 	std::weak_ptr<EntityFactory> entity_factory;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, PendingBuild> build_orders;
 	std::unordered_map<coord::tile, entity_id_t> reserved_tiles;
+	std::unordered_map<entity_id_t, TowerFootprint> tower_footprints;
 };
 }

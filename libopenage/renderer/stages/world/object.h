@@ -81,6 +81,12 @@ public:
 	 */
 	uint32_t get_id();
 
+	/** Whether the corresponding game entity is active. */
+	bool is_active() const;
+
+	/** Whether pixel picking may return this object. */
+	bool is_pickable() const;
+
 	/**
 	 * Get the quad for creating the geometry.
 	 *

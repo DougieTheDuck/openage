@@ -125,6 +125,11 @@ const time::time_t Move::move_default(const std::shared_ptr<gamestate::GameEntit
 	auto pathfinder = map->get_pathfinder();
 	auto grid_id = map->get_grid_id(move_path_grid->get_name());
 	auto waypoints = find_path(pathfinder, grid_id, current_pos, destination, start_time);
+	if (waypoints.empty()) {
+		pos_component->set_position(start_time, current_pos);
+		move_component->clear_active_route();
+		return time::TIME_ZERO;
+	}
 
 	// use waypoints for movement
 	double total_time = 0;
@@ -182,6 +187,8 @@ const time::time_t Move::move_default(const std::shared_ptr<gamestate::GameEntit
 			entity->render_update(start_time, animation_paths[0]);
 		}
 	}
+
+	move_component->set_active_route(destination, start_time + total_time);
 
 	return total_time;
 }

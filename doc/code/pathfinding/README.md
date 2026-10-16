@@ -65,6 +65,7 @@ The cost of a cell can range from 1 (minimum cost) to 254 (maximum cost), while 
 makes a cell impassable. For Age of Empires, usually only the minimum and impassable cost
 values are relevant. The cost field is built when the grid is first initialized and
 individual cost of cells can be altered during gameplay events.
+When a gameplay event changes passability, rebuild the affected grid's portals so the high-level graph matches the updated cost fields.
 
 To get a path between two coordinates, the game simulation mainly interfaces with a `Pathfinder`
 object. The `Pathfinder` class calls the actual pathfinding algorithms used for searching

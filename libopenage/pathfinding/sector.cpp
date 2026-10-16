@@ -46,6 +46,10 @@ void Sector::add_portal(const std::shared_ptr<Portal> &portal) {
 	this->portals.push_back(portal);
 }
 
+void Sector::clear_portals() {
+	this->portals.clear();
+}
+
 std::vector<std::shared_ptr<Portal>> Sector::find_portals(const std::shared_ptr<Sector> &other,
                                                           PortalDirection direction,
                                                           portal_id_t next_id) const {

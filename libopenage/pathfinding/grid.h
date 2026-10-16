@@ -106,6 +106,9 @@ public:
 	 */
 	void init_portal_nodes();
 
+	/** Rebuild portals after one or more cell costs have changed. */
+	void rebuild_portals();
+
 private:
 	/**
 	 * ID of the grid.

@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 #include <nyan/nyan.h>
@@ -20,6 +22,7 @@
 #include "gamestate/component/internal/commands/build_tower.h"
 #include "gamestate/component/internal/ownership.h"
 #include "gamestate/component/internal/position.h"
+#include "gamestate/activity/xor_event_gate.h"
 #include "gamestate/entity_factory.h"
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
@@ -32,6 +35,7 @@
 #include "gamestate/terrain_factory.h"
 #include "log/log.h"
 #include "pathfinding/path.h"
+#include "pathfinding/definitions.h"
 #include "pathfinding/pathfinder.h"
 
 namespace openage::gamestate {
@@ -57,6 +61,7 @@ public:
 			game_state,
 			params.get<entity_id_t>("builder"),
 			params.get<uint64_t>("order"),
+			params.get<uint64_t>("route"),
 			params.get<bool>("finish"),
 			time);
 	}
@@ -66,6 +71,32 @@ public:
 		const std::shared_ptr<openage::event::State> &,
 		const time::time_t &at) override {
 		return at;
+	}
+};
+
+/** Recalculate active routes at a low fixed frequency. */
+class RefreshPathsHandler : public openage::event::RepeatEventHandler {
+public:
+	RefreshPathsHandler() :
+		RepeatEventHandler{"game.fvd_refresh_paths"} {}
+
+	void setup_event(const std::shared_ptr<openage::event::Event> &,
+	                 const std::shared_ptr<openage::event::State> &) override {}
+
+	void invoke(openage::event::EventLoop &,
+	            const std::shared_ptr<openage::event::EventEntity> &,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time,
+	            const param_map &) override {
+		auto game_state = std::dynamic_pointer_cast<GameState>(state);
+		game_state->get_fvd()->refresh_paths(game_state, time);
+	}
+
+	time::time_t predict_invoke_time(
+		const std::shared_ptr<openage::event::EventEntity> &,
+		const std::shared_ptr<openage::event::State> &,
+		const time::time_t &at) override {
+		return at + time::time_t::from_int(4);
 	}
 };
 
@@ -101,8 +132,37 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->hunter = settings.get_object("hunter").get_name();
 	this->builders = settings.get_object("builders").get_name();
 	this->builder = settings.get_object("builder").get_name();
+	this->foundation = settings.get_object("foundation").get_name();
 	this->tower = settings.get_object("tower").get_name();
 	this->plains = settings.get_object("terrain").get_name();
+
+	auto tower_object = state->get_db_view()->get_object(this->tower);
+	bool found_pathable = false;
+	for (const auto &ability : tower_object.get_set("GameEntity.abilities")) {
+		auto value = std::dynamic_pointer_cast<nyan::ObjectValue>(ability.get_ptr());
+		auto object = state->get_db_view()->get_object(value->get_name());
+		if (object.get_parents()[0] != "engine.ability.type.Pathable") {
+			continue;
+		}
+		auto hitbox = object.get_object("Pathable.hitbox");
+		this->tower_radius_ne = hitbox.get_float("Hitbox.radius_x");
+		this->tower_radius_se = hitbox.get_float("Hitbox.radius_y");
+		for (const auto &[path_type, cost] : object.get_dict("Pathable.path_costs")) {
+			auto path_value = std::dynamic_pointer_cast<nyan::ObjectValue>(path_type.get_ptr());
+			auto cost_value = std::dynamic_pointer_cast<nyan::Int>(cost.get_ptr());
+			if (cost_value->get() < path::COST_MIN or cost_value->get() > path::COST_IMPASSABLE) {
+				throw Error{ERR << "Tower path cost is outside the valid range"};
+			}
+			this->tower_path_costs.emplace(
+				path_value->get_name(), static_cast<path::cost_t>(cost_value->get()));
+		}
+		found_pathable = true;
+		break;
+	}
+	if (not found_pathable or this->tower_radius_ne <= 0.0 or this->tower_radius_se <= 0.0
+	    or this->tower_path_costs.empty()) {
+		throw Error{ERR << "FVD tower requires a positive Pathable hitbox and path costs"};
+	}
 }
 
 void FVD::initialise(const std::shared_ptr<GameState> &state,
@@ -112,6 +172,7 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 	this->event_loop = loop;
 	this->entity_factory = entities;
 	loop->add_event_handler(std::make_shared<BuildProgressHandler>());
+	loop->add_event_handler(std::make_shared<RefreshPathsHandler>());
 
 	std::vector<std::shared_ptr<TerrainChunk>> chunks;
 	for (size_t se = 0; se < this->map_size; se += this->chunk_size) {
@@ -125,16 +186,22 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 		state, terrain->add_terrain({this->map_size, this->map_size}, std::move(chunks))));
 
 	// Reserve zero for neutral ownership; playable players are numbered from one.
+	std::shared_ptr<GameEntity> refresh_target;
 	for (size_t id = 0; id <= this->player_count; ++id) {
 		auto setup = id == 0 ? "" : (id == 1 ? this->hunter : this->builders);
 		state->add_player(entities->add_player(loop, state, setup));
 		if (id >= 2) {
 			auto centre = this->get_centre();
 			auto offset = static_cast<int>(id) - static_cast<int>((this->player_count + 2) / 2);
-			entities->spawn_game_entity(loop, state, id, this->builder,
-			                           centre + coord::phys3_delta{offset, 1, 0}, time::TIME_ZERO);
+			auto entity = entities->spawn_game_entity(
+				loop, state, id, this->builder,
+				centre + coord::phys3_delta{offset, 1, 0}, time::TIME_ZERO);
+			if (not refresh_target) {
+				refresh_target = entity;
+			}
 		}
 	}
+	loop->create_event("game.fvd_refresh_paths", refresh_target->get_manager(), state, time::TIME_ZERO);
 }
 
 bool FVD::tile_occupied(const std::shared_ptr<GameState> &state,
@@ -145,6 +212,9 @@ bool FVD::tile_occupied(const std::shared_ptr<GameState> &state,
 		if (ignore.has_value() and id == *ignore) {
 			continue;
 		}
+		if (entity->get_definition() == this->foundation) {
+			continue;
+		}
 		auto position = std::dynamic_pointer_cast<component::Position>(
 			entity->get_component(component::component_t::POSITION));
 		if (position->get_positions().get(time).to_tile() == tile) {
@@ -152,6 +222,62 @@ bool FVD::tile_occupied(const std::shared_ptr<GameState> &state,
 		}
 	}
 	return false;
+}
+
+std::vector<coord::tile> FVD::get_tower_footprint(const coord::tile &site) const {
+	auto ne_radius = static_cast<coord::tile_t>(std::ceil(this->tower_radius_ne - 0.5));
+	auto se_radius = static_cast<coord::tile_t>(std::ceil(this->tower_radius_se - 0.5));
+	std::vector<coord::tile> footprint;
+	footprint.reserve((ne_radius * 2 + 1) * (se_radius * 2 + 1));
+	for (auto se = site.se - se_radius; se <= site.se + se_radius; ++se) {
+		for (auto ne = site.ne - ne_radius; ne <= site.ne + ne_radius; ++ne) {
+			footprint.emplace_back(ne, se);
+		}
+	}
+	return footprint;
+}
+
+void FVD::block_tower(const std::shared_ptr<GameState> &state,
+                      entity_id_t tower_id,
+                      const coord::tile &site,
+                      bool under_construction,
+                      const time::time_t &time) {
+	if (this->tower_footprints.contains(tower_id)) [[unlikely]] {
+		throw Error{ERR << "Tower " << tower_id << " already blocks a footprint"};
+	}
+	auto map = state->get_map();
+	TowerFootprint blocked{{}, under_construction};
+	std::unordered_set<nyan::fqon_t> changed_grids;
+	for (const auto &tile : this->get_tower_footprint(site)) {
+		for (const auto &[path_type, cost] : this->tower_path_costs) {
+			auto previous = map->set_path_cost(path_type, tile, cost, time);
+			blocked.cells.push_back(FootprintCell{tile, path_type, previous});
+			changed_grids.insert(path_type);
+		}
+	}
+	for (const auto &path_type : changed_grids) {
+		map->rebuild_path_grid(path_type);
+	}
+	this->tower_footprints.emplace(tower_id, std::move(blocked));
+}
+
+void FVD::unblock_tower(const std::shared_ptr<GameState> &state,
+                        entity_id_t tower_id,
+                        const time::time_t &time) {
+	auto found = this->tower_footprints.find(tower_id);
+	if (found == this->tower_footprints.end()) {
+		return;
+	}
+	auto map = state->get_map();
+	std::unordered_set<nyan::fqon_t> changed_grids;
+	for (const auto &cell : found->second.cells) {
+		map->set_path_cost(cell.path_type, cell.tile, cell.previous_cost, time);
+		changed_grids.insert(cell.path_type);
+	}
+	for (const auto &path_type : changed_grids) {
+		map->rebuild_path_grid(path_type);
+	}
+	this->tower_footprints.erase(found);
 }
 
 bool FVD::request_build(const std::shared_ptr<GameState> &state,
@@ -197,8 +323,12 @@ bool FVD::request_build(const std::shared_ptr<GameState> &state,
 		return false;
 	}
 	auto site = position.to_tile();
-	if (this->is_tile_reserved(site) or this->tile_occupied(state, site, time)) {
-		return false;
+	for (const auto &tile : this->get_tower_footprint(site)) {
+		if (tile.ne < 0 or tile.se < 0
+		    or tile.ne >= this->map_size or tile.se >= this->map_size
+		    or this->is_tile_reserved(tile) or this->tile_occupied(state, tile, time)) {
+			return false;
+		}
 	}
 
 	auto current_position = std::dynamic_pointer_cast<component::Position>(
@@ -265,21 +395,29 @@ bool FVD::request_build(const std::shared_ptr<GameState> &state,
 	activity->init(time);
 	entity->get_manager()->run_activity_system(time);
 
+	auto loop = this->event_loop.lock();
+	auto factory = this->entity_factory.lock();
+	if (not loop or not factory) [[unlikely]] {
+		throw Error{ERR << "FVD construction services no longer exist"};
+	}
+
 	auto order = std::make_shared<component::command::BuildTowerCommand>(
 		this->next_build_id++, owner, builder_id, site);
-	this->reserved_tiles.emplace(site, builder_id);
+	for (const auto &tile : this->get_tower_footprint(site)) {
+		this->reserved_tiles.emplace(tile, builder_id);
+	}
 	auto travel = *stand == current_position
 	            ? time::TIME_ZERO
 	            : system::Move::move_default(entity, state, *stand, time);
 	auto arrival = time + travel;
-	this->build_orders.emplace(builder_id, PendingBuild{order, *stand, arrival});
-
-	auto loop = this->event_loop.lock();
-	if (not loop) {
-		throw Error{ERR << "FVD construction event loop no longer exists"};
-	}
+	auto foundation_entity = factory->spawn_game_entity(
+		loop, state, owner, this->foundation, site.to_phys3_center(), time);
+	this->build_orders.emplace(
+		builder_id,
+		PendingBuild{order, *stand, arrival, 0, foundation_entity->get_id(), std::nullopt});
 	loop->create_event("game.fvd_build_progress", entity->get_manager(), state, arrival,
-	                   {{"builder", builder_id}, {"order", order->get_id()}, {"finish", false}});
+	                   {{"builder", builder_id}, {"order", order->get_id()},
+	                    {"route", uint64_t{0}}, {"finish", false}});
 	return true;
 }
 
@@ -290,9 +428,17 @@ bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
 	if (it == this->build_orders.end()) {
 		return false;
 	}
-	auto reserved = this->reserved_tiles.find(it->second.order->get_target());
-	if (reserved != this->reserved_tiles.end() and reserved->second == builder) {
-		this->reserved_tiles.erase(reserved);
+	for (const auto &tile : this->get_tower_footprint(it->second.order->get_target())) {
+		auto reserved = this->reserved_tiles.find(tile);
+		if (reserved != this->reserved_tiles.end() and reserved->second == builder) {
+			this->reserved_tiles.erase(reserved);
+		}
+	}
+	if (state->get_game_entities().contains(it->second.foundation_id)) {
+		state->remove_game_entity(it->second.foundation_id, time);
+	}
+	if (it->second.tower_id.has_value()) {
+		this->destroy_tower(state, *it->second.tower_id, time);
 	}
 	this->build_orders.erase(it);
 	auto found = state->get_game_entities().find(builder);
@@ -312,10 +458,13 @@ bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
 void FVD::advance_build(const std::shared_ptr<GameState> &state,
                         entity_id_t builder,
                         uint64_t order_id,
+                        uint64_t route_revision,
                         bool finish,
                         const time::time_t &time) {
 	auto it = this->build_orders.find(builder);
-	if (it == this->build_orders.end() or it->second.order->get_id() != order_id) {
+	if (it == this->build_orders.end()
+	    or it->second.order->get_id() != order_id
+	    or it->second.route_revision != route_revision) {
 		return;
 	}
 	auto found = state->get_game_entities().find(builder);
@@ -331,35 +480,158 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 		entity->get_component(component::component_t::POSITION));
 	auto tile = order->get_target();
 	auto current = position->get_positions().get(time);
+	auto placed_tower = it->second.tower_id;
 	if (not builder_alive(entity, time)
 	    or ownership->get_owners().get(time) != order->get_owner()
 	    or current != it->second.stand
-	    or this->tile_occupied(state, current.to_tile(), time, builder)
+	    or (not placed_tower.has_value()
+	        and this->tile_occupied(state, current.to_tile(), time, builder))
 	    or not this->is_tile_reserved(tile)
 	    or this->reserved_tiles.at(tile) != builder
-	    or this->tile_occupied(state, tile, time)) {
+	    or (not placed_tower.has_value() and this->tile_occupied(state, tile, time))) {
 		this->cancel_build(state, builder, time);
 		return;
 	}
 	if (not finish) {
 		auto loop = this->event_loop.lock();
+		auto factory = this->entity_factory.lock();
+		if (not loop or not factory) [[unlikely]] {
+			throw Error{ERR << "FVD construction services no longer exist"};
+		}
+		if (not state->get_game_entities().contains(it->second.foundation_id)) [[unlikely]] {
+			throw Error{ERR << "Pending construction has no foundation entity"};
+		}
+		state->remove_game_entity(it->second.foundation_id, time);
+		auto tower_entity = factory->spawn_game_entity(
+			loop, state, order->get_owner(), this->tower, tile.to_phys3_center(), time);
+		if (not tower_entity->has_component(component::component_t::LIVE)) [[unlikely]] {
+			throw Error{ERR << "FVD tower requires a Live ability"};
+		}
+		auto live = std::dynamic_pointer_cast<component::Live>(
+			tower_entity->get_component(component::component_t::LIVE));
+		auto health = nyan::fqon_t{"fvd.data.entities.Health"};
+		int64_t max_health = 0;
+		for (const auto &setting : live->get_ability().get_set("Live.attributes")) {
+			auto value = std::dynamic_pointer_cast<nyan::ObjectValue>(setting.get_ptr());
+			auto object = live->get_ability().get_view()->get_object(value->get_name());
+			if (object.get_object("AttributeSetting.attribute").get_name() == health) {
+				max_health = object.get_int("AttributeSetting.max_value");
+				break;
+			}
+		}
+		if (max_health <= 0) [[unlikely]] {
+			throw Error{ERR << "FVD tower requires a positive maximum health"};
+		}
+		live->set_attribute_progress(time, time + this->construction_time,
+		                             health, 0, max_health);
+		system::Idle::idle(tower_entity, time);
+		this->block_tower(state, tower_entity->get_id(), tile, true, time);
+		it->second.tower_id = tower_entity->get_id();
+		system::Idle::idle(entity, time);
 		loop->create_event(
 			"game.fvd_build_progress", entity->get_manager(), state,
 			time + this->construction_time,
-			{{"builder", builder}, {"order", order_id}, {"finish", true}});
+			{{"builder", builder}, {"order", order_id},
+			 {"route", route_revision}, {"finish", true}});
 		return;
 	}
 
-	auto loop = this->event_loop.lock();
-	auto factory = this->entity_factory.lock();
-	if (not loop or not factory) {
-		throw Error{ERR << "FVD construction services no longer exist"};
+	if (not placed_tower.has_value() or not this->tower_footprints.contains(*placed_tower)) [[unlikely]] {
+		throw Error{ERR << "Completed construction has no tower footprint"};
 	}
-	factory->spawn_game_entity(loop, state, order->get_owner(), this->tower,
-	                           tile.to_phys3_center(), time);
-	this->reserved_tiles.erase(tile);
+	this->tower_footprints.at(*placed_tower).under_construction = false;
+	for (const auto &footprint_tile : this->get_tower_footprint(tile)) {
+		this->reserved_tiles.erase(footprint_tile);
+	}
 	this->build_orders.erase(it);
 	system::Idle::idle(entity, time);
+}
+
+void FVD::refresh_paths(const std::shared_ptr<GameState> &state,
+                        const time::time_t &time) {
+	std::vector<entity_id_t> destroyed;
+	for (const auto &[tower_id, footprint] : this->tower_footprints) {
+		if (footprint.under_construction) {
+			continue;
+		}
+		auto found = state->get_game_entities().find(tower_id);
+		if (found == state->get_game_entities().end()) {
+			destroyed.push_back(tower_id);
+			continue;
+		}
+		auto tower_entity = found->second;
+		if (tower_entity->has_component(component::component_t::LIVE)) {
+			auto live = std::dynamic_pointer_cast<component::Live>(
+				tower_entity->get_component(component::component_t::LIVE));
+			if (live->get_attribute(time, "fvd.data.entities.Health")->get(time) <= 0) {
+				destroyed.push_back(tower_id);
+			}
+		}
+	}
+	for (auto tower_id : destroyed) {
+		this->destroy_tower(state, tower_id, time);
+	}
+
+	auto loop = this->event_loop.lock();
+	if (not loop) [[unlikely]] {
+		throw Error{ERR << "FVD construction event loop no longer exists"};
+	}
+	for (auto &[builder_id, build] : this->build_orders) {
+		if (build.tower_id.has_value()) {
+			continue;
+		}
+		auto found = state->get_game_entities().find(builder_id);
+		if (found == state->get_game_entities().end() or not builder_alive(found->second, time)) {
+			continue;
+		}
+		auto entity = found->second;
+		auto travel = system::Move::move_default(entity, state, build.stand, time);
+		build.arrival = time + travel;
+		build.route_revision += 1;
+		loop->create_event(
+			"game.fvd_build_progress", entity->get_manager(), state, build.arrival,
+			{{"builder", builder_id}, {"order", build.order->get_id()},
+			 {"route", build.route_revision}, {"finish", false}});
+	}
+
+	for (const auto &[entity_id, entity] : state->get_game_entities()) {
+		if (this->build_orders.contains(entity_id)
+		    or not entity->has_component(component::component_t::MOVE)) {
+			continue;
+		}
+		auto move = std::dynamic_pointer_cast<component::Move>(
+			entity->get_component(component::component_t::MOVE));
+		if (not move->get_active_target().has_value()
+		    or move->get_active_arrival() <= time) {
+			continue;
+		}
+		auto activity_component = std::dynamic_pointer_cast<component::Activity>(
+			entity->get_component(component::component_t::ACTIVITY));
+		auto node = activity_component->get_node(time);
+		if (node->get_type() != activity::node_t::XOR_EVENT_GATE) {
+			continue;
+		}
+		auto target = *move->get_active_target();
+		auto duration = system::Move::move_default(entity, state, target, time);
+		activity_component->cancel_events(time);
+		auto gate = std::static_pointer_cast<activity::XorEventGate>(node);
+		for (const auto &[next_id, primer] : gate->get_primers()) {
+			activity_component->add_event(primer(time + duration, entity, loop, state, next_id));
+		}
+	}
+}
+
+bool FVD::destroy_tower(const std::shared_ptr<GameState> &state,
+                        entity_id_t tower_id,
+                        const time::time_t &time) {
+	if (not this->tower_footprints.contains(tower_id)) {
+		return false;
+	}
+	this->unblock_tower(state, tower_id, time);
+	if (state->get_game_entities().contains(tower_id)) {
+		state->remove_game_entity(tower_id, time);
+	}
+	return true;
 }
 
 std::shared_ptr<component::command::BuildTowerCommand> FVD::get_build_order(

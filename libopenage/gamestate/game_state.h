@@ -7,6 +7,7 @@
 
 #include "event/state.h"
 #include "gamestate/types.h"
+#include "time/time.h"
 
 
 namespace nyan {
@@ -62,6 +63,9 @@ public:
 	 * @param entity New game entity.
 	 */
 	void add_game_entity(const std::shared_ptr<GameEntity> &entity);
+
+	/** Remove a game entity and deactivate its renderer connector. */
+	void remove_game_entity(entity_id_t id, const time::time_t &time);
 
 	/**
 	 * Add a new player to the index.

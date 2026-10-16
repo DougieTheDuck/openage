@@ -100,6 +100,13 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 	if (this->layer_uniforms.empty()) [[unlikely]] {
 		return;
 	}
+	if (not this->render_entity->is_active()) {
+		for (auto &layer_unifs : this->layer_uniforms) {
+			layer_unifs->update(this->scale, 0.0f);
+		}
+		this->rendered_layers.clear();
+		return;
+	}
 
 	// Object world position
 	auto current_pos = this->position.get(time);
@@ -197,6 +204,14 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 
 uint32_t WorldObject::get_id() {
 	return this->ref_id;
+}
+
+bool WorldObject::is_active() const {
+	return this->render_entity->is_active();
+}
+
+bool WorldObject::is_pickable() const {
+	return this->render_entity->is_pickable();
 }
 
 const renderer::resources::MeshData WorldObject::get_mesh() {

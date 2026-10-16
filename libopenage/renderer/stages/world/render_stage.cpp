@@ -70,6 +70,9 @@ void WorldRenderStage::pick_entity(
 	std::optional<uint32_t> selected_id;
 	std::optional<WorldObject::HitTestResult> selected_hit;
 	for (const auto &object : this->render_objects) {
+		if (not object->is_active() or not object->is_pickable()) {
+			continue;
+		}
 		auto hit = object->hit_test(position, this->camera);
 		if (not hit.has_value()) {
 			continue;
@@ -95,6 +98,10 @@ void WorldRenderStage::update() {
 	auto &camera_frustum = this->camera->get_frustum_2d();
 	for (auto &obj : this->render_objects) {
 		obj->fetch_updates(current_time);
+		if (not obj->is_active()) {
+			obj->update_uniforms(current_time);
+			continue;
+		}
 
 		if (WorldRenderStage::ENABLE_FRUSTUM_CULLING
 		    and not obj->is_visible(camera_frustum, current_time)) {

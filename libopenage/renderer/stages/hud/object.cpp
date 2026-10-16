@@ -165,6 +165,7 @@ void HudHealthObject::update_uniforms(const time::time_t &time, bool selected) {
 		return;
 	}
 
+	selected = selected and this->render_entity->is_active();
 	auto world_position = this->render_entity->get_position_at(time).to_world_space();
 	auto max_health = this->render_entity->get_max_health();
 	if (max_health <= 0) [[unlikely]] {

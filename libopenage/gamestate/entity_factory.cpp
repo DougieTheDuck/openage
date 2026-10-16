@@ -12,6 +12,7 @@
 
 #include "curve/container/queue.h"
 #include "curve/discrete.h"
+#include "curve/segmented.h"
 #include "event/event_loop.h"
 #include "gamestate/activity/activity.h"
 #include "gamestate/activity/condition/command_in_queue.h"
@@ -125,7 +126,8 @@ std::shared_ptr<GameEntity> EntityFactory::add_game_entity(const std::shared_ptr
 	init_components(loop, db_view, entity, nyan_entity);
 
 	if (this->render_factory) {
-		entity->set_render_entity(this->render_factory->add_world_render_entity());
+		entity->set_render_entity(this->render_factory->add_world_render_entity(
+			entity->has_component(component::component_t::SELECTABLE)));
 	}
 
 	return entity;
@@ -219,7 +221,7 @@ void EntityFactory::init_components(const std::shared_ptr<openage::event::EventL
 
 				live->add_attribute(time::TIME_MIN,
 				                    attribute.get_name(),
-				                    std::make_shared<curve::Discrete<int64_t>>(loop,
+				                    std::make_shared<curve::Segmented<int64_t>>(loop,
 				                                                               0,
 				                                                               "",
 				                                                               nullptr,

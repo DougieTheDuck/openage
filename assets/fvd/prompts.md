@@ -39,3 +39,11 @@ All sprites share this direction:
 > Use simple undyed linen clothing, a muted brown hood, worn trousers, a leather belt, work boots, a modest tool pouch, a wooden mallet, and a small carpenter's axe tucked safely through the belt.
 > Show one complete civilian worker facing down-right with a small contact shadow and a transparent background.
 > Avoid armor, a shield, a helmet, or a fighting pose.
+
+## Foundation marker
+
+> An original compact early-stage medieval tower foundation marker.
+> Use a low square timber stake-and-rope perimeter in a clean 2:1 isometric diamond, with four corner stakes, a few short cross-braces, a small central patch of disturbed earth, a modest pile of gray foundation stones, and two or three short rough-cut boards.
+> Keep the center mostly open and the entire low-profile structure well inside a single tile.
+> Show one isolated construction site with soft contact shadows and a transparent background.
+> Avoid walls, a roof, tall scaffolding, carts, people, flags, team colors, completed building parts, text, logos, or a watermark.
