@@ -74,6 +74,9 @@ public:
 	 */
 	void set_render_entity(const std::shared_ptr<renderer::world::RenderEntity> &entity);
 
+	/** Get the thread-safe rendering snapshot associated with this entity. */
+	const std::shared_ptr<renderer::world::RenderEntity> &get_render_entity() const;
+
 	/**
 	 * Set the event manager of this entity.
 	 *

@@ -17,6 +17,7 @@
 #include "gamestate/event/spawn_entity.h"
 #include "gamestate/fvd.h"
 #include "gamestate/game.h"
+#include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
 #include "gamestate/simulation.h"
 #include "input/controller/game/binding_context.h"
@@ -26,6 +27,7 @@
 
 #include "coord/phys.h"
 #include "renderer/camera/camera.h"
+#include "renderer/stages/world/render_entity.h"
 
 
 namespace openage::input::game {
@@ -41,6 +43,8 @@ void Controller::set_control(size_t faction_id) {
 	if (this->controlled_factions.find(faction_id) != this->controlled_factions.end()) {
 		this->active_faction_id = faction_id;
 		this->selected.clear();
+		this->selected_kind = SelectionKind::NONE;
+		this->selected_render_entity.reset();
 		this->placing_tower = false;
 	}
 }
@@ -57,18 +61,29 @@ std::vector<gamestate::entity_id_t> Controller::get_selected() const {
 	return this->selected;
 }
 
-void Controller::set_selected(const std::vector<gamestate::entity_id_t> ids) {
+void Controller::set_selected(
+	const std::vector<gamestate::entity_id_t> ids,
+	SelectionKind kind,
+	const std::shared_ptr<renderer::world::RenderEntity> &render_entity) {
 	std::unique_lock lock{this->mutex};
 
 	log::log(DBG << "Selected " << ids.size() << " entities");
 
 	this->selected = ids;
+	this->selected_kind = ids.size() == 1 ? kind : SelectionKind::NONE;
+	this->selected_render_entity = ids.size() == 1 ? render_entity : nullptr;
 	this->placing_tower = false;
+}
+
+SelectionDetails Controller::get_selection_details() const {
+	std::unique_lock lock{this->mutex};
+	return {this->selected, this->selected_kind, this->selected_render_entity};
 }
 
 bool Controller::begin_tower_placement() {
 	std::unique_lock lock{this->mutex};
-	if (this->active_faction_id < 2 or this->selected.size() != 1) {
+	if (this->active_faction_id < 2 or this->selected.size() != 1
+	    or this->selected_kind != SelectionKind::BUILDER) {
 		return false;
 	}
 	this->placing_tower = true;
@@ -126,6 +141,34 @@ void Controller::reset_drag_select() {
 	this->drag_select_start = std::nullopt;
 }
 
+namespace {
+
+/** Resolve the selected entity type on the simulation thread. */
+void apply_selection(const std::shared_ptr<Controller> &controller,
+                     const std::shared_ptr<gamestate::GameState> &state,
+                     const std::vector<gamestate::entity_id_t> &ids) {
+	if (not state->get_fvd() or ids.size() != 1) {
+		controller->set_selected(ids);
+		return;
+	}
+	auto found = state->get_game_entities().find(ids.front());
+	if (found == state->get_game_entities().end()) {
+		controller->set_selected({});
+		return;
+	}
+	auto definition = found->second->get_definition();
+	auto kind = SelectionKind::OTHER;
+	if (definition == "fvd.data.entities.Builder") {
+		kind = SelectionKind::BUILDER;
+	}
+	else if (definition == "fvd.data.entities.Tower") {
+		kind = SelectionKind::TOWER;
+	}
+	controller->set_selected(ids, kind, found->second->get_render_entity());
+}
+
+} // namespace
+
 void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
                     const std::shared_ptr<time::TimeLoop> &time_loop,
                     const std::shared_ptr<openage::gamestate::GameSimulation> &simulation,
@@ -139,6 +182,9 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		auto mouse_pos = args.mouse.to_phys3(camera);
 		auto state = simulation->get_game()->get_state();
 		if (state->get_fvd()) {
+			if (controller->get_selection_details().kind != SelectionKind::BUILDER) {
+				return;
+			}
 			event::EventHandler::param_map::map_t params{
 				{"type", gamestate::component::command::command_t::BUILD_TOWER},
 				{"target", mouse_pos},
@@ -272,8 +318,8 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 							{"entity_ids", picked},
 							{"select_cb",
 							 std::function<void(const std::vector<gamestate::entity_id_t>)>{
-								 [controller](const std::vector<gamestate::entity_id_t> ids) {
-									 controller->set_selected(ids);
+								 [controller, simulation](const std::vector<gamestate::entity_id_t> ids) {
+									 apply_selection(controller, simulation->get_game()->get_state(), ids);
 								 }}},
 						};
 
@@ -296,9 +342,9 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				{"camera_matrix", cam_matrix},
 				{"select_cb",
 		         std::function<void(const std::vector<gamestate::entity_id_t> ids)>{
-					 [controller](
+					 [controller, simulation](
 						 const std::vector<gamestate::entity_id_t> ids) {
-						 controller->set_selected(ids);
+						 apply_selection(controller, simulation->get_game()->get_state(), ids);
 					 }}},
 			};
 

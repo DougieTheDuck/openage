@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_set>
+#include <vector>
 
 #include "coord/pixel.h"
 #include "curve/discrete.h"
@@ -24,9 +25,28 @@ namespace time {
 class TimeLoop;
 }
 
+namespace renderer::world {
+class RenderEntity;
+}
+
 namespace input::game {
 
 class BindingContext;
+
+/** Kind of the currently selected FVD entity, as resolved by game simulation. */
+enum class SelectionKind {
+	NONE,
+	BUILDER,
+	TOWER,
+	OTHER,
+};
+
+/** A controller-owned snapshot; health is read from its render entity. */
+struct SelectionDetails {
+	std::vector<gamestate::entity_id_t> ids;
+	SelectionKind kind = SelectionKind::NONE;
+	std::shared_ptr<renderer::world::RenderEntity> render_entity;
+};
 
 /**
  * Interface for game controllers.
@@ -69,7 +89,13 @@ public:
 	 *
 	 * @param ids Selected entities.
 	 */
-	void set_selected(const std::vector<gamestate::entity_id_t> ids);
+	void set_selected(
+		const std::vector<gamestate::entity_id_t> ids,
+		SelectionKind kind = SelectionKind::NONE,
+		const std::shared_ptr<renderer::world::RenderEntity> &render_entity = nullptr);
+
+	/** Get the selected units and resolved type as a single thread-safe snapshot. */
+	SelectionDetails get_selection_details() const;
 
 	/** Enter FVD tower placement mode when a Builder has been selected. */
 	bool begin_tower_placement();
@@ -124,6 +150,10 @@ private:
 	 * Currently selected entities.
 	 */
 	std::vector<gamestate::entity_id_t> selected;
+
+	/** Simulation-resolved selection kind and thread-safe health source. */
+	SelectionKind selected_kind = SelectionKind::NONE;
+	std::shared_ptr<renderer::world::RenderEntity> selected_render_entity;
 
 	/** Controller-local input mode, not authoritative simulation state. */
 	bool placing_tower = false;

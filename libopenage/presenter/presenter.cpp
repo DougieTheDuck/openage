@@ -39,6 +39,7 @@
 #include "renderer/stages/screen/render_stage.h"
 #include "renderer/stages/skybox/render_stage.h"
 #include "renderer/stages/terrain/render_stage.h"
+#include "renderer/stages/world/render_entity.h"
 #include "renderer/stages/world/render_stage.h"
 #include "time/time_loop.h"
 #include "util/path.h"
@@ -278,7 +279,7 @@ void Presenter::init_input() {
 		if (this->fvd_hud_state) {
 			auto window_size = this->window->get_size();
 			if (ev.position().x() < 284
-			    and ev.position().y() > static_cast<double>(window_size[1]) - 148) {
+			    and ev.position().y() > static_cast<double>(window_size[1]) - 196) {
 				return;
 			}
 		}
@@ -350,6 +351,10 @@ void Presenter::init_input() {
 			this->fvd_hud_state = std::make_shared<QQmlPropertyMap>();
 			this->fvd_hud_state->insert("controlled", 2);
 			this->fvd_hud_state->insert("selection", QString{"No unit selected"});
+			this->fvd_hud_state->insert("isTower", false);
+			this->fvd_hud_state->insert("health", QString{"—"});
+			this->fvd_hud_state->insert("damage", QString{"Not defined"});
+			this->fvd_hud_state->insert("armor", QString{"Not defined"});
 			this->fvd_hud_state->insert("canBuild", false);
 			this->fvd_hud_state->insert("placing", false);
 			this->fvd_hud_state->insert("kills", 0);
@@ -442,17 +447,40 @@ void Presenter::render() {
 		this->world_renderer->update();
 	}
 	if (this->game_controller) {
-		auto selected = this->game_controller->get_selected();
-		this->hud_renderer->set_selected(selected);
+		auto selected = this->game_controller->get_selection_details();
+		this->hud_renderer->set_selected(selected.ids);
 		if (this->fvd_hud_state) {
 			auto controlled = this->game_controller->get_controlled();
+			auto tower = selected.kind == input::game::SelectionKind::TOWER;
+			auto builder = selected.kind == input::game::SelectionKind::BUILDER;
+			QString selection_label{"No unit selected"};
+			if (selected.ids.size() > 1) {
+				selection_label = QString{"%1 units selected"}.arg(static_cast<int>(selected.ids.size()));
+			}
+			else if (builder) {
+				selection_label = QString{"Builder"};
+			}
+			else if (tower) {
+				selection_label = QString{"Tower"};
+			}
+			else if (not selected.ids.empty()) {
+				selection_label = QString{"Unit selected"};
+			}
+
+			QString health{"—"};
+			if (selected.render_entity and selected.render_entity->is_active()
+			    and selected.render_entity->has_health()) {
+				auto current = selected.render_entity->get_health_at(
+					this->time_loop->get_clock()->get_time());
+				health = QString{"%1 / %2"}
+				             .arg(static_cast<qlonglong>(current))
+				             .arg(selected.render_entity->get_max_health());
+			}
 			this->fvd_hud_state->insert("controlled", static_cast<int>(controlled));
-			this->fvd_hud_state->insert(
-				"selection", selected.empty()
-				    ? QString{"No unit selected"}
-				    : QString{"%1 unit selected"}.arg(static_cast<int>(selected.size())));
-			this->fvd_hud_state->insert(
-				"canBuild", controlled >= 2 and selected.size() == 1);
+			this->fvd_hud_state->insert("selection", selection_label);
+			this->fvd_hud_state->insert("isTower", tower);
+			this->fvd_hud_state->insert("health", health);
+			this->fvd_hud_state->insert("canBuild", controlled >= 2 and builder);
 			this->fvd_hud_state->insert(
 				"placing", this->game_controller->is_tower_placement_active());
 		}

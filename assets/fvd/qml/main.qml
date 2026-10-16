@@ -5,11 +5,11 @@ import QtQuick
 Item {
 	id: root
 
-	// Injected by the presenter; the HUD is not loaded for non-FVD games.
 	property var hud: typeof fvdHud === "undefined" ? null : fvdHud
 	readonly property bool hunter: hud !== null && hud.controlled === 1
 	readonly property bool placing: hud !== null && hud.placing
 	readonly property bool canBuild: hud !== null && hud.canBuild
+	readonly property bool isTower: hud !== null && hud.isTower
 
 	Rectangle {
 		anchors.top: parent.top
@@ -36,7 +36,7 @@ Item {
 		anchors.left: parent.left
 		anchors.bottom: parent.bottom
 		width: 284
-		height: 148
+		height: 196
 		radius: 6
 		color: "#ee182824"
 		border.width: 1
@@ -45,7 +45,7 @@ Item {
 		Column {
 			anchors.fill: parent
 			anchors.margins: 12
-			spacing: 7
+			spacing: 8
 
 			Text {
 				color: "#ffffff"
@@ -55,9 +55,28 @@ Item {
 			      + (root.hunter ? " — Hunter" : " — Builder")
 			}
 			Text {
+				color: "#ffffff"
+				font.bold: true
+				font.pixelSize: 14
+				text: root.hud === null ? "No unit selected" : root.hud.selection
+			}
+			Text {
+				visible: root.isTower || root.canBuild
 				color: "#d6e6db"
 				font.pixelSize: 13
-				text: root.hud === null ? "No unit selected" : root.hud.selection
+				text: "HP: " + (root.hud === null ? "—" : root.hud.health)
+			}
+			Text {
+				visible: root.isTower
+				color: "#d6e6db"
+				font.pixelSize: 13
+				text: "Damage: " + (root.hud === null ? "Not defined" : root.hud.damage)
+			}
+			Text {
+				visible: root.isTower
+				color: "#d6e6db"
+				font.pixelSize: 13
+				text: "Armour: " + (root.hud === null ? "Not defined" : root.hud.armor)
 			}
 			Text {
 				color: "#d6e6db"
@@ -65,12 +84,13 @@ Item {
 				text: "Tower kills: " + (root.hud === null ? 0 : root.hud.kills)
 			}
 			Rectangle {
+				visible: root.canBuild
 				width: 252
 				height: 32
 				radius: 4
-				color: root.canBuild ? (root.placing ? "#ae6e30" : "#3e7862") : "#414a48"
+				color: root.placing ? "#ae6e30" : "#3e7862"
 				border.width: 1
-				border.color: root.canBuild ? "#b5d9c4" : "#66706c"
+				border.color: "#b5d9c4"
 
 				Text {
 					anchors.centerIn: parent
@@ -82,7 +102,6 @@ Item {
 
 				MouseArea {
 					anchors.fill: parent
-					enabled: root.canBuild
 					onClicked: {
 						if (root.hud !== null)
 							root.hud.action = root.placing ? "cancel" : "build"
