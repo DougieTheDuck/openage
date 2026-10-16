@@ -44,7 +44,7 @@ namespace activity {
  */
 using event_primer_t = std::function<std::shared_ptr<openage::event::Event>(const time::time_t &,
                                                                             const std::shared_ptr<gamestate::GameEntity> &,
-                                                                            const std::shared_ptr<event::EventLoop> &,
+                                                                            const std::shared_ptr<openage::event::EventLoop> &,
                                                                             const std::shared_ptr<gamestate::GameState> &,
                                                                             size_t next_id)>;
 
