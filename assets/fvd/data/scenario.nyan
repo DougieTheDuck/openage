@@ -24,9 +24,12 @@ Scenario(engine.root.Object):
     chunk_size : int = 16
     player_count : int = 8
     construction_time : float = 0.1
+    horse_spawn_delay : int = 20
+    horse_spawn_interval : int = 1
     hunter : Civilisation = Hunter
     builders : Civilisation = Builders
     builder : engine.util.game_entity.GameEntity = fvd.data.entities.Builder
+    horse : engine.util.game_entity.GameEntity = fvd.data.entities.Horse
     foundation : engine.util.game_entity.GameEntity = fvd.data.entities.Foundation
     tower : engine.util.game_entity.GameEntity = fvd.data.entities.Tower
     terrain : engine.util.terrain.Terrain = fvd.data.terrain.Plains

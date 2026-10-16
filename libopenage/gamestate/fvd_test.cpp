@@ -458,4 +458,66 @@ void fvd_construction() {
 	TESTEQUALS(tower_sector->get_cost_field()->get_cost(tower_local), path::cost_t{1});
 	TESTEQUALS(fvd->destroy_tower(state, first_tower, t(222)), false);
 }
+
+void fvd_hunter_spawning() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) {
+		return time::time_t::from_double(seconds);
+	};
+	auto count_horses = [&]() {
+		size_t horses = 0;
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			if (entity->get_definition() == "fvd.data.entities.Horse") {
+				++horses;
+			}
+		}
+		return horses;
+	};
+
+	// Preparing the map does not start the Hunter wave.
+	loop->reach_time(at(0), state);
+	TESTEQUALS(count_horses(), size_t{0});
+	fvd->start_hunter_wave(state, at(0));
+	fvd->start_hunter_wave(state, at(0));
+
+	loop->reach_time(at(19.999), state);
+	TESTEQUALS(count_horses(), size_t{0});
+	loop->reach_time(at(20), state);
+	TESTEQUALS(count_horses(), size_t{1});
+	loop->reach_time(at(20.999), state);
+	TESTEQUALS(count_horses(), size_t{1});
+	loop->reach_time(at(21), state);
+	TESTEQUALS(count_horses(), size_t{2});
+	loop->reach_time(at(22), state);
+	TESTEQUALS(count_horses(), size_t{3});
+
+	// No movement occurs without a human-issued order.
+	loop->reach_time(at(23), state);
+	TESTEQUALS(count_horses(), size_t{4});
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Horse") {
+			continue;
+		}
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		TESTEQUALS(ownership->get_owners().get(at(23)), player_id_t{1});
+		TESTEQUALS(position->get_positions().get(at(23)), fvd->get_centre());
+		TESTEQUALS(entity->has_component(component::component_t::SELECTABLE), true);
+		TESTEQUALS(entity->has_component(component::component_t::MOVE), true);
+	}
+}
 }
