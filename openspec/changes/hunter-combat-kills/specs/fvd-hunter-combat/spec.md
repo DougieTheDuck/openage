@@ -27,17 +27,40 @@ then one additional horse at each whole second t=21s, t=22s, and so on.
 
 ### Requirement: Newly spawned Hunter horses await human orders
 
-The simulation SHALL spawn each Hunter-owned horse idle at the center;
+The simulation SHALL initially spawn each Hunter-owned horse at the center;
 horses SHALL NOT automatically follow a path, rally or attack without
-an instruction from their human Hunter.
+an instruction from their human Hunter. Passive collision separation
+MAY gently displace horses within the spawn area without creating Move orders.
 
 #### Scenario: A horse spawns
 - **WHEN** a Hunter horse appears at t=20 seconds or later
-- **THEN** it remains at the center, visible to all players and awaiting an order
+- **THEN** it is visible to all players and awaits an order, apart from passive collision displacement
 
 #### Scenario: Horses accumulate
 - **WHEN** the Hunter does not issue any commands across several spawn intervals
-- **THEN** all surviving uncommanded horses remain at the center
+- **THEN** surviving uncommanded horses remain near the center and spread outward to make room for further spawns
+
+### Requirement: New horses push the spawn crowd apart
+
+The simulation SHALL create every scheduled horse even when its
+spawn location is occupied by units or blocked by a completed tower.
+It SHALL apply a deterministic two-dimensional contact-separation
+response to overlapping idle horses, keeping them on valid terrain
+and using short interpolated movement without assigning combat orders.
+
+#### Scenario: Multiple horses spawn at the same point
+- **WHEN** the Hunter leaves several consecutive horses uncommanded
+- **THEN** all horses spawn on schedule and older idle horses spread outward
+  rather than remaining stacked at precisely the same coordinates
+
+#### Scenario: A tower blocks the center
+- **WHEN** a completed tower occupies the center at the scheduled horse spawn time
+- **THEN** the horse still appears, and contact resolution moves it toward
+  an accessible position without moving through the tower's blocked footprint
+
+#### Scenario: A horse has a manual Move order
+- **WHEN** an additional horse spawns while another horse is following a Move order
+- **THEN** the active horse's destination and command remain intact
 
 ### Requirement: Human Hunter can command individual horses or a group
 

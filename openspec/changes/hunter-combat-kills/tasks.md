@@ -1,7 +1,7 @@
 # Tasks
 
 - [x] 1.1 Implement match-relative grace-period scheduling: no spawns before t=20s; one horse at t=20s and every second thereafter.
-- [x] 1.2 Keep new Hunter horses idle at map center until given a command; test accumulation and starting-window timing headlessly.
+- [x] 1.2 Keep new Hunter horses free of autonomous orders and resolve spawn-area overlaps; test timing, crowd separation and blocked centre headlessly.
 - [ ] 1.3 Add human Hunter owned-horse selection, including group selection, and ordinary Move orders.
 - [ ] 1.4 Add AttackMove orders through the existing controller, command queue, pathfinding and simulation; fight eligible enemies en route, then resume travel.
 - [ ] 1.5 Enforce Hunter-only horse command ownership in solo and network role assignments; reject Builder-issued Hunter orders.

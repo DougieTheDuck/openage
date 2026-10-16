@@ -2,12 +2,14 @@
 
 #include <array>
 #include <functional>
+#include <vector>
 #include <memory>
 
 #include "assets/mod_manager.h"
 #include "config.h"
 #include "event/event_loop.h"
 #include "gamestate/component/api/live.h"
+#include "gamestate/component/api/move.h"
 #include "gamestate/component/internal/commands/build_tower.h"
 #include "gamestate/component/internal/commands/types.h"
 #include "gamestate/component/internal/ownership.h"
@@ -503,9 +505,12 @@ void fvd_hunter_spawning() {
 	loop->reach_time(at(22), state);
 	TESTEQUALS(count_horses(), size_t{3});
 
-	// No movement occurs without a human-issued order.
+	// Horses never receive an automatic Move order. The only displacement
+	// comes from nearby bodies making room for subsequent spawns.
 	loop->reach_time(at(23), state);
 	TESTEQUALS(count_horses(), size_t{4});
+	loop->reach_time(at(23.4), state);
+	std::vector<coord::phys3> horse_positions;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() != "fvd.data.entities.Horse") {
 			continue;
@@ -514,10 +519,72 @@ void fvd_hunter_spawning() {
 			entity->get_component(component::component_t::OWNERSHIP));
 		auto position = std::dynamic_pointer_cast<component::Position>(
 			entity->get_component(component::component_t::POSITION));
-		TESTEQUALS(ownership->get_owners().get(at(23)), player_id_t{1});
-		TESTEQUALS(position->get_positions().get(at(23)), fvd->get_centre());
+		auto move = std::dynamic_pointer_cast<component::Move>(
+			entity->get_component(component::component_t::MOVE));
+		TESTEQUALS(ownership->get_owners().get(at(23.4)), player_id_t{1});
 		TESTEQUALS(entity->has_component(component::component_t::SELECTABLE), true);
-		TESTEQUALS(entity->has_component(component::component_t::MOVE), true);
+		TESTEQUALS(move->get_active_target().has_value(), false);
+		auto at_end = position->get_positions().get(at(23.4));
+		auto displacement = at_end - fvd->get_centre();
+		TESTEQUALS(displacement.length() < 5.0, true);
+		horse_positions.push_back(at_end);
 	}
+	TESTEQUALS(horse_positions.size(), size_t{4});
+	for (size_t i = 0; i < horse_positions.size(); ++i) {
+		for (size_t j = i + 1; j < horse_positions.size(); ++j) {
+			auto delta = horse_positions[i] - horse_positions[j];
+			// 0.38 + 0.38 radii, with a little numerical tolerance.
+			TESTEQUALS(delta.length() > 0.68, true);
+		}
+	}
+}
+
+void fvd_horse_spawn_blocked() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto t = [](double seconds) {
+		return time::time_t::from_double(seconds);
+	};
+	entity_id_t builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (ownership->get_owners().get(time::TIME_ZERO) == player_id_t{5}) {
+			builder = id;
+			break;
+		}
+	}
+	TESTEQUALS(builder != 0, true);
+	// Construct a path-blocking tower directly on the future spawn site.
+	TESTEQUALS(fvd->request_build(state, 5, {builder}, fvd->get_centre(), t(0)), true);
+	loop->reach_time(t(1), state);
+	TESTEQUALS(fvd->is_tile_reserved({64, 64}), false);
+
+	fvd->start_hunter_wave(state, t(0));
+	loop->reach_time(t(20), state);
+	std::shared_ptr<GameEntity> horse;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Horse") {
+			horse = entity;
+		}
+	}
+	TESTEQUALS(horse != nullptr, true);
+	loop->reach_time(t(20.4), state);
+	auto position = std::dynamic_pointer_cast<component::Position>(
+		horse->get_component(component::component_t::POSITION));
+	// A blocked centre never vetoes the scheduled spawn: contact shoves
+	// the new horse into nearby accessible terrain instead.
+	TESTEQUALS(position->get_positions().get(t(20.4)) != fvd->get_centre(), true);
 }
 }

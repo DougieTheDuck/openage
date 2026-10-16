@@ -69,7 +69,7 @@ over the menu do not unintentionally select or command the world.
 
 - The first horse spawns at the map center 20 seconds after match start, giving Builders a head start.
 - One additional horse spawns per second thereafter, owned by human Hunter player 1.
-- Horses remain at map center until the Hunter selects one or more and orders them to move or attack-move.
+- Horses spawn at map center and receive no automatic navigation orders. A deterministic 2D contact shove spreads idle horses outwards when new horses arrive; human selection/Move/AttackMove still controls travel and combat.
 - Attack-moving horses engage eligible opponents they encounter, then continue to their destination.
 - Automatic rally/gather points are out of scope for this first version.
 - Completed towers autonomously target enemies, fire arrows, inflict damage and kill.

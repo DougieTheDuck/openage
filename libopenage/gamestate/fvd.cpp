@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
+#include <utility>
 #include <cmath>
 #include <optional>
 #include <unordered_set>
@@ -37,6 +39,9 @@
 #include "log/log.h"
 #include "pathfinding/path.h"
 #include "pathfinding/definitions.h"
+#include "pathfinding/cost_field.h"
+#include "pathfinding/grid.h"
+#include "pathfinding/sector.h"
 #include "pathfinding/pathfinder.h"
 
 namespace openage::gamestate {
@@ -147,12 +152,16 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	auto build_time = settings.get_float("construction_time");
 	auto horse_delay = settings.get_int("horse_spawn_delay");
 	auto horse_interval = settings.get_int("horse_spawn_interval");
+	auto collision_radius = settings.get_float("horse_collision_radius");
+	auto shove_duration = settings.get_float("horse_shove_duration");
 	if (size < 16 or size > 512 or chunk < 4 or chunk > size
 	    or chunk > MAX_CHUNK_WIDTH or chunk > MAX_CHUNK_HEIGHT
 	    or size % chunk != 0 or players < 2 or players > 8
 	    or build_time <= 0.0 or build_time > 300.0
 	    or horse_delay < 0 or horse_delay > 600
-	    or horse_interval < 1 or horse_interval > 60) {
+	    or horse_interval < 1 or horse_interval > 60
+	    or collision_radius < 0.1 or collision_radius > 0.49
+	    or shove_duration <= 0.0 or shove_duration >= 0.9) {
 		throw Error{ERR << "Invalid FVD settings: map 16..512, chunk 4.."
 		                << MAX_CHUNK_WIDTH << ", players 2..8, construction >0..300 seconds"};
 	}
@@ -162,6 +171,8 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->construction_time = time::time_t::from_double(build_time);
 	this->horse_spawn_delay = time::time_t::from_int(horse_delay);
 	this->horse_spawn_interval = time::time_t::from_int(horse_interval);
+	this->horse_collision_radius = collision_radius;
+	this->horse_shove_duration = time::time_t::from_double(shove_duration);
 	this->hunter = settings.get_object("hunter").get_name();
 	this->builders = settings.get_object("builders").get_name();
 	this->builder = settings.get_object("builder").get_name();
@@ -680,6 +691,216 @@ bool FVD::is_tile_reserved(const coord::tile &tile) const {
 	return this->reserved_tiles.contains(tile);
 }
 
+void FVD::relax_horse_crowd(const std::shared_ptr<GameState> &state,
+                            entity_id_t newest_horse,
+                            const time::time_t &time) {
+	// A kinematic, 2D circle-contact solver. This runs on the simulation
+	// thread at spawn time, not on the renderer or an independent timer.
+	// It deliberately does not replace a human player's active Move order.
+	struct Body {
+		entity_id_t id;
+		std::shared_ptr<GameEntity> entity;
+		coord::phys3 original;
+		double ne;
+		double se;
+		double radius;
+		double mobility;
+	};
+	std::vector<Body> bodies;
+	bodies.reserve(state->get_game_entities().size());
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		const auto &definition = entity->get_definition();
+		if (definition != this->horse and definition != this->builder) {
+			continue;
+		}
+		if (not builder_alive(entity, time)) {
+			continue;
+		}
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		auto current = position->get_positions().get(time);
+		double mobility = 0.0;
+		if (definition == this->horse) {
+			auto move = std::dynamic_pointer_cast<component::Move>(
+				entity->get_component(component::component_t::MOVE));
+			if (not move->get_active_target().has_value()
+			    or move->get_active_arrival() <= time) {
+				// Give older horses most of the shove; a new arrival stays
+				// near the actual spawn point, pushing the pack outwards.
+				mobility = id == newest_horse ? 0.15 : 1.0;
+			}
+		}
+		bodies.push_back(Body{id, entity, current,
+		                     current.ne.to_double(), current.se.to_double(),
+		                     definition == this->horse ? this->horse_collision_radius : 0.28,
+		                     mobility});
+	}
+	if (bodies.empty()) {
+		return;
+	}
+	std::sort(bodies.begin(), bodies.end(),
+	          [](const Body &a, const Body &b) { return a.id < b.id; });
+
+	// Use the same land cost field as construction and normal pathfinding.
+	// Sample the four disk extremities so a shove cannot pass through a
+	// blocked tower footprint or a reserved construction tile.
+	auto grid = state->get_map()->get_pathfinder()->get_grid(
+		state->get_map()->get_grid_id("fvd.data.terrain.Land"));
+	const auto sector_size = grid->get_sector_size();
+	auto walkable = [&](double ne, double se, double radius) {
+		const std::array<std::pair<double, double>, 5> probes{{
+			{ne, se}, {ne - radius, se - radius},
+			{ne - radius, se + radius}, {ne + radius, se - radius},
+			{ne + radius, se + radius},
+		}};
+		for (const auto &[x, y] : probes) {
+			if (x < 0.0 or y < 0.0
+			    or x >= static_cast<double>(this->map_size)
+			    or y >= static_cast<double>(this->map_size)) {
+				return false;
+			}
+			auto tile = coord::tile{
+				static_cast<coord::tile_t>(x),
+				static_cast<coord::tile_t>(y)};
+			if (this->is_tile_reserved(tile)) {
+				return false;
+			}
+			auto sector = grid->get_sector(tile.ne / sector_size, tile.se / sector_size);
+			auto local = tile - sector->get_position().to_tile(sector_size);
+			if (sector->get_cost_field()->get_cost(local) >= path::COST_IMPASSABLE) {
+				return false;
+			}
+		}
+		return true;
+	};
+
+	// If the centre is blocked by a tower, still spawn the horse, then
+	// ease it to the nearest usable contact position. Never reject spawning.
+	for (auto &body : bodies) {
+		if (body.id != newest_horse or walkable(body.ne, body.se, body.radius)) {
+			continue;
+		}
+		constexpr std::array<std::pair<double, double>, 8> directions{{
+			{1, 0}, {0.7071067811865476, 0.7071067811865476},
+			{0, 1}, {-0.7071067811865476, 0.7071067811865476},
+			{-1, 0}, {-0.7071067811865476, -0.7071067811865476},
+			{0, -1}, {0.7071067811865476, -0.7071067811865476},
+		}};
+		bool found = false;
+		for (int ring = 1; ring <= 24 and not found; ++ring) {
+			for (const auto &[dx, dy] : directions) {
+				double x = body.ne + dx * ring * 0.25;
+				double y = body.se + dy * ring * 0.25;
+				if (walkable(x, y, body.radius)) {
+					body.ne = x;
+					body.se = y;
+					found = true;
+					break;
+				}
+			}
+		}
+	}
+
+	// Stable IDs, stable cell order and fixed pair directions avoid using
+	// unordered container iteration order or random forces in gameplay.
+	constexpr std::array<std::pair<double, double>, 8> directions{{
+		{1, 0}, {0.7071067811865476, 0.7071067811865476},
+		{0, 1}, {-0.7071067811865476, 0.7071067811865476},
+		{-1, 0}, {-0.7071067811865476, -0.7071067811865476},
+		{0, -1}, {0.7071067811865476, -0.7071067811865476},
+	}};
+	for (int pass = 0; pass < 24; ++pass) {
+		std::map<std::pair<int, int>, std::vector<size_t>> cells;
+		for (size_t i = 0; i < bodies.size(); ++i) {
+			cells[{static_cast<int>(std::floor(bodies[i].ne)),
+			       static_cast<int>(std::floor(bodies[i].se))}].push_back(i);
+		}
+		bool changed = false;
+		for (size_t i = 0; i < bodies.size(); ++i) {
+			auto &a = bodies[i];
+			auto cx = static_cast<int>(std::floor(a.ne));
+			auto cy = static_cast<int>(std::floor(a.se));
+			for (int dy = -1; dy <= 1; ++dy) {
+				for (int dx = -1; dx <= 1; ++dx) {
+					auto it = cells.find({cx + dx, cy + dy});
+					if (it == cells.end()) {
+						continue;
+					}
+					for (auto j : it->second) {
+						if (j <= i) {
+							continue;
+						}
+						auto &b = bodies[j];
+						double total_mobility = a.mobility + b.mobility;
+						if (total_mobility == 0.0) {
+							continue;
+						}
+						double x = b.ne - a.ne;
+						double y = b.se - a.se;
+						double min_distance = a.radius + b.radius;
+						double distance_squared = x * x + y * y;
+						if (distance_squared >= min_distance * min_distance) {
+							continue;
+						}
+						double distance = std::sqrt(distance_squared);
+						if (distance < 0.00001) {
+							auto dir = directions[(i * 17 + j * 31) % directions.size()];
+							x = dir.first;
+							y = dir.second;
+							distance = 1.0;
+							// Fully overlapped circles require a full radius
+							// displacement, rather than a divide by zero.
+							distance_squared = 0.0;
+						}
+						double overlap = min_distance - std::sqrt(distance_squared) + 0.002;
+						double step_x = x / distance * overlap;
+						double step_y = y / distance * overlap;
+						if (a.mobility > 0.0) {
+							double nx = a.ne - step_x * a.mobility / total_mobility;
+							double ny = a.se - step_y * a.mobility / total_mobility;
+							if (walkable(nx, ny, a.radius)) {
+								a.ne = nx;
+								a.se = ny;
+								changed = true;
+							}
+						}
+						if (b.mobility > 0.0) {
+							double nx = b.ne + step_x * b.mobility / total_mobility;
+							double ny = b.se + step_y * b.mobility / total_mobility;
+							if (walkable(nx, ny, b.radius)) {
+								b.ne = nx;
+								b.se = ny;
+								changed = true;
+							}
+						}
+					}
+				}
+			}
+		}
+		if (not changed) {
+			break;
+		}
+	}
+
+	for (auto &body : bodies) {
+		if (body.mobility == 0.0) {
+			continue;
+		}
+		auto target = coord::phys3{
+			coord::phys_t::from_double(body.ne),
+			coord::phys_t::from_double(body.se),
+			body.original.up};
+		if (target == body.original) {
+			continue;
+		}
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			body.entity->get_component(component::component_t::POSITION));
+		position->set_position(time, body.original);
+		position->set_position(time + this->horse_shove_duration, target);
+		system::Idle::idle(body.entity, time);
+	}
+}
+
 void FVD::start_hunter_wave(const std::shared_ptr<GameState> &state,
                             const time::time_t &match_start) {
 	if (this->hunter_wave_started) {
@@ -704,7 +925,8 @@ void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	if (not loop or not factory or not this->horse_spawn_target) {
 		throw Error{ERR << "Cannot spawn a Hunter horse without FVD services"};
 	}
-	factory->spawn_game_entity(loop, state, 1, this->horse, this->get_centre(), time);
+	auto spawned = factory->spawn_game_entity(loop, state, 1, this->horse, this->get_centre(), time);
+	this->relax_horse_crowd(state, spawned->get_id(), time);
 	loop->create_event("game.fvd_spawn_horse", this->horse_spawn_target, state,
 	                   time + this->horse_spawn_interval);
 }

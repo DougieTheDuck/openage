@@ -21,11 +21,21 @@ renderer or wall-clock timers.
 
 ### Spawn idle horses at map center
 
-Spawn each horse owned by player 1 at the map center. After spawning,
-horses remain idle and may accumulate at the center; do not assign
+Spawn each horse owned by player 1 at the map center, without
 automatic paths, attack orders, gather locations or rally points.
-Check the interaction of overlapped spawning units with occupancy and
-pathfinding without routing them away prematurely.
+On each spawn, run a deterministic 2D circle-separation solver to let
+idle horses shove outwards over a short simulation-time interval.
+Use fixed entity ordering, nearby-cell broad phase and bounded iterations.
+Keep stationary Builders and actively commanded horses as immovable
+contacts for this initial implementation, and reject displacements into
+tower footprints, reservations and map boundaries. A newly spawned horse
+is created even when the center is obstructed, then eased toward a usable
+nearby location.
+These passive shoves are not Hunter commands; they do not engage targets.
+
+This resolves spawn pile-ups, not all continuous unit-to-unit contacts
+during Move/AttackMove. Continuous moving-crowd avoidance belongs to
+the later movement/combat integration.
 
 ### Human Hunter selection and commands
 
@@ -56,9 +66,8 @@ The HUD displays only the local player's credited total.
 - Exact horse/tower damage, attack ranges/rates, projectile travel time,
   targeting priorities and health are balance parameters to establish
   before their final implementation.
-- Determine the best occupancy approach for several idle horses standing
-  at one spawn point while retaining the requirement not to move until
-  given a human order.
+- Extend spawn-time circle separation into continuous moving-unit
+  avoidance when AttackMove and combat movement are implemented.
 - Map the human AttackMove action into the current controller UX with a
   minimal shortcut; a complete Hunter control panel is not required.
 

@@ -30,7 +30,8 @@ AI player. The other 1-7 humans each own one Builder in slots 2-8. A lobby
 host may become the Hunter, with half the selection weight of any guest.
 In solo development mode, one tester switches between roles 1 and 2 with a
 hotkey; no AI player participates. Hunter horses first spawn at match second
-20 and once per second thereafter, remaining at map center until ordered.
+20 and once per second thereafter. Passive contact forces spread the idle
+spawn crowd outward; horses only travel or attack on human Hunter orders.
 A future rally/gather point is deliberately outside the initial scope.
 
 ## Working with OpenSpec

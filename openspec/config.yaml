@@ -12,8 +12,9 @@ context: |
   The Hunter does not build. Solo developer mode switches between Hunter
   and Builder (slots 1 and 2) without an AI player.
   The first Hunter horse spawns at the map center at match time 20 seconds;
-  another spawns every second thereafter. Horses stay at the spawn point
-  until the human Hunter selects them and issues Move or AttackMove.
+  another spawns every second thereafter. Idle horses spread apart through
+  passive 2D contact separation when the spawn point is crowded, but only
+  human Hunter Move or AttackMove orders initiate navigation and attacks.
   AttackMove engages eligible enemies encountered en route, then resumes
   travel to the ordered destination. No rally/gather point is needed.
   Tower kills are credited to the tower's owner and displayed locally.

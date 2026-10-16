@@ -21,8 +21,11 @@ All eight players start with their camera centred at (64, 64).
 Player 1 has the Hunter civilisation, starts without units and cannot place buildings.
 Players 2 through 8 have the Builders civilisation and each receive exactly one Builder near the centre, with distinct starting positions.
 After 20 seconds of match time, the first Hunter horse spawns at the centre of the map; one more spawns every second thereafter.
-Horses belong to Hunter player 1 and remain idle at the centre until the human Hunter selects and commands them.
-The 20-second delay and one-second interval can be changed in the scenario settings.
+Horses belong to Hunter player 1 and receive no automatic movement commands.
+As each new horse spawns, nearby idle horses ease outwards using deterministic two-dimensional contact separation rather than piling up inside each other.
+The crowd push respects blocked tower footprints and reserved construction sites, and can gently move a newly spawned horse away from an obstructed spawn point.
+Horses with an active movement order are not redirected by the spawn shove.
+The 20-second delay, one-second interval, horse collision radius and shove duration can be changed in the scenario settings.
 Automatic horse movement, attack-move and a gather point are not implemented yet.
 
 The local view initially controls player 2.

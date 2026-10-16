@@ -136,6 +136,11 @@ private:
 	                   const time::time_t &time,
 	                   std::optional<entity_id_t> ignore = std::nullopt) const;
 
+	/** Separate overlapping idle horses after a spawn without interrupting orders. */
+	void relax_horse_crowd(const std::shared_ptr<GameState> &state,
+	                      entity_id_t newest_horse,
+	                      const time::time_t &time);
+
 	/** Get all tiles intersected by the configured tower hitbox. */
 	std::vector<coord::tile> get_tower_footprint(const coord::tile &site) const;
 
@@ -155,6 +160,8 @@ private:
 	time::time_t construction_time;
 	time::time_t horse_spawn_delay;
 	time::time_t horse_spawn_interval;
+	double horse_collision_radius;
+	time::time_t horse_shove_duration;
 	std::string hunter;
 	std::string builders;
 	std::string builder;
