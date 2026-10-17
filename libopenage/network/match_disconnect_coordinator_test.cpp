@@ -77,7 +77,7 @@ void match_disconnect_coordinator() {
 	TESTTHROWS(coordinator.register_remote(two, outbound_two));
 	TESTTHROWS(coordinator.register_remote({44, 2}, outbound_two));
 
-	ReplicationTracker guest_three{};
+	ReplicationTracker guest_three{three.player_id};
 	auto initial = capture_fvd_state(state, match, time::TIME_ZERO, 0, 4, 3);
 	guest_three.accept_snapshot(initial);
 	TESTEQUALS(initial.players.at(1).connected, true);

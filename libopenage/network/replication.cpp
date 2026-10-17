@@ -6,9 +6,30 @@
 
 namespace openage::network {
 
+ReplicationTracker::ReplicationTracker(gamestate::player_id_t assigned_player) :
+	assigned_player{assigned_player} {
+	if (assigned_player == 0 or assigned_player > MAX_STATE_PLAYERS) {
+		throw Error{MSG(err) << "FVD replication requires an assigned playable player"};
+	}
+}
+
+gamestate::player_id_t ReplicationTracker::get_local_player_id() const {
+	return this->assigned_player;
+}
+
+std::optional<uint64_t> ReplicationTracker::get_local_kills() const {
+	if (not this->displayed_kills_valid.load()) {
+		return std::nullopt;
+	}
+	return this->displayed_kills.load();
+}
+
 void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 	if (not this->host_connected) {
 		throw Error{MSG(err) << "FVD replication cannot resume after host disconnect"};
+	}
+	if (snapshot.local_player_id != this->assigned_player) {
+		throw Error{MSG(err) << "FVD snapshot is for a different player"};
 	}
 	if (snapshot.base_revision != 0) {
 		throw Error{MSG(err) << "FVD world snapshot must have base revision zero"};
@@ -22,11 +43,16 @@ void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 	this->revision = snapshot.world_revision;
 	this->initialized = true;
 	this->awaiting_snapshot = false;
+	this->displayed_kills.store(snapshot.local_kill_count);
+	this->displayed_kills_valid.store(true);
 }
 
 DeltaDisposition ReplicationTracker::accept_delta(const WorldState &delta) {
 	if (not this->host_connected) {
 		throw Error{MSG(err) << "FVD replication cannot accept deltas after host disconnect"};
+	}
+	if (delta.local_player_id != this->assigned_player) {
+		throw Error{MSG(err) << "FVD delta is for a different player"};
 	}
 	if (delta.world_revision <= delta.base_revision) {
 		throw Error{MSG(err) << "FVD world delta revision must advance beyond its base"};
@@ -40,6 +66,8 @@ DeltaDisposition ReplicationTracker::accept_delta(const WorldState &delta) {
 	}
 
 	this->revision = delta.world_revision;
+	this->displayed_kills.store(delta.local_kill_count);
+	this->displayed_kills_valid.store(true);
 	return DeltaDisposition::APPLY;
 }
 
@@ -47,6 +75,7 @@ void ReplicationTracker::host_disconnected() {
 	this->host_connected = false;
 	this->initialized = false;
 	this->awaiting_snapshot = false;
+	this->displayed_kills_valid.store(false);
 }
 
 bool ReplicationTracker::is_host_connected() const {

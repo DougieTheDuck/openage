@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "error/error.h"
 #include "gamestate/fvd.h"
 #include "gamestate/game.h"
 #include "gamestate/game_state.h"
@@ -27,6 +28,7 @@
 #include "input/input_context.h"
 #include "input/input_manager.h"
 #include "log/log.h"
+#include "network/replication.h"
 #include "renderer/camera/camera.h"
 #include "renderer/gui/gui.h"
 #include "renderer/gui/guisys/public/gui_input.h"
@@ -117,6 +119,10 @@ void Presenter::set_simulation(const std::shared_ptr<gamestate::GameSimulation> 
 
 void Presenter::set_time_loop(const std::shared_ptr<time::TimeLoop> &time_loop) {
 	this->time_loop = time_loop;
+}
+
+void Presenter::set_fvd_replication(const std::shared_ptr<network::ReplicationTracker> &replication) {
+	this->fvd_replication = replication;
 }
 
 std::shared_ptr<qtgui::GuiApplication> Presenter::init_window_system() {
@@ -317,14 +323,28 @@ void Presenter::init_input() {
 		auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 		if (fvd) {
 			std::unordered_set<size_t> players;
-			for (size_t id = 1; id <= fvd->get_player_count(); ++id) {
-				players.insert(id);
+			if (this->fvd_replication) {
+				auto assigned = this->fvd_replication->get_local_player_id();
+				if (assigned > fvd->get_player_count()) {
+					throw Error{MSG(err) << "FVD assigned player is outside the current match"};
+				}
+				players.insert(assigned);
+			}
+			else {
+				for (size_t id = 1; id <= fvd->get_player_count(); ++id) {
+					players.insert(id);
+				}
+			}
+			for (size_t id : players) {
 				input_ctx->bind(
 					input::Event{input::event_class::KEYBOARD, static_cast<int>(Qt::Key_0 + id),
 					             Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
 					input::input_action{input::input_action_t::GAME});
 			}
-			game_controller = std::make_shared<input::game::Controller>(players, 2);
+			game_controller = std::make_shared<input::game::Controller>(
+				players, this->fvd_replication
+					? this->fvd_replication->get_local_player_id()
+					: 2);
 
 			// The global input context must forward placement keys to
 			// the FVD-specific game binding context.
@@ -356,7 +376,7 @@ void Presenter::init_input() {
 		input_ctx->set_game_bindings(engine_context);
 		if (fvd and this->gui) {
 			this->fvd_hud_state = std::make_shared<QQmlPropertyMap>();
-			this->fvd_hud_state->insert("controlled", 2);
+			this->fvd_hud_state->insert("controlled", static_cast<int>(game_controller->get_controlled()));
 			this->fvd_hud_state->insert("selection", QString{"No unit selected"});
 			this->fvd_hud_state->insert("isTower", false);
 			this->fvd_hud_state->insert("health", QString{"—"});
@@ -370,6 +390,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("attacking", false);
 			this->fvd_hud_state->insert("placing", false);
 			this->fvd_hud_state->insert("kills", 0);
+			this->fvd_hud_state->insert("killsAvailable", !this->fvd_replication);
 			this->fvd_hud_state->insert("arrowStreaks", QVariantList{});
 			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->fvd_hud_state->insert("action", QString{});
@@ -601,8 +622,17 @@ void Presenter::render() {
 					this->time_loop->get_clock()->get_time());
 				this->fvd_hud_state->insert("hunterCountdown",
 					countdown.value_or(0));
-				this->fvd_hud_state->insert("kills",
-					static_cast<qulonglong>(fvd->get_kills(controlled)));
+				if (this->fvd_replication) {
+					auto local_kills = this->fvd_replication->get_local_kills();
+					this->fvd_hud_state->insert("killsAvailable", local_kills.has_value());
+					this->fvd_hud_state->insert("kills",
+						static_cast<qulonglong>(local_kills.value_or(0)));
+				}
+				else {
+					this->fvd_hud_state->insert("killsAvailable", true);
+					this->fvd_hud_state->insert("kills",
+						static_cast<qulonglong>(fvd->get_kills(controlled)));
+				}
 				this->fvd_hud_state->insert("damage",
 					static_cast<qlonglong>(fvd->get_tower_damage()));
 				this->fvd_hud_state->insert("armor",

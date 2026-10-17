@@ -148,6 +148,11 @@ An arrow record contains 8-byte arrow, owner and target IDs, three signed Q16.16
 Completed towers remain in the entity list and have no active construction record or reserved tiles.
 Killed entities disappear from the next complete state, while arrows disappear at their impact time and the resulting health or death is present in that same state.
 The host builds state separately for each connection, so the payload contains only its recipient's kill total and cannot expose a public leaderboard.
+On a guest, construct `ReplicationTracker` with the immutable player ID from the accepted session.
+It rejects snapshots or deltas addressed to another player and publishes only the local count from accepted, contiguous authoritative updates.
+Rejected or gapped updates leave the displayed score unchanged; host loss makes it unavailable.
+Bind this tracker with `Presenter::set_fvd_replication` before the presenter starts to restrict role switching and use the replicated score in the HUD instead of the local simulation's count.
+Before the initial snapshot or after host loss, the HUD shows an unavailable score rather than a guessed zero.
 Protocol major version 2 introduced the complete state layout because it is incompatible with the earlier position-only payload.
 Protocol major version 3 added persistent participant connection status to player records.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
