@@ -9,43 +9,55 @@ namespace openage::presenter::tests {
 void hud_mouse_capture() {
 	HudMouseCapture capture{};
 	TESTEQUALS(capture.is_capturing(), false);
+	auto click = [&](QEvent::Type type, Qt::MouseButton button,
+	                 bool panel, bool action) {
+		return capture.process(type, button, panel, action);
+	};
 
-	// Clicking in the world still produces ordinary selection/orders.
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::LeftButton, false), false);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonRelease, Qt::LeftButton, false), false);
+	// Ordinary world clicks must remain usable.
+	TESTEQUALS(click(QEvent::MouseButtonPress, Qt::LeftButton, false, false).consumed, false);
+	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, false, false).consumed, false);
 
-	// Clicking Build Tower must never select terrain behind the button.
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::LeftButton, true), true);
+	// The Build Tower action activates on the matching release, only once.
+	auto press = click(QEvent::MouseButtonPress, Qt::LeftButton, true, true);
+	TESTEQUALS(press.consumed, true);
+	TESTEQUALS(press.activated_button, false);
 	TESTEQUALS(capture.is_capturing(), true);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonRelease, Qt::LeftButton, true), true);
+	auto release = click(QEvent::MouseButtonRelease, Qt::LeftButton, true, true);
+	TESTEQUALS(release.consumed, true);
+	TESTEQUALS(release.activated_button, true);
 	TESTEQUALS(capture.is_capturing(), false);
+	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, true, true).activated_button, false);
 
-	// A press begun over the panel stays captured if released in the world.
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::LeftButton, true), true);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonRelease, Qt::LeftButton, false), true);
+	// Panel background and right-click cancel never activate the button.
+	click(QEvent::MouseButtonPress, Qt::LeftButton, true, false);
+	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, true, true).activated_button, false);
+	click(QEvent::MouseButtonPress, Qt::RightButton, true, true);
+	auto right = click(QEvent::MouseButtonRelease, Qt::RightButton, true, true);
+	TESTEQUALS(right.consumed, true);
+	TESTEQUALS(right.activated_button, false);
+
+	// Press on the action, drag outside, and release: no placement or order.
+	click(QEvent::MouseButtonPress, Qt::LeftButton, true, true);
+	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, false, false).consumed, true);
 	TESTEQUALS(capture.is_capturing(), false);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::LeftButton, false), false);
+	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, true, true).activated_button, false);
 
-	// A world drag released on the HUD must not select through the UI.
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::LeftButton, false), false);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonRelease, Qt::LeftButton, true), true);
+	// A release inside the button without an action press cannot activate it.
+	click(QEvent::MouseButtonPress, Qt::LeftButton, false, false);
+	auto world_to_panel = click(QEvent::MouseButtonRelease, Qt::LeftButton, true, true);
+	TESTEQUALS(world_to_panel.consumed, true);
+	TESTEQUALS(world_to_panel.activated_button, false);
 
-	// Cancel from the panel blocks right-click movement as well.
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::RightButton, true), true);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonRelease, Qt::RightButton, false), true);
-	TESTEQUALS(capture.is_capturing(), false);
-
-	// Left and right gestures cannot accidentally uncapture one another.
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::LeftButton, true), true);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::RightButton, true), true);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonRelease, Qt::LeftButton, false), true);
+	// Independent left/right capture does not steal or repeat the action.
+	click(QEvent::MouseButtonPress, Qt::LeftButton, true, true);
+	click(QEvent::MouseButtonPress, Qt::RightButton, true, false);
 	TESTEQUALS(capture.is_capturing(), true);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonRelease, Qt::RightButton, false), true);
+	auto left = click(QEvent::MouseButtonRelease, Qt::LeftButton, true, true);
+	TESTEQUALS(left.activated_button, true);
+	TESTEQUALS(capture.is_capturing(), true);
+	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::RightButton, false, false).consumed, true);
 	TESTEQUALS(capture.is_capturing(), false);
-
-	// The next normal world click remains fully functional.
-	TESTEQUALS(capture.consume(QEvent::MouseButtonPress, Qt::LeftButton, false), false);
-	TESTEQUALS(capture.consume(QEvent::MouseButtonRelease, Qt::LeftButton, false), false);
 }
 
 } // namespace openage::presenter::tests

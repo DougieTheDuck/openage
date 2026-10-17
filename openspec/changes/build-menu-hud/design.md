@@ -20,8 +20,11 @@ the UI requests only the locally assigned player's count, not a leaderboard.
 
 The presenter exposes the current local role, selection details, authoritative
 local kill total and simulation-derived construction progress through a QML
-property map. Buttons only request controller actions and cannot create
-construction entities directly.
+property map. The action button is hit-tested against its actual Qt Quick visual geometry
+and translated into a controller action on a matching mouse release.
+This is handled by the presenter, because the offscreen Qt Quick renderer
+does not reliably deliver QML MouseArea clicks.
+Buttons cannot create construction entities directly.
 The QML build panel is found through the Qt Quick visual item tree; mouse
 presses begun on it stay captured through their corresponding releases.
 Pointer movement and wheel input over the panel do not scroll the world.

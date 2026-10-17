@@ -242,6 +242,8 @@ Item {
 				      (root.placing ? (root.placementValid ? " | Site ready" : " | Site blocked") : "")
 			}
 			Rectangle {
+				id: actionButton
+				objectName: "fvdActionButton"
 				visible: root.canBuild || root.canAttack
 				width: 252
 				height: 32
@@ -260,10 +262,7 @@ Item {
 
 				MouseArea {
 					anchors.fill: parent
-					onClicked: {
-						if (root.hud !== null)
-							root.hud.action = root.placing || root.attacking ? "cancel" : root.canAttack ? "attack" : "build"
-					}
+					cursorShape: Qt.PointingHandCursor
 				}
 			}
 		}

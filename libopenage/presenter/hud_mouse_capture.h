@@ -14,14 +14,24 @@ namespace openage::presenter {
  */
 class HudMouseCapture {
 public:
-	/** Whether this mouse button event must be withheld from world input. */
-	bool consume(QEvent::Type type, Qt::MouseButton button, bool over_hud);
+	struct Result {
+		bool consumed;
+		bool activated_button;
+	};
+
+	/**
+	 * Consume HUD gestures and activate a left-clicked action on release.
+	 * Both press and release must occur within the same action button.
+	 */
+	Result process(QEvent::Type type, Qt::MouseButton button,
+	               bool over_hud, bool over_action);
 
 	/** Whether any HUD mouse gesture is currently active. */
 	bool is_capturing() const;
 
 private:
 	unsigned int captured_buttons{0};
+	bool action_button_pressed{false};
 };
 
 } // namespace openage::presenter

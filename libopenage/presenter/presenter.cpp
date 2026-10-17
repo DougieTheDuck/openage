@@ -283,15 +283,31 @@ void Presenter::init_input() {
 	this->window->add_mouse_button_callback([&](const QMouseEvent &ev) {
 		const bool over_hud = this->fvd_hud_state and this->gui
 		                      and this->gui->contains_item("fvdBuildPanel", ev.position());
-		const bool consume = this->fvd_hud_capture.consume(
-			ev.type(), ev.button(), over_hud);
-		// Qt Quick receives mouse input first, but HUD gestures must never
-		// reach the game controller, even when a release leaves the panel.
+		const bool over_action = over_hud and this->gui->contains_item(
+			"fvdActionButton", ev.position());
+		const auto hud_input = this->fvd_hud_capture.process(
+			ev.type(), ev.button(), over_hud, over_action);
+		// An offscreen Qt Quick view cannot be relied upon to deliver a
+		// MouseArea click. Deliver the panel's action once at the presenter
+		// boundary while preventing that gesture from selecting the world.
 		if (this->gui) {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
 		}
-		if (consume) {
+		if (hud_input.activated_button and this->game_controller) {
+			if (this->game_controller->is_tower_placement_active()
+			    or this->game_controller->is_attack_move_active()) {
+				this->game_controller->cancel_tower_placement();
+				this->game_controller->cancel_attack_move();
+			}
+			else if (this->game_controller->get_controlled() == 1) {
+				this->game_controller->begin_attack_move();
+			}
+			else {
+				this->game_controller->begin_tower_placement();
+			}
+		}
+		if (hud_input.consumed) {
 			if (this->game_controller) {
 				this->game_controller->reset_drag_select();
 			}
@@ -411,26 +427,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("killsAvailable", !this->fvd_replication);
 			this->fvd_hud_state->insert("arrowStreaks", QVariantList{});
 			this->fvd_hud_state->insert("hunterCountdown", 0);
-			this->fvd_hud_state->insert("action", QString{});
 			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
-			QObject::connect(this->fvd_hud_state.get(), &QQmlPropertyMap::valueChanged,
-			                 [hud = this->fvd_hud_state.get(), game_controller](
-			                     const QString &key, const QVariant &value) {
-				                 if (key != "action") {
-					                 return;
-				                 }
-				                 if (value.toString() == "build") {
-					                 game_controller->begin_tower_placement();
-				                 }
-				                 else if (value.toString() == "cancel") {
-					                 game_controller->cancel_tower_placement();
-					                 game_controller->cancel_attack_move();
-				                 }
-				                 else if (value.toString() == "attack") {
-					                 game_controller->begin_attack_move();
-				                 }
-				                 hud->insert("action", QString{});
-			                 });
 		}
 	}
 

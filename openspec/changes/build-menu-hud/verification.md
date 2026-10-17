@@ -7,7 +7,9 @@ outside the HUD after pressing inside it.
 
 - [ ] Select player 2's Builder; the panel shows Builder, current HP and Build Tower.
 - [ ] Click Build Tower. The Builder stays selected, placement mode begins, and
-  no movement or terrain selection occurs behind the button.
+  no movement or terrain selection occurs behind the button. Press B to compare.
+- [ ] Click the same button when it reads Cancel; placement mode exits without
+  moving the Builder. Check the Hunter Attack-move and Cancel button too.
 - [ ] Hover a clear tile and an invalid/occupied tile; the preview changes
   between valid and invalid without creating a construction order.
 - [ ] Click a valid tile; one Builder construction begins. The panel shows
