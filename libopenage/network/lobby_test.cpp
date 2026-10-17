@@ -100,7 +100,7 @@ void lobby() {
 		TESTEQUALS(calls, size_t{1});
 		TESTEQUALS(started.lobby_revision, uint64_t{3});
 		TESTEQUALS(started.assignments.size(), size_t{2});
-		TESTEQUALS(hunter_of(started), uint64_t{ticket == 0 ? 11 : 22});
+		TESTEQUALS(hunter_of(started), (ticket == 0 ? uint64_t{11} : uint64_t{22}));
 		TESTEQUALS(started.assignments[ticket == 0 ? 0 : 1].player_id,
 		           gamestate::player_id_t{1});
 		TESTEQUALS(two.started(), true);

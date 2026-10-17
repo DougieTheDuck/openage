@@ -92,8 +92,8 @@ Connection threads publish closed sessions through `ConnectionEventMailbox` for 
 capacity for both messages before changing any authoritative connection state.
 For each unique closure, it permanently invalidates the session, advances
 the world revision once, queues one `ParticipantDisconnected` notification to
-each surviving remote, then queues a complete `WorldDelta` with that
-participant's `connected = false` flag. Identical repeat close events do not
+each surviving remote, then queues an incremental `WorldDelta` carrying
+that participant's `connected = false` flag. Identical repeat close events do not
 advance the revision twice. An unknown or mismatched session closure, or
 insufficient outbound capacity, is fatal to the host match rather than silently
 dropping replication. Outbound mailboxes remain owned by connection handlers
