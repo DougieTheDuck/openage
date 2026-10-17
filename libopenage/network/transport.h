@@ -2,9 +2,11 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 
 #include "network/protocol.h"
@@ -35,13 +37,18 @@ public:
 	 */
 	static TcpConnection connect(const std::string &address, uint16_t port);
 
-	/** Send one complete protocol frame, blocking until every byte is sent. */
+	/**
+	 * Send one complete protocol frame, blocking until every byte is sent.
+	 *
+	 * One thread may send while another receives on the same connection.
+	 */
 	void send_frame(const Frame &frame);
 
 	/**
 	 * Receive one complete protocol frame.
 	 *
 	 * @return The next frame, or nullopt after an orderly peer shutdown.
+	 * One thread may receive while another sends on the same connection.
 	 */
 	std::optional<Frame> receive_frame();
 
@@ -54,7 +61,8 @@ public:
 private:
 	explicit TcpConnection(uintptr_t socket_handle);
 
-	uintptr_t socket_handle;
+	std::atomic<uintptr_t> socket_handle;
+	mutable std::shared_mutex socket_lifetime_mutex;
 	FrameParser parser;
 	std::deque<Frame> pending_frames;
 

@@ -8,3 +8,4 @@
 - [x] 1.6 Route only the current player's kill count into their HUD; do not add a public kill leaderboard (recipient-bound score and guest HUD binding; physical multiplayer GUI verification remains under 1.8).
 - [x] 1.7 Handle rejected commands and mid-game disconnects without divergent state; document policy (authoritative lifecycle coordinator, session guard, revision/broadcast tests, client host-loss terminal state; physical-machine integration remains under 1.8).
 - [ ] 1.8 Verify two physical Windows PCs first, then concurrent Builder orders and human Hunter group AttackMove with up to eight human participants.
+- [x] 1.9 Pair outbound host and guest connections with role-specific lobby credentials, preserve the existing authoritative session protocol through a frame relay, and verify a gameplay command across three processes.

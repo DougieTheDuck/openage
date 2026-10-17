@@ -29,6 +29,7 @@ void session() {
 	auto second = connection.make_frame(MessageType::WORLD_DELTA);
 	TESTEQUALS(second.sequence, uint64_t{2});
 	TESTTHROWS(connection.make_frame(MessageType::SERVER_ACCEPT));
+	TESTTHROWS(connection.make_frame(MessageType::RELAY_CONNECT));
 	TESTTHROWS(connection.make_frame(static_cast<MessageType>(100)));
 
 	Frame incoming{};

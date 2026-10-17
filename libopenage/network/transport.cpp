@@ -5,6 +5,8 @@
 #include <array>
 #include <cerrno>
 #include <limits>
+#include <mutex>
+#include <shared_mutex>
 #include <utility>
 
 #include "error/error.h"
@@ -149,11 +151,13 @@ uint16_t socket_port(native_socket_t socket) {
 
 TcpConnection::TcpConnection() :
 	socket_handle{INVALID_SOCKET_HANDLE},
+	socket_lifetime_mutex{},
 	parser{},
 	pending_frames{} {}
 
 TcpConnection::TcpConnection(uintptr_t socket_handle) :
 	socket_handle{socket_handle},
+	socket_lifetime_mutex{},
 	parser{},
 	pending_frames{} {}
 
@@ -162,14 +166,15 @@ TcpConnection::~TcpConnection() {
 }
 
 TcpConnection::TcpConnection(TcpConnection &&other) noexcept :
-	socket_handle{std::exchange(other.socket_handle, INVALID_SOCKET_HANDLE)},
+	socket_handle{other.socket_handle.exchange(INVALID_SOCKET_HANDLE)},
+	socket_lifetime_mutex{},
 	parser{std::move(other.parser)},
 	pending_frames{std::move(other.pending_frames)} {}
 
 TcpConnection &TcpConnection::operator=(TcpConnection &&other) noexcept {
 	if (this != &other) {
 		this->close();
-		this->socket_handle = std::exchange(other.socket_handle, INVALID_SOCKET_HANDLE);
+		this->socket_handle.store(other.socket_handle.exchange(INVALID_SOCKET_HANDLE));
 		this->parser = std::move(other.parser);
 		this->pending_frames = std::move(other.pending_frames);
 	}
@@ -215,7 +220,9 @@ TcpConnection TcpConnection::connect(const std::string &address, uint16_t port) 
 }
 
 void TcpConnection::send_frame(const Frame &frame) {
-	if (not this->is_open()) {
+	std::shared_lock socket_lock{this->socket_lifetime_mutex};
+	auto socket_handle = this->socket_handle.load();
+	if (socket_handle == INVALID_SOCKET_HANDLE) {
 		throw Error{MSG(err) << "Cannot send an FVD frame on a closed TCP connection"};
 	}
 
@@ -226,7 +233,7 @@ void TcpConnection::send_frame(const Frame &frame) {
 		auto chunk_size = remaining > static_cast<size_t>((std::numeric_limits<int>::max)())
 		                    ? (std::numeric_limits<int>::max)()
 		                    : static_cast<int>(remaining);
-		auto sent = ::send(to_native(this->socket_handle),
+		auto sent = ::send(to_native(socket_handle),
 		                   reinterpret_cast<const char *>(bytes.data() + offset),
 		                   chunk_size,
 		                   send_flags());
@@ -247,13 +254,15 @@ std::optional<Frame> TcpConnection::receive_frame() {
 		this->pending_frames.pop_front();
 		return frame;
 	}
-	if (not this->is_open()) {
+	std::shared_lock socket_lock{this->socket_lifetime_mutex};
+	auto socket_handle = this->socket_handle.load();
+	if (socket_handle == INVALID_SOCKET_HANDLE) {
 		return std::nullopt;
 	}
 
 	std::array<uint8_t, 4096> buffer{};
 	while (true) {
-		auto received = ::recv(to_native(this->socket_handle),
+		auto received = ::recv(to_native(socket_handle),
 		                       reinterpret_cast<char *>(buffer.data()),
 		                       static_cast<int>(buffer.size()),
 		                       0);
@@ -270,6 +279,7 @@ std::optional<Frame> TcpConnection::receive_frame() {
 			continue;
 		}
 		if (received == 0) {
+			socket_lock.unlock();
 			this->close();
 			if (this->parser.buffered_size() > 0) {
 				throw Error{MSG(err) << "TCP peer closed with an incomplete FVD frame"};
@@ -280,23 +290,25 @@ std::optional<Frame> TcpConnection::receive_frame() {
 			continue;
 		}
 		auto error = last_socket_error();
+		socket_lock.unlock();
 		this->close();
 		throw Error{MSG(err) << "Could not receive FVD TCP frame: " << error};
 	}
 }
 
 void TcpConnection::close() {
-	if (not this->is_open()) {
+	auto socket_handle = this->socket_handle.exchange(INVALID_SOCKET_HANDLE);
+	if (socket_handle == INVALID_SOCKET_HANDLE) {
 		return;
 	}
-	auto socket = to_native(this->socket_handle);
-	this->socket_handle = INVALID_SOCKET_HANDLE;
+	auto socket = to_native(socket_handle);
 	shutdown_socket(socket);
+	std::unique_lock socket_lock{this->socket_lifetime_mutex};
 	close_socket(socket);
 }
 
 bool TcpConnection::is_open() const {
-	return this->socket_handle != INVALID_SOCKET_HANDLE;
+	return this->socket_handle.load() != INVALID_SOCKET_HANDLE;
 }
 
 TcpListener::TcpListener() :

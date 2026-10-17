@@ -11,10 +11,13 @@ namespace openage::network {
 
 namespace {
 
-bool is_handshake_message(MessageType message_type) {
+bool is_pre_session_message(MessageType message_type) {
 	return message_type == MessageType::CLIENT_HELLO
 	    or message_type == MessageType::SERVER_ACCEPT
-	    or message_type == MessageType::SERVER_REJECT;
+	    or message_type == MessageType::SERVER_REJECT
+	    or message_type == MessageType::RELAY_CONNECT
+	    or message_type == MessageType::RELAY_READY
+	    or message_type == MessageType::RELAY_REJECT;
 }
 
 void require_session_message(MessageType message_type) {
@@ -22,8 +25,8 @@ void require_session_message(MessageType message_type) {
 		throw Error{MSG(err) << "Unknown FVD network message type "
 		                     << static_cast<uint16_t>(message_type)};
 	}
-	if (is_handshake_message(message_type)) {
-		throw Error{MSG(err) << "Handshake message " << static_cast<uint16_t>(message_type)
+	if (is_pre_session_message(message_type)) {
+		throw Error{MSG(err) << "Pre-session message " << static_cast<uint16_t>(message_type)
 		                     << " is invalid after FVD session acceptance"};
 	}
 }

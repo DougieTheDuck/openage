@@ -89,3 +89,15 @@ clients on reachable addresses/ports to play a common match.
 #### Scenario: Two Windows machines
 - **WHEN** two compatible Windows clients are connected and the host starts
 - **THEN** both clients can observe shared Builder orders, manual Hunter horse attack-move, tower attacks and kill outcomes
+
+### Requirement: Internet participants can use an outbound relay
+
+The networking implementation SHALL support pairing one outbound authoritative host connection with one outbound guest connection while preserving the normal match handshake, session identity and authoritative gameplay protocol.
+
+#### Scenario: Host and guest are behind routers
+- **WHEN** the lobby gives the host and guest separate credentials for one player pair and both connect to the relay
+- **THEN** the relay forwards their normal handshake and gameplay frames without either participant accepting an inbound Internet connection
+
+#### Scenario: Relay credential has the wrong role or pair
+- **WHEN** a peer presents a token that does not authorize its requested host or guest role for that match and player
+- **THEN** the relay rejects that connection without consuming either valid side of the pair

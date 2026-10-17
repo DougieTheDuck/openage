@@ -1,6 +1,7 @@
 # FVD networking
 
-FVD multiplayer uses one host-authoritative simulation and direct TCP connections from each guest to the host.
+FVD multiplayer uses one host-authoritative simulation.
+Guests can connect directly to that host on a reachable network or both sides can make outbound TCP connections through a relay.
 The host participant submits commands through the same validation boundary but does not need a loopback socket.
 
 See [the engine architecture](../architecture.md) for the subsystem boundaries and [the synchronized-match design](../../../openspec/changes/synchronized-match/design.md) for the gameplay authority model.
@@ -12,14 +13,32 @@ TCP matches the low-volume lobby, command and state-replication traffic and prov
 The socket implementation belongs in `libopenage/network/` and must not depend on the presenter, renderer or Qt Quick.
 A BSD-socket implementation can provide the same interface later without changing the wire protocol.
 
-`network::TcpListener` binds a host endpoint and accepts `network::TcpConnection` objects.
+`network::TcpListener` binds an endpoint and accepts `network::TcpConnection` objects.
 Connections send and receive complete `Frame` values while handling partial TCP reads and writes internally.
+One thread may read while one thread writes the same connection; `close()` safely interrupts either direction.
 An orderly peer shutdown returns no frame; socket failures and truncated frames raise an `Error`.
 
 Each accepted guest has one connection and one host-generated, nonzero 64-bit session ID.
 The host binds that connection to the lobby participant and assigned player; messages never carry a client-selected player identity.
 The session ID detects stale messages and routing mistakes but is not a security credential.
-The direct-IP prototype does not encrypt traffic or authenticate the host.
+The transport does not yet encrypt traffic or authenticate the authoritative host.
+
+## Relay pairing
+
+An Internet relay gives every participant an outbound connection, so the game does not depend on router port forwarding or NAT traversal.
+The authoritative player host opens one relay connection for each remote participant and every guest opens its corresponding connection.
+After pairing, the host runs the existing server handshake over that outbound socket and the guest runs the existing client handshake.
+The relay forwards complete FVD frames in both directions and does not create a simulation, assign a session ID or interpret gameplay payloads.
+
+The lobby provisions a nonzero match ID, a nonzero guest player ID and two distinct single-use 256-bit bearer tokens for each host-to-guest pair.
+The host and guest identify their role with separate tokens, preventing either credential from claiming the other side of the pair.
+The relay consumes `RelayConnect`, rejects malformed, unauthorized or duplicate-role admissions, and sends `RelayReady` only after both sides have arrived.
+Normal `ClientHello` and gameplay frames follow `RelayReady` unchanged.
+The relay admission token proves possession to the relay but is visible on the current unencrypted TCP connection, so a public deployment must protect the relay transport before treating it as an Internet security boundary.
+
+`network::accept_relay_pair` serves one provisioned pair and `network::forward_relay_pair` owns that pair until either side disconnects.
+A lobby-facing relay service can allocate one such pair for every remote player while preserving the existing one-session-per-connection host code.
+Direct TCP remains available for LAN play and deterministic transport tests.
 
 ## Session and gameplay boundary
 
@@ -83,8 +102,15 @@ Payloads are limited to 1 MiB.
 The handshake uses session and sequence zero.
 After acceptance, each direction starts at sequence one and the receiver rejects duplicates, regressions and a session ID that does not match the connection.
 
-The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping`, `Pong` and `SnapshotRequest`.
+The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping`, `Pong`, `SnapshotRequest`, `RelayConnect`, `RelayReady` and `RelayReject`.
 Payload schemas use fixed-width network-order integers, length-prefixed UTF-8 strings and length-prefixed arrays.
+
+### Relay admission payloads
+
+`RelayConnect` uses session and sequence zero and contains an 8-byte match ID, 8-byte guest player ID, 2-byte host (`1`) or guest (`2`) role, 2 zero flag bytes and a 32-byte role-specific token.
+`RelayReady` echoes the 8-byte match ID and 8-byte guest player ID.
+`RelayReject` uses the same length-prefixed, displayable reason encoding as `ServerReject`.
+These frames are valid only before relay pairing and are rejected by an accepted `ConnectionSession`.
 
 ### Command intent payload
 
@@ -155,6 +181,7 @@ Bind this tracker with `Presenter::set_fvd_replication` before the presenter sta
 Before the initial snapshot or after host loss, the HUD shows an unavailable score rather than a guessed zero.
 Protocol major version 2 introduced the complete state layout because it is incompatible with the earlier position-only payload.
 Protocol major version 3 added persistent participant connection status to player records.
+Protocol minor version 1 added optional relay admission and remains compatible with direct protocol 3.0 peers.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
 
 ### Snapshot request payload

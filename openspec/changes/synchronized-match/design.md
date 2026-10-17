@@ -33,12 +33,16 @@ one per second. Clients must not schedule independent horse spawns.
 
 ## Transport and protocol
 
-Use direct TCP connections through native Winsock for the required Windows
-implementation.
-TCP supplies ordered, reliable lobby, command and replication delivery without
-adding a dependency.
-The networking subsystem owns sockets and framing and remains independent from
-Qt Quick and the renderer.
+Use TCP connections through native Winsock for the required Windows implementation.
+TCP supplies ordered, reliable lobby, command and replication delivery without adding a dependency.
+The networking subsystem owns sockets and framing and remains independent from Qt Quick and the renderer.
+
+Keep direct guest-to-host TCP for LAN play and automated transport tests.
+For Internet play, the authoritative host and every guest make outbound TCP connections to a relay so router port forwarding is not required.
+Use one relay connection per host-to-guest pair, allowing the existing host and guest handshake, session identity and sequence validation to run unchanged after pairing.
+The lobby supplies separate single-use host and guest bearer tokens for every pair.
+The relay authenticates the pair, forwards complete protocol frames in both directions and never runs or changes the authoritative simulation.
+Transport encryption and lobby-to-relay provisioning remain required before a public deployment.
 
 Frames use a fixed 32-byte network-order header containing `FVDN` magic,
 protocol major/minor, message type, flags, payload length, session ID and
@@ -53,6 +57,7 @@ player assignment.
 Protocol major and gameplay asset manifests must match; minor compatibility is
 explicitly advertised.
 Sequence numbers reject repeated or regressing messages after the handshake.
+Relay admission uses zero session and sequence before that handshake, and relay messages are invalid after a `ConnectionSession` is accepted.
 
 Clients submit player-independent command intents and receive a result for each
 intent.

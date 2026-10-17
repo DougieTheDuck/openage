@@ -68,6 +68,34 @@ void handshake() {
 	TESTEQUALS(client_session.get_identity().session_id, server_identity.session_id);
 	TESTEQUALS(client_session.get_identity().player_id, gamestate::player_id_t{3});
 
+	auto compatible_listener = TcpListener::listen("127.0.0.1", 0);
+	std::exception_ptr compatibility_server_error{};
+	std::jthread compatibility_server{[&]() {
+		try {
+			auto compatible_connection = compatible_listener.accept();
+			auto session = host_handshake(compatible_connection, 3, digest);
+			session.has_value() or TESTFAIL;
+			TESTEQUALS(session->get_protocol_version().minor, uint16_t{0});
+		}
+		catch (...) {
+			compatibility_server_error = std::current_exception();
+		}
+	}};
+
+	auto compatible_connection = TcpConnection::connect(
+		"127.0.0.1", compatible_listener.get_port());
+	auto compatible_hello = make_client_hello_frame(test_hello(digest));
+	compatible_hello.protocol_minor = 0;
+	compatible_connection.send_frame(compatible_hello);
+	auto compatibility_response = compatible_connection.receive_frame();
+	compatibility_response.has_value() or TESTFAIL;
+	compatibility_response->message_type == MessageType::SERVER_ACCEPT or TESTFAIL;
+	TESTEQUALS(compatibility_response->protocol_minor, uint16_t{0});
+	compatibility_server.join();
+	if (compatibility_server_error) {
+		std::rethrow_exception(compatibility_server_error);
+	}
+
 	auto reject_listener = TcpListener::listen("127.0.0.1", 0);
 	bool host_rejected{};
 	std::exception_ptr rejection_server_error{};

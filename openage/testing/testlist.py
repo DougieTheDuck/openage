@@ -37,6 +37,10 @@ def tests_py():
         "openage.testing.network_two_process.test",
         "FVD movement synchronization across host and guest processes",
     )
+    yield (
+        "openage.testing.network_two_process.test_relay",
+        "FVD gameplay frames through host, guest and relay processes",
+    )
     yield "openage.convert.processor.conversion.de2.tests.diplomatic_effects"
     yield "openage.convert.processor.conversion.de2.tests.branching_upgrade_techs"
 
@@ -103,6 +107,12 @@ def tests_cpp():
     yield (
         "openage::network::tests::fvd_process_worker",
         "Internal worker for the FVD two-process network test",
+        lambda _env: False,
+    )
+    yield "openage::network::tests::relay", "FVD relay admission and forwarding"
+    yield (
+        "openage::network::tests::relay_process_worker",
+        "Internal worker for the FVD three-process relay test",
         lambda _env: False,
     )
     yield "openage::path::tests::path_node", "pathfinding"
