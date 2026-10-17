@@ -664,7 +664,7 @@ void run_guest(uint16_t port) {
 	auto delta_patch = decode_world_delta(delta_frame->payload);
 	replication.accept_delta(delta_patch) == DeltaDisposition::APPLY or TESTFAIL;
 	auto delta = replication.get_world_state().value();
-	TESTEQUALS(delta.base_revision, uint64_t{0});
+	TESTEQUALS(delta_patch.changed.base_revision, uint64_t{0});
 	TESTEQUALS(delta.world_revision, uint64_t{1});
 	TESTEQUALS(delta.entities.size() >= size_t{8}, true);
 	TESTEQUALS(find_entity(delta, initial.entity_id).position, target);
@@ -787,7 +787,7 @@ void run_guest(uint16_t port) {
 	auto spawned_patch = decode_world_delta(spawned_frame->payload);
 	replication.accept_delta(spawned_patch) == DeltaDisposition::APPLY or TESTFAIL;
 	auto spawned = replication.get_world_state().value();
-	TESTEQUALS(spawned.base_revision, uint64_t{4});
+	TESTEQUALS(spawned_patch.changed.base_revision, uint64_t{4});
 	TESTEQUALS(spawned.world_revision, uint64_t{5});
 	TESTEQUALS(spawned.local_kill_count, uint64_t{0});
 
@@ -797,7 +797,7 @@ void run_guest(uint16_t port) {
 	auto fired_patch = decode_world_delta(fired_frame->payload);
 	replication.accept_delta(fired_patch) == DeltaDisposition::APPLY or TESTFAIL;
 	auto fired = replication.get_world_state().value();
-	TESTEQUALS(fired.base_revision, uint64_t{5});
+	TESTEQUALS(fired_patch.changed.base_revision, uint64_t{5});
 	TESTEQUALS(fired.world_revision, uint64_t{6});
 	TESTEQUALS(fired.arrows.size(), size_t{1});
 	const auto victim_id = fired.arrows.front().target_id;
@@ -812,7 +812,7 @@ void run_guest(uint16_t port) {
 	auto impacted_patch = decode_world_delta(impacted_frame->payload);
 	replication.accept_delta(impacted_patch) == DeltaDisposition::APPLY or TESTFAIL;
 	auto impacted = replication.get_world_state().value();
-	TESTEQUALS(impacted.base_revision, uint64_t{6});
+	TESTEQUALS(impacted_patch.changed.base_revision, uint64_t{6});
 	TESTEQUALS(impacted.world_revision, uint64_t{7});
 	impacted.arrows.empty() or TESTFAIL;
 	const auto &wounded = find_entity(impacted, victim_id);
@@ -830,7 +830,7 @@ void run_guest(uint16_t port) {
 	TESTEQUALS(local_tower.tower_kills.value(), uint64_t{1});
 	TESTEQUALS(replication.get_tower_kills(local_tower.entity_id).value(),
 	           uint64_t{1});
-	TESTEQUALS(killed.base_revision, uint64_t{7});
+	TESTEQUALS(killed_patch.changed.base_revision, uint64_t{7});
 	TESTEQUALS(killed.world_revision, uint64_t{8});
 	TESTEQUALS(std::none_of(
 		killed.entities.begin(), killed.entities.end(),
@@ -905,7 +905,7 @@ void run_hunter_guest(uint16_t port) {
 	auto delta_patch = decode_world_delta(delta_frame->payload);
 	replication.accept_delta(delta_patch) == DeltaDisposition::APPLY or TESTFAIL;
 	auto delta = replication.get_world_state().value();
-	TESTEQUALS(delta.base_revision, uint64_t{9});
+	TESTEQUALS(delta_patch.changed.base_revision, uint64_t{9});
 	TESTEQUALS(delta.world_revision, uint64_t{10});
 	TESTEQUALS(delta.entities.size() >= size_t{8}, true);
 	TESTEQUALS(find_entity(delta, horse.entity_id).position != horse.position, true);
