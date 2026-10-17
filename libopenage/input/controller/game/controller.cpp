@@ -373,8 +373,9 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		}
 	}
 
-	auto submit_move = [simulation, time_loop, camera](const event_arguments &args,
-	                                                     const std::shared_ptr<Controller> controller) {
+	auto submit_order = [simulation, time_loop, camera, pick_entity](
+		                    const event_arguments &args,
+		                    const std::shared_ptr<Controller> controller) {
 		if (controller->is_tower_placement_active()) {
 			controller->cancel_tower_placement();
 			return;
@@ -384,27 +385,44 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			return;
 		}
 		auto mouse_pos = args.mouse.to_phys3(camera);
-		event::EventHandler::param_map::map_t params{
-			{"type", gamestate::component::command::command_t::MOVE},
-			{"target", mouse_pos},
-			{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
-			{"entity_ids", controller->get_selected()},
-		};
+		auto selection = controller->get_selection_details();
+		auto owner = static_cast<gamestate::player_id_t>(controller->get_controlled());
 
-		simulation->get_event_loop()->submit_event(
-			"game.send_command",
-			simulation->get_commander(),
-			simulation->get_game()->get_state(),
-			time_loop->get_clock()->get_time(),
-			params);
+		// The render-thread pick reports only an entity ID. Target
+		// ownership, type, and life are checked on the simulation thread.
+		auto send_order = [simulation, time_loop, mouse_pos, owner, ids = selection.ids](
+			std::optional<gamestate::entity_id_t> picked) {
+			event::EventHandler::param_map::map_t params{
+				{"type", picked ? gamestate::component::command::command_t::FOCUS_ATTACK
+				                : gamestate::component::command::command_t::MOVE},
+				{"target", mouse_pos},
+				{"owner", owner},
+				{"entity_ids", ids},
+			};
+			if (picked) {
+				params.emplace("target_entity", *picked);
+			}
+			simulation->get_event_loop()->submit_event(
+				"game.send_command", simulation->get_commander(),
+				simulation->get_game()->get_state(),
+				time_loop->get_clock()->get_time(), params);
+		};
+		if (owner == 1 and not selection.ids.empty()
+		    and (selection.kind == SelectionKind::HORSE
+		         or selection.kind == SelectionKind::GROUP_HORSES)) {
+			pick_entity(args.mouse, send_order);
+		}
+		else {
+			send_order(std::nullopt);
+		}
 	};
-	binding_func_t move_entity{[submit_move](const event_arguments &args,
-	                                           const std::shared_ptr<Controller> controller) {
+	binding_func_t move_entity{[submit_order](const event_arguments &args,
+	                                            const std::shared_ptr<Controller> controller) {
 		if (controller->defer_until_selection_applied(
-			    [submit_move, args, controller]() { submit_move(args, controller); })) {
+			    [submit_order, args, controller]() { submit_order(args, controller); })) {
 			return;
 		}
-		submit_move(args, controller);
+		submit_order(args, controller);
 	}};
 
 	binding_action move_entity_action{forward_action_t::SEND, move_entity};

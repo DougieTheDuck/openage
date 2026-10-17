@@ -20,6 +20,8 @@ The FVD renderer draws the exact tile boundaries over the plains for placement r
 All eight players start with their camera centred at (64, 64).
 Player 1 has the Hunter civilisation, starts without units and cannot place buildings.
 Players 2 through 8 have the Builders civilisation and each receive exactly one Builder near the centre, with distinct starting positions.
+A top-centre countdown shows the seconds remaining until the first Hunter horse, starting at 00:20 when the match begins and disappearing at the first spawn.
+It uses the same simulation-time deadline as spawning, so changing the clock speed or pausing the match does not desynchronize the display.
 After 20 seconds of match time, the first Hunter horse spawns at the centre of the map; one more spawns every second thereafter.
 Horses belong to Hunter player 1 and receive no automatic movement commands.
 As each new horse spawns, nearby idle horses ease outwards using deterministic two-dimensional contact separation rather than piling up inside each other.
@@ -29,7 +31,8 @@ The 20-second delay, one-second interval, horse collision radius and shove durat
 Horses are controlled by the human Hunter. Select one or drag to select a group, press A or the HUD's Attack-move button, then left-click a destination.
 Attack-moving horses detect Builders and completed enemy towers within three tiles and approach to melee range before striking.
 Towers always take automatic targeting priority over Builders when both are nearby, even if a Builder is closer.
-An explicit focus-attack order to override that priority is planned but not yet available; ordinary Move and Attack-move do not currently allow forcing a nearby Builder target.
+To override automatic tower priority in local gameplay, select Hunter horses and right-click an enemy Builder or completed tower: the horses focus that exact target until it dies or you give another order.
+Right-click empty terrain remains ordinary Move. Focus-attack has not yet been added to the multiplayer command protocol.
 They resume their original destination after an engagement, or stay there alert for nearby towers after arriving.
 If a selected horse dies before a group command is issued, its surviving teammates still carry out the order.
 Right-click issues an ordinary Move without seeking enemies; Escape cancels attack-move targeting.

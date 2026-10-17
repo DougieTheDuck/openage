@@ -86,6 +86,16 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			}
 			return;
 		}
+		if (command_type == component::command::command_t::FOCUS_ATTACK) {
+			const bool accepted = params.check_type<entity_id_t>("target_entity")
+			                   and fvd->issue_focus_attack(
+				                   gstate, owner, ids,
+				                   params.get<entity_id_t>("target_entity"), time);
+			if (result_cb) {
+				result_cb(accepted);
+			}
+			return;
+		}
 		if (command_type == component::command::command_t::ATTACK_MOVE) {
 			bool accepted = params.check_type<coord::phys3>("target")
 			             and fvd->issue_attack_move(gstate, owner, ids,

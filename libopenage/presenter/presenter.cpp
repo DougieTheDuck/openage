@@ -361,6 +361,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("attacking", false);
 			this->fvd_hud_state->insert("placing", false);
 			this->fvd_hud_state->insert("kills", 0);
+			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->fvd_hud_state->insert("action", QString{});
 			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
 			QObject::connect(this->fvd_hud_state.get(), &QQmlPropertyMap::valueChanged,
@@ -497,6 +498,10 @@ void Presenter::render() {
 			this->fvd_hud_state->insert("attacking", this->game_controller->is_attack_move_active());
 			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 			if (fvd) {
+				auto countdown = fvd->get_hunter_spawn_countdown(
+					this->time_loop->get_clock()->get_time());
+				this->fvd_hud_state->insert("hunterCountdown",
+					countdown.value_or(0));
 				this->fvd_hud_state->insert("kills",
 					static_cast<qulonglong>(fvd->get_kills(controlled)));
 				this->fvd_hud_state->insert("damage",

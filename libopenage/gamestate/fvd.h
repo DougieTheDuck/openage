@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -101,6 +102,13 @@ public:
 	void start_hunter_wave(const std::shared_ptr<GameState> &state,
 	                       const time::time_t &match_start);
 
+	/**
+	 * Seconds remaining until the first Hunter spawn, rounded up.
+	 * The deadline is shared read-only with the presenter; no countdown
+	 * exists before match start or after the first spawn deadline.
+	 */
+	std::optional<int> get_hunter_spawn_countdown(const time::time_t &now) const;
+
 	/** Spawn an idle Hunter horse and schedule the next one. */
 	void spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	                       const time::time_t &time);
@@ -114,6 +122,11 @@ public:
 	bool issue_attack_move(const std::shared_ptr<GameState> &state,
 	                       player_id_t owner, const std::vector<entity_id_t> &ids,
 	                       const coord::phys3 &destination, const time::time_t &time);
+
+	/** Focus a specific enemy entity, overriding automatic tower priority. */
+	bool issue_focus_attack(const std::shared_ptr<GameState> &state,
+	                        player_id_t owner, const std::vector<entity_id_t> &ids,
+	                        entity_id_t enemy_id, const time::time_t &time);
 
 	/** Remove the autonomous engagement portion when superseded by another order. */
 	void cancel_attack_move(entity_id_t id);
@@ -142,6 +155,7 @@ private:
 		std::optional<entity_id_t> target;
 		time::time_t next_attack;
 		bool reached_destination = false;
+		bool focus_target = false;
 	};
 
 	struct PendingBuild {
@@ -230,6 +244,9 @@ private:
 	std::weak_ptr<EntityFactory> entity_factory;
 	std::shared_ptr<openage::event::EventEntity> horse_spawn_target;
 	bool hunter_wave_started = false;
+	/** Protect the match-relative first-spawn deadline read by the presenter. */
+	mutable std::mutex hunter_spawn_time_mutex;
+	std::optional<time::time_t> first_hunter_spawn_time;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
 	std::unordered_set<entity_id_t> dead_horses;

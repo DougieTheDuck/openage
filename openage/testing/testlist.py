@@ -157,6 +157,11 @@ def tests_cpp():
         "FVD Builder detection, pursuit and tower targeting priority",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_focus_attack",
+        "FVD Hunter focus attacks and explicit target override",
+        lambda env: env["has_assets"],
+    )
 
 
 def demos_cpp():
