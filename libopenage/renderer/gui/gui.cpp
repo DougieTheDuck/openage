@@ -2,6 +2,9 @@
 
 #include "gui.h"
 
+#include <QQuickItem>
+#include <QQuickWindow>
+
 #include "renderer/gui/guisys/public/gui_engine.h"
 #include "renderer/gui/guisys/public/gui_input.h"
 #include "renderer/gui/guisys/public/gui_renderer.h"
@@ -56,6 +59,13 @@ GUI::GUI(std::shared_ptr<qtgui::GuiApplication> app,
 
 std::shared_ptr<qtgui::GuiInput> GUI::get_input_handler() const {
 	return this->gui_input;
+}
+
+bool GUI::contains_item(const QString &object_name, const QPointF &scene_position) const {
+	auto window = this->gui_renderer->get_window();
+	auto item = window->contentItem()->findChild<QQuickItem *>(object_name);
+	return item and item->isVisible() and item->isEnabled()
+	       and item->contains(item->mapFromScene(scene_position));
 }
 
 std::shared_ptr<renderer::RenderPass> GUI::get_render_pass() const {

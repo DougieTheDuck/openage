@@ -3,6 +3,7 @@
 #include "presenter.h"
 
 #include <eigen3/Eigen/Dense>
+#include <algorithm>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QVariantList>
@@ -280,18 +281,28 @@ void Presenter::init_input() {
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_button_callback([&](const QMouseEvent &ev) {
-		// Qt Quick receives the event first. The left HUD panel is
-		// interactive and must not also command units in the world.
+		const auto button = static_cast<unsigned int>(ev.button());
+		const bool captured = (this->fvd_hud_captured_buttons & button) != 0;
+		const bool over_hud = this->fvd_hud_state and this->gui
+		                      and this->gui->contains_item("fvdBuildPanel", ev.position());
+		// Qt Quick receives mouse input first, but HUD gestures must never
+		// reach the game controller, even when a release leaves the panel.
 		if (this->gui) {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
 		}
-		if (this->fvd_hud_state) {
-			auto window_size = this->window->get_size();
-			if (ev.position().x() < 284
-			    and ev.position().y() > static_cast<double>(window_size[1]) - 196) {
-				return;
+		if ((ev.type() == QEvent::MouseButtonPress
+		     or ev.type() == QEvent::MouseButtonDblClick) and over_hud) {
+			this->fvd_hud_captured_buttons |= button;
+		}
+		if (ev.type() == QEvent::MouseButtonRelease) {
+			this->fvd_hud_captured_buttons &= ~button;
+		}
+		if (over_hud or captured) {
+			if (this->game_controller) {
+				this->game_controller->reset_drag_select();
 			}
+			return;
 		}
 		this->input_manager->process(ev);
 	});
@@ -386,6 +397,8 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("placementFootprint", QVariantList{});
 			this->fvd_hud_state->insert("placementValid", false);
 			this->fvd_hud_state->insert("queuedTowers", 0);
+			this->fvd_hud_state->insert("constructionStatus", QString{});
+			this->fvd_hud_state->insert("constructionPercent", -1);
 			this->fvd_hud_state->insert("canAttack", false);
 			this->fvd_hud_state->insert("attacking", false);
 			this->fvd_hud_state->insert("placing", false);
@@ -615,9 +628,31 @@ void Presenter::render() {
 				}
 				this->fvd_hud_state->insert("placementValid", valid);
 				this->fvd_hud_state->insert("queuedTowers",
-					selected.ids.size() == 1
+					builder and selected.ids.size() == 1
 						? static_cast<int>(fvd->get_queued_build_count(selected.ids.front()))
 						: 0);
+				QString construction_status{};
+				int construction_percent = -1;
+				if (builder and controlled >= 2 and selected.ids.size() == 1) {
+					const auto orders = fvd->get_construction_state();
+					const auto current = std::find_if(
+						orders.begin(), orders.end(),
+						[&](const auto &order) {
+							return order.builder_id == selected.ids.front()
+							       and order.owner == controlled;
+						});
+					if (current != orders.end()) {
+						if (current->phase == gamestate::FVDConstructionPhase::PLANNED) {
+							construction_status = QString{"Walking to tower site"};
+						}
+						else {
+							construction_percent = current->progress_percent(now);
+							construction_status = QString{"Building: %1%"}.arg(construction_percent);
+						}
+					}
+				}
+				this->fvd_hud_state->insert("constructionStatus", construction_status);
+				this->fvd_hud_state->insert("constructionPercent", construction_percent);
 				auto countdown = fvd->get_hunter_spawn_countdown(
 					this->time_loop->get_clock()->get_time());
 				this->fvd_hud_state->insert("hunterCountdown",
