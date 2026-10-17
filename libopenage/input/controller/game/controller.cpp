@@ -2,8 +2,9 @@
 
 #include "controller.h"
 
-#include <cstdlib>
 #include <algorithm>
+#include <cstdlib>
+#include <utility>
 
 #include <QGuiApplication>
 #include <QStyleHints>
@@ -46,6 +47,9 @@ void Controller::set_control(size_t faction_id) {
 		this->selected.clear();
 		this->selected_kind = SelectionKind::NONE;
 		this->selected_render_entity.reset();
+		this->selection_generation += 1;
+		this->selection_pending = false;
+		this->deferred_selection_action = {};
 		this->placing_tower = false;
 		this->attacking = false;
 	}
@@ -75,8 +79,58 @@ void Controller::set_selected(
 	this->selected_kind = (ids.size() == 1 or kind == SelectionKind::GROUP_HORSES)
 	                         ? kind : SelectionKind::NONE;
 	this->selected_render_entity = ids.size() == 1 ? render_entity : nullptr;
+	this->selection_generation += 1;
+	this->selection_pending = false;
+	this->deferred_selection_action = {};
 	this->placing_tower = false;
 	this->attacking = false;
+}
+
+uint64_t Controller::begin_selection_update() {
+	std::unique_lock lock{this->mutex};
+
+	this->selection_generation += 1;
+	this->selection_pending = true;
+	this->deferred_selection_action = {};
+	return this->selection_generation;
+}
+
+bool Controller::set_selected_if_current(
+	uint64_t generation,
+	const std::vector<gamestate::entity_id_t> ids,
+	SelectionKind kind,
+	const std::shared_ptr<renderer::world::RenderEntity> &render_entity) {
+	std::function<void()> deferred;
+	{
+		std::unique_lock lock{this->mutex};
+		if (not this->selection_pending or generation != this->selection_generation) {
+			return false;
+		}
+
+		log::log(DBG << "Selected " << ids.size() << " entities");
+		this->selected = ids;
+		this->selected_kind = (ids.size() == 1 or kind == SelectionKind::GROUP_HORSES)
+		                         ? kind : SelectionKind::NONE;
+		this->selected_render_entity = ids.size() == 1 ? render_entity : nullptr;
+		this->selection_pending = false;
+		this->placing_tower = false;
+		this->attacking = false;
+		deferred = std::move(this->deferred_selection_action);
+	}
+
+	if (deferred) {
+		deferred();
+	}
+	return true;
+}
+
+bool Controller::defer_until_selection_applied(std::function<void()> action) {
+	std::unique_lock lock{this->mutex};
+	if (not this->selection_pending) {
+		return false;
+	}
+	this->deferred_selection_action = std::move(action);
+	return true;
 }
 
 SelectionDetails Controller::get_selection_details() const {
@@ -173,9 +227,10 @@ namespace {
 /** Resolve the selected entity type on the simulation thread. */
 void apply_selection(const std::shared_ptr<Controller> &controller,
                      const std::shared_ptr<gamestate::GameState> &state,
+                     uint64_t generation,
                      const std::vector<gamestate::entity_id_t> &ids) {
 	if (not state->get_fvd()) {
-		controller->set_selected(ids);
+		controller->set_selected_if_current(generation, ids);
 		return;
 	}
 	if (ids.size() > 1) {
@@ -184,16 +239,18 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 			return found != state->get_game_entities().end()
 			    and found->second->get_definition() == "fvd.data.entities.Horse";
 		});
-		controller->set_selected(ids, all_horses ? SelectionKind::GROUP_HORSES : SelectionKind::NONE);
+		controller->set_selected_if_current(
+			generation, ids,
+			all_horses ? SelectionKind::GROUP_HORSES : SelectionKind::NONE);
 		return;
 	}
 	if (ids.empty()) {
-		controller->set_selected({});
+		controller->set_selected_if_current(generation, {});
 		return;
 	}
 	auto found = state->get_game_entities().find(ids.front());
 	if (found == state->get_game_entities().end()) {
-		controller->set_selected({});
+		controller->set_selected_if_current(generation, {});
 		return;
 	}
 	auto definition = found->second->get_definition();
@@ -207,7 +264,8 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 	else if (definition == "fvd.data.entities.Tower") {
 		kind = SelectionKind::TOWER;
 	}
-	controller->set_selected(ids, kind, found->second->get_render_entity());
+	controller->set_selected_if_current(
+		generation, ids, kind, found->second->get_render_entity());
 }
 
 } // namespace
@@ -315,8 +373,8 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		}
 	}
 
-	binding_func_t move_entity{[simulation, time_loop, camera](const event_arguments &args,
-	                               const std::shared_ptr<Controller> controller) {
+	auto submit_move = [simulation, time_loop, camera](const event_arguments &args,
+	                                                     const std::shared_ptr<Controller> controller) {
 		if (controller->is_tower_placement_active()) {
 			controller->cancel_tower_placement();
 			return;
@@ -339,6 +397,14 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			simulation->get_game()->get_state(),
 			time_loop->get_clock()->get_time(),
 			params);
+	};
+	binding_func_t move_entity{[submit_move](const event_arguments &args,
+	                                           const std::shared_ptr<Controller> controller) {
+		if (controller->defer_until_selection_applied(
+			    [submit_move, args, controller]() { submit_move(args, controller); })) {
+			return;
+		}
+		submit_move(args, controller);
 	}};
 
 	binding_action move_entity_action{forward_action_t::SEND, move_entity};
@@ -377,6 +443,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				attack_move_event(args, controller);
 				return;
 			}
+			auto selection_generation = controller->begin_selection_update();
 			auto drag_start = controller->get_drag_select_start();
 			auto drag_delta = args.mouse - drag_start;
 			auto drag_threshold = QGuiApplication::styleHints()->startDragDistance();
@@ -385,7 +452,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				auto controlled = controller->get_controlled();
 				pick_entity(
 					args.mouse,
-					[simulation, time_loop, controller, controlled](
+					[simulation, time_loop, controller, controlled, selection_generation](
 						std::optional<gamestate::entity_id_t> id) {
 						std::vector<gamestate::entity_id_t> picked;
 						if (id.has_value()) {
@@ -396,8 +463,9 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 							{"entity_ids", picked},
 							{"select_cb",
 							 std::function<void(const std::vector<gamestate::entity_id_t>)>{
-								 [controller, simulation](const std::vector<gamestate::entity_id_t> ids) {
-									 apply_selection(controller, simulation->get_game()->get_state(), ids);
+								 [controller, simulation, selection_generation](const std::vector<gamestate::entity_id_t> ids) {
+									 apply_selection(controller, simulation->get_game()->get_state(),
+									                 selection_generation, ids);
 								 }}},
 						};
 
@@ -420,9 +488,10 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				{"camera_matrix", cam_matrix},
 				{"select_cb",
 		         std::function<void(const std::vector<gamestate::entity_id_t> ids)>{
-					 [controller, simulation](
+					 [controller, simulation, selection_generation](
 						 const std::vector<gamestate::entity_id_t> ids) {
-						 apply_selection(controller, simulation->get_game()->get_state(), ids);
+						 apply_selection(controller, simulation->get_game()->get_state(),
+						                 selection_generation, ids);
 					 }}},
 			};
 

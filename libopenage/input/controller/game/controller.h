@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -96,6 +97,25 @@ public:
 		SelectionKind kind = SelectionKind::NONE,
 		const std::shared_ptr<renderer::world::RenderEntity> &render_entity = nullptr);
 
+	/** Start an asynchronous selection update and return its generation. */
+	uint64_t begin_selection_update();
+
+	/** Apply a selection result only if it is the latest pending update. */
+	bool set_selected_if_current(
+		uint64_t generation,
+		const std::vector<gamestate::entity_id_t> ids,
+		SelectionKind kind = SelectionKind::NONE,
+		const std::shared_ptr<renderer::world::RenderEntity> &render_entity = nullptr);
+
+	/**
+	 * Defer an input action while the latest selection update is pending.
+	 *
+	 * Only the most recent deferred action is retained.
+	 *
+	 * @return Whether the action was deferred.
+	 */
+	bool defer_until_selection_applied(std::function<void()> action);
+
 	/** Get the selected units and resolved type as a single thread-safe snapshot. */
 	SelectionDetails get_selection_details() const;
 
@@ -161,6 +181,9 @@ private:
 	/** Simulation-resolved selection kind and thread-safe health source. */
 	SelectionKind selected_kind = SelectionKind::NONE;
 	std::shared_ptr<renderer::world::RenderEntity> selected_render_entity;
+	uint64_t selection_generation = 0;
+	bool selection_pending = false;
+	std::function<void()> deferred_selection_action{};
 
 	/** Controller-local input mode, not authoritative simulation state. */
 	bool placing_tower = false;

@@ -40,8 +40,8 @@ public:
 
 		class Equal {
 		public:
-			size_t operator()(const Change &left,
-			                  const Change &right) const;
+			bool operator()(const Change &left,
+			                const Change &right) const;
 		};
 	};
 

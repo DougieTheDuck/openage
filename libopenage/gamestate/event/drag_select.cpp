@@ -119,10 +119,10 @@ void DragSelectHandler::invoke(openage::event::EventLoop & /* loop */,
 		Eigen::Vector4f clip_pos = cam_matrix * Eigen::Vector4f{world_pos.x(), world_pos.y(), world_pos.z(), 1};
 
 		// Check if the entity is in the rectangle
-		if (clip_pos.x() > left
-		    and clip_pos.x() < right
-		    and clip_pos.y() > bottom
-		    and clip_pos.y() < top) {
+		if (clip_pos.x() >= left
+		    and clip_pos.x() <= right
+		    and clip_pos.y() >= bottom
+		    and clip_pos.y() <= top) {
 			selected.push_back(entity.first);
 		}
 	}

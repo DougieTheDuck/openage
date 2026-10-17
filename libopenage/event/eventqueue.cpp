@@ -204,29 +204,24 @@ EventQueue::Change::Change(const std::shared_ptr<Event> &evnt,
 	hash{evnt->hash()} {}
 
 
-size_t EventQueue::Change::Equal::operator()(const Change &left,
-                                             const Change &right) const {
+bool EventQueue::Change::Equal::operator()(const Change &left,
+                                           const Change &right) const {
 	auto left_evnt = left.evnt.lock();
 	auto right_evnt = right.evnt.lock();
-	if (left_evnt && right_evnt) {
-		if (left_evnt->get_eventhandler()->id() == right_evnt->get_eventhandler()->id()) {
-			return true;
-		}
+	if (not left_evnt or not right_evnt) {
+		return false;
 	}
-	else {
+	if (left_evnt->get_eventhandler()->id() != right_evnt->get_eventhandler()->id()) {
 		return false;
 	}
 
 	auto left_entity = left_evnt->get_entity().lock();
 	auto right_entity = right_evnt->get_entity().lock();
-
-	if (left_entity && right_entity) {
-		if (left_entity->id() == right_entity->id()) {
-			return true;
-		}
+	if (not left_entity or not right_entity) {
+		return false;
 	}
 
-	return false;
+	return left_entity->id() == right_entity->id();
 }
 
 } // namespace openage::event

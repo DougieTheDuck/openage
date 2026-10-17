@@ -655,6 +655,51 @@ void eventtrigger() {
 		loop->submit_event("unregistered", state->objectA, gstate, 6);
 		TESTTHROWS(loop->reach_time(6, gstate));
 	}
+
+	log::log(DBG << "------------- [ Starting Test: Independent target changes ] ------------");
+	{
+		class IndependentTargetHandler : public EventHandler {
+		public:
+			IndependentTargetHandler() :
+				EventHandler("independent_targets", EventHandler::trigger_type::DEPENDENCY) {}
+
+			void setup_event(const std::shared_ptr<Event> &event,
+			                 const std::shared_ptr<State> & /* state */) override {
+				event->depend_on(event->get_entity().lock());
+			}
+
+			void invoke(EventLoop & /* loop */,
+			            const std::shared_ptr<EventEntity> &target,
+			            const std::shared_ptr<State> &gstate,
+			            const time::time_t &time,
+			            const EventHandler::param_map & /* params */) override {
+				auto state = std::dynamic_pointer_cast<TestState>(gstate);
+				state->trace.emplace_back(target->idstr(), time);
+			}
+
+			time::time_t predict_invoke_time(
+				const std::shared_ptr<EventEntity> & /* target */,
+				const std::shared_ptr<State> & /* state */,
+				const time::time_t &at) override {
+				return at;
+			}
+		};
+
+		auto loop = std::make_shared<EventLoop>();
+		loop->add_event_handler(std::make_shared<IndependentTargetHandler>());
+		auto state = std::make_shared<TestState>(loop);
+		auto gstate = std::dynamic_pointer_cast<State>(state);
+		std::vector<std::shared_ptr<TestState::TestObject>> targets;
+		for (int i = 0; i < 32; ++i) {
+			auto target = std::make_shared<TestState::TestObject>(loop, i + 10);
+			loop->create_event("independent_targets", target, gstate, 1);
+			target->set_number(i, 1);
+			targets.push_back(std::move(target));
+		}
+
+		loop->reach_time(2, gstate);
+		TESTEQUALS(state->trace.size(), targets.size());
+	}
 }
 
 } // namespace openage::event::tests

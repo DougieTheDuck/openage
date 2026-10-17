@@ -161,6 +161,26 @@ void fvd_scenario() {
 	                                   }}}});
 	TESTEQUALS(selection.size(), 1);
 	TESTEQUALS(selection.front(), builders[2]);
+	auto selection_position = std::dynamic_pointer_cast<component::Position>(
+		builder_entity->get_component(component::component_t::POSITION));
+	auto selection_world = selection_position->get_positions()
+	                           .get(time::TIME_ZERO)
+	                           .to_scene3()
+	                           .to_world_space();
+	auto selection_clip = selection_matrix * Eigen::Vector4f{
+		selection_world.x(), selection_world.y(), selection_world.z(), 1};
+	auto selection_edge = Eigen::Vector2f{selection_clip.x(), selection_clip.y()};
+	selector.invoke(*loop, nullptr, state, time::TIME_ZERO,
+	                {{"controlled", size_t{2}},
+	                 {"drag_start", selection_edge},
+	                 {"drag_end", selection_edge + Eigen::Vector2f{0.1f, 0.1f}},
+	                 {"camera_matrix", selection_matrix},
+	                 {"select_cb", std::function<void(const std::vector<entity_id_t>)>{
+	                                   [&](const std::vector<entity_id_t> ids) {
+		                                   selection = ids;
+	                                   }}}});
+	TESTEQUALS(selection.size(), size_t{1});
+	TESTEQUALS(selection.front(), builders[2]);
 
 	auto place = [&](player_id_t owner, const std::vector<entity_id_t> &selected, coord::phys3 pos) {
 		return fvd->request_build(state, owner, selected, pos, time::TIME_ZERO);
@@ -537,6 +557,40 @@ void fvd_hunter_spawning() {
 			TESTEQUALS(delta.length() > 0.68, true);
 		}
 	}
+
+	// A single command must wake every recently spawned horse, including
+	// horses whose spawn-separation movement has only just completed.
+	loop->reach_time(at(39), state);
+	std::vector<entity_id_t> wave;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Horse") {
+			wave.push_back(id);
+		}
+	}
+	TESTEQUALS(wave.size(), size_t{20});
+	event::SendCommandHandler commander;
+	bool accepted = false;
+	commander.invoke(*loop, nullptr, state, at(39),
+	                 {{"type", component::command::command_t::MOVE},
+	                  {"owner", player_id_t{1}},
+	                  {"entity_ids", wave},
+	                  {"target", coord::phys3{70, 70, 0}},
+	                  {"result_cb", std::function<void(bool)>{[&accepted](bool result) {
+		                  accepted = result;
+	                  }}}});
+	TESTEQUALS(accepted, true);
+	loop->reach_time(at(39), state);
+	size_t moving = 0;
+	for (auto id : wave) {
+		auto entity = state->get_game_entity(id);
+		auto move = std::dynamic_pointer_cast<component::Move>(
+			entity->get_component(component::component_t::MOVE));
+		if (move->get_active_target().has_value()) {
+			TESTEQUALS(*move->get_active_target(), coord::phys3(70, 70, 0));
+			++moving;
+		}
+	}
+	TESTEQUALS(moving, wave.size());
 }
 
 void fvd_horse_spawn_blocked() {
@@ -674,6 +728,25 @@ void fvd_hunter_combat() {
 	                                  {67, 70, 0}, at(33)), true);
 	fvd->combat_tick(state, at(33));
 	TESTEQUALS(tower_health->get_attribute(at(33), "fvd.data.entities.Health")->get(at(33)) < 100, true);
+
+	// A normal Move command interrupts an active melee engagement.
+	event::SendCommandHandler commander;
+	bool accepted = false;
+	commander.invoke(*loop, nullptr, state, at(33.1),
+	                 {{"type", component::command::command_t::MOVE},
+	                  {"owner", player_id_t{1}},
+	                  {"entity_ids", std::vector<entity_id_t>{melee->get_id()}},
+	                  {"target", coord::phys3{80, 80, 0}},
+	                  {"result_cb", std::function<void(bool)>{[&accepted](bool result) {
+		                  accepted = result;
+	                  }}}});
+	TESTEQUALS(accepted, true);
+	auto melee_move = std::dynamic_pointer_cast<component::Move>(
+		melee->get_component(component::component_t::MOVE));
+	TESTEQUALS(melee_move->get_active_target().has_value(), true);
+	if (melee_move->get_active_target()) {
+		TESTEQUALS(*melee_move->get_active_target(), coord::phys3(80, 80, 0));
+	}
 }
 
 void fvd_hunter_attack_move_regressions() {
@@ -745,6 +818,9 @@ void fvd_hunter_attack_move_regressions() {
 	TESTEQUALS(health->get_attribute(at(16), "fvd.data.entities.Health")->get(at(16)) < 100, true);
 
 	// Reaching the destination doesn't remove tower awareness.
+	// Remove the Builder used for the priority assertion so its new
+	// AttackMove aggro does not replace the tower-awareness scenario.
+	state->remove_game_entity(protected_builder->get_id(), at(19));
 	auto finished = entities->spawn_game_entity(
 		loop, state, 1, "fvd.data.entities.Horse", {74, 69, 0}, at(20));
 	TESTEQUALS(fvd->issue_attack_move(state, 1, {finished->get_id()},

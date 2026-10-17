@@ -7,6 +7,7 @@
 
 #include "coord/phys.h"
 #include "error/error.h"
+#include "gamestate/component/internal/activity.h"
 #include "gamestate/component/internal/command_queue.h"
 #include "gamestate/component/internal/commands/idle.h"
 #include "gamestate/component/internal/commands/move.h"
@@ -15,6 +16,7 @@
 #include "gamestate/fvd.h"
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
+#include "gamestate/manager.h"
 #include "gamestate/types.h"
 
 
@@ -132,6 +134,16 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 		}
 		auto command_queue = std::dynamic_pointer_cast<component::CommandQueue>(
 			entity->get_component(component::component_t::COMMANDQUEUE));
+		std::shared_ptr<component::Activity> activity;
+		if (fvd and command_type == component::command::command_t::MOVE) {
+			activity = std::dynamic_pointer_cast<component::Activity>(
+				entity->get_component(component::component_t::ACTIVITY));
+			activity->cancel_events(time);
+			while (not command_queue->get_queue().empty(time)) {
+				command_queue->pop_command(time);
+			}
+			activity->init(time);
+		}
 
 		switch (command_type) {
 		case component::command::command_t::IDLE:
@@ -148,6 +160,9 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			break;
 		default:
 			break;
+		}
+		if (activity) {
+			entity->get_manager()->run_activity_system(time);
 		}
 	}
 	if (result_cb) {

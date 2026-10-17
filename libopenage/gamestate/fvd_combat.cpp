@@ -119,7 +119,12 @@ std::optional<coord::phys3> melee_approach(
 		if (proximity >= shortest) {
 			continue;
 		}
-		if (system::find_path(pathfinder, grid, horse_position, destination, time).empty()) {
+		auto route = pathfinder->get_path(path::PathRequest{
+			grid,
+			horse_position.to_tile(),
+			tile,
+			time});
+		if (route.status != path::PathResult::FOUND) {
 			continue;
 		}
 		best = destination;

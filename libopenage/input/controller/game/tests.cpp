@@ -58,6 +58,30 @@ void tower_placement_mode() {
 	controller.set_control(2);
 	TESTEQUALS(controller.is_attack_move_active(), false);
 	TESTEQUALS(controller.begin_attack_move(), false);
+
+	controller.set_selected({42}, SelectionKind::BUILDER);
+	bool deferred_ran = false;
+	auto stale_generation = controller.begin_selection_update();
+	controller.defer_until_selection_applied([&]() { deferred_ran = true; }) or TESTFAIL;
+	auto current_generation = controller.begin_selection_update();
+	TESTEQUALS(controller.set_selected_if_current(
+		stale_generation, {101}, SelectionKind::HORSE), false);
+	TESTEQUALS(controller.get_selected().front(), gamestate::entity_id_t{42});
+	TESTEQUALS(deferred_ran, false);
+	controller.defer_until_selection_applied([&]() {
+		deferred_ran = controller.get_selected().size() == 2;
+	}) or TESTFAIL;
+	TESTEQUALS(controller.set_selected_if_current(
+		current_generation, {101, 102}, SelectionKind::GROUP_HORSES), true);
+	TESTEQUALS(deferred_ran, true);
+	TESTEQUALS(controller.get_selected().size(), size_t{2});
+
+	auto invalidated_generation = controller.begin_selection_update();
+	controller.defer_until_selection_applied([&]() { deferred_ran = false; }) or TESTFAIL;
+	controller.set_control(1);
+	TESTEQUALS(controller.set_selected_if_current(
+		invalidated_generation, {101}, SelectionKind::HORSE), false);
+	TESTEQUALS(deferred_ran, true);
 }
 
 } // namespace openage::input::game::tests
