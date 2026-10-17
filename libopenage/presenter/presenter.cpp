@@ -290,6 +290,9 @@ void Presenter::init_input() {
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_move_callback([&](const QMouseEvent &ev) {
+		this->placement_cursor = coord::input{
+			static_cast<coord::pixel_t>(ev.position().x()),
+			static_cast<coord::pixel_t>(ev.position().y())};
 		this->input_manager->set_mouse(ev.position().x(), ev.position().y());
 		if (this->gui) {
 			this->gui->get_input_handler()->process(
@@ -360,6 +363,9 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("damage", QString{"Not defined"});
 			this->fvd_hud_state->insert("armor", QString{"Not defined"});
 			this->fvd_hud_state->insert("canBuild", false);
+			this->fvd_hud_state->insert("placementFootprint", QVariantList{});
+			this->fvd_hud_state->insert("placementValid", false);
+			this->fvd_hud_state->insert("queuedTowers", 0);
 			this->fvd_hud_state->insert("canAttack", false);
 			this->fvd_hud_state->insert("attacking", false);
 			this->fvd_hud_state->insert("placing", false);
@@ -542,6 +548,55 @@ void Presenter::render() {
 				    or not this->fvd_hud_state->value("arrowStreaks").toList().empty()) {
 					this->fvd_hud_state->insert("arrowStreaks", arrow_streaks);
 				}
+				// Preview the exact footprint checked by can_place_tower().
+				// The preview is cosmetic; the simulation validates the
+				// authoritative command again at its execution time.
+				QVariantList footprint;
+				bool valid = false;
+				if (this->game_controller->is_tower_placement_active()
+				    and controlled >= 2 and builder
+				    and this->placement_cursor and selected.ids.size() == 1) {
+					auto state = this->simulation->get_game()->get_state();
+					auto mouse = this->placement_cursor->to_phys3(this->camera);
+					auto site = mouse.to_tile();
+					valid = fvd->can_place_tower(
+						state, static_cast<gamestate::player_id_t>(controlled),
+						selected.ids, mouse, now);
+					const Eigen::Matrix4f camera_matrix =
+						this->camera->get_projection_matrix() * this->camera->get_view_matrix();
+					const auto viewport = this->camera->get_viewport_size();
+					auto project_tile = [&](double ne, double se) {
+						const auto position = coord::phys3{
+							coord::phys_t::from_double(ne),
+							coord::phys_t::from_double(se), 0};
+						const auto world = position.to_scene3().to_world_space();
+						const Eigen::Vector4f clip = camera_matrix
+							* Eigen::Vector4f{world.x(), world.y(), world.z(), 1.0f};
+						return Eigen::Vector2f{
+							(clip.x() / clip.w() * 0.5f + 0.5f) * viewport[0],
+							(0.5f - clip.y() / clip.w() * 0.5f) * viewport[1]};
+					};
+					for (const auto &tile : fvd->get_tower_footprint(site)) {
+						const auto a = project_tile(tile.ne, tile.se);
+						const auto b = project_tile(tile.ne + 1.0, tile.se);
+						const auto c = project_tile(tile.ne + 1.0, tile.se + 1.0);
+						const auto d = project_tile(tile.ne, tile.se + 1.0);
+						footprint.push_back(QVariantMap{
+							{"ax", a.x()}, {"ay", a.y()},
+							{"bx", b.x()}, {"by", b.y()},
+							{"cx", c.x()}, {"cy", c.y()},
+							{"dx", d.x()}, {"dy", d.y()}});
+					}
+				}
+				if (not footprint.isEmpty()
+				    or not this->fvd_hud_state->value("placementFootprint").toList().empty()) {
+					this->fvd_hud_state->insert("placementFootprint", footprint);
+				}
+				this->fvd_hud_state->insert("placementValid", valid);
+				this->fvd_hud_state->insert("queuedTowers",
+					selected.ids.size() == 1
+						? static_cast<int>(fvd->get_queued_build_count(selected.ids.front()))
+						: 0);
 				auto countdown = fvd->get_hunter_spawn_countdown(
 					this->time_loop->get_clock()->get_time());
 				this->fvd_hud_state->insert("hunterCountdown",

@@ -279,16 +279,26 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		                const std::function<void(std::optional<gamestate::entity_id_t>)> &)> &pick_entity) {
 	binding_func_t create_entity_event{[simulation, time_loop, camera](const event_arguments &args,
 	                                       const std::shared_ptr<Controller> controller) {
-		controller->cancel_tower_placement();
 		auto mouse_pos = args.mouse.to_phys3(camera);
 		auto state = simulation->get_game()->get_state();
+		const bool append = (args.e.mod_code & Qt::ShiftModifier) != 0;
 		if (state->get_fvd()) {
-			if (controller->get_selection_details().kind != SelectionKind::BUILDER) {
+			auto selection = controller->get_selection_details();
+			if (selection.kind != SelectionKind::BUILDER) {
 				return;
+			}
+			if (not state->get_fvd()->can_place_tower(
+			        state, static_cast<gamestate::player_id_t>(controller->get_controlled()),
+			        selection.ids, mouse_pos, time_loop->get_clock()->get_time())) {
+				return; // Stay in placement mode so an invalid click is correctable.
+			}
+			if (not append) {
+				controller->cancel_tower_placement();
 			}
 			event::EventHandler::param_map::map_t params{
 				{"type", gamestate::component::command::command_t::BUILD_TOWER},
 				{"target", mouse_pos},
+				{"queue", append},
 				{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
 				{"entity_ids", controller->get_selected()},
 			};
@@ -334,6 +344,10 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		QEvent::MouseButtonRelease};
 
 	ctx->bind(ev_mouse_lmb_ctrl, create_entity_action);
+	ctx->bind(Event{event_class::MOUSE_BUTTON, Qt::MouseButton::LeftButton,
+	                static_cast<int>(Qt::KeyboardModifier::ControlModifier
+	                                 | Qt::KeyboardModifier::ShiftModifier),
+	                QEvent::MouseButtonRelease}, create_entity_action);
 
 	auto fvd = simulation->get_game()->get_state()->get_fvd();
 	if (fvd) {
@@ -456,6 +470,15 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				create_entity_event(args, controller);
 				return;
 			}
+			// Shift-click queues a tower even after a normal click exited
+			// placement mode; no second press of B is required.
+			if ((args.e.mod_code & Qt::ShiftModifier) != 0
+			    and controller->get_selection_details().kind == SelectionKind::BUILDER
+			    and controller->begin_tower_placement()) {
+				controller->reset_drag_select();
+				create_entity_event(args, controller);
+				return;
+			}
 			if (controller->is_attack_move_active()) {
 				controller->reset_drag_select();
 				attack_move_event(args, controller);
@@ -532,6 +555,11 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		QEvent::MouseButtonRelease};
 
 	ctx->bind(ev_mouse_lmb_release, drag_selection_action);
+	// Shift+left release goes through the same placement handler, which
+	// appends a site and deliberately stays in placement mode.
+	ctx->bind(Event{event_class::MOUSE_BUTTON, Qt::MouseButton::LeftButton,
+	                Qt::KeyboardModifier::ShiftModifier, QEvent::MouseButtonRelease},
+	          drag_selection_action);
 }
 
 

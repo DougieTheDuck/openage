@@ -50,10 +50,12 @@ The lower-left HUD displays the controlled player and selected entity.
 Selecting a tower shows its live HP and its damage and armour fields instead of a build action.
 Tower damage and armour read the configured gameplay values, currently 8 arrow damage and 1 armour.
 Only a selected Builder can enter tower placement mode, including when using the B key or Ctrl-left-click shortcut.
-Select a Builder, click **Build Tower** (or press **B**), then click a map tile to place a tower order.
+Select a Builder, click **Build Tower** (or press **B**) and move the cursor to see a footprint preview (green for available, red for occupied, reserved or out of bounds).
+Click once to replace the active construction order, or **hold Shift while clicking** to queue multiple sites for the same Builder. Shift-click keeps placement mode active until Esc or right-click.
+Queued sites reserve their entire footprints immediately; after finishing one tower, the Builder starts the next. Inaccessible queued sites are skipped and the HUD shows the number waiting.
 Right-click or press **Escape** while choosing a tile to cancel placement without moving the Builder.
 The original Ctrl-left-click build shortcut remains available for development.
-Valid/invalid footprint previews and construction progress are not yet displayed in the HUD.
+Footprint preview and queued tower count are displayed in the HUD; detailed construction progress is not yet shown.
 The simulation validates ownership and reserves the target tile, so the Hunter and other Builders cannot claim the same site.
 The Builder walks to an available neighboring tile and constructs for the configured duration.
 A foundation marker appears as soon as the order reserves the intended tile, then the tower replaces it when construction starts.

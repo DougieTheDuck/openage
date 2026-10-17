@@ -4,6 +4,9 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
+
+#include "coord/pixel.h"
 #include <vector>
 
 #include "renderer/window.h"
@@ -193,6 +196,8 @@ protected:
 
 	/** Qt bridge for FVD player HUD state and build-button actions. */
 	std::shared_ptr<QQmlPropertyMap> fvd_hud_state;
+	/** Most recent screen cursor coordinate, owned by the presenter thread. */
+	std::optional<coord::input> placement_cursor;
 
 	/**
 	 * Camera manager for camera controls.
