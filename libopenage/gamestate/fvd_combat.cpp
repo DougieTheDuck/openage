@@ -13,6 +13,7 @@
 #include "gamestate/component/api/live.h"
 #include "gamestate/component/api/move.h"
 #include "gamestate/component/internal/activity.h"
+#include "gamestate/component/internal/command_queue.h"
 #include "gamestate/component/internal/ownership.h"
 #include "gamestate/component/internal/position.h"
 #include "gamestate/entity_factory.h"
@@ -119,7 +120,9 @@ std::optional<coord::phys3> melee_approach(
 		if (proximity >= shortest) {
 			continue;
 		}
-		if (system::find_path(pathfinder, grid, horse_position, destination, time).empty()) {
+		path::PathRequest request{grid, horse_position.to_tile(),
+		                          destination.to_tile(), time};
+		if (pathfinder->get_path(request).status != path::PathResult::FOUND) {
 			continue;
 		}
 		best = destination;
@@ -205,6 +208,80 @@ void FVD::arrow_hit(const std::shared_ptr<GameState> &state,
 	this->apply_damage(state, target, damage, owner, true, time);
 }
 
+bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
+                             player_id_t owner, const std::vector<entity_id_t> &ids,
+                             entity_id_t enemy_id, const time::time_t &time) {
+	if (owner != 1) {
+		return false;
+	}
+	auto survivors = this->resolve_command_units(state, owner, ids, time);
+	if (not survivors) {
+		return false;
+	}
+	auto target_it = state->get_game_entities().find(enemy_id);
+	if (target_it == state->get_game_entities().end()
+	    or not alive(target_it->second, time)) {
+		return false;
+	}
+	auto target = target_it->second;
+	if (target->get_definition() != this->builder
+	    and target->get_definition() != this->tower) {
+		return false;
+	}
+	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+		target->get_component(component::component_t::OWNERSHIP));
+	if (not ownership or ownership->get_owners().get(time) < 2
+	    or ownership->get_owners().get(time) > this->player_count) {
+		return false;
+	}
+	if (target->get_definition() == this->tower) {
+		auto footprint = this->tower_footprints.find(enemy_id);
+		if (footprint == this->tower_footprints.end()
+		    or footprint->second.under_construction) {
+			return false;
+		}
+	}
+
+	// Validate every living horse and its approach before changing orders.
+	std::sort(survivors->begin(), survivors->end());
+	std::vector<std::optional<coord::phys3>> approaches;
+	approaches.reserve(survivors->size());
+	for (auto horse_id : *survivors) {
+		auto horse = state->get_game_entity(horse_id);
+		if (distance_squared(horse, target, time) <= 1.45 * 1.45) {
+			approaches.push_back(std::nullopt);
+			continue;
+		}
+		auto approach = melee_approach(state, horse, target, time, this->map_size);
+		if (not approach) {
+			return false;
+		}
+		approaches.push_back(*approach);
+	}
+
+	for (size_t i = 0; i < survivors->size(); ++i) {
+		auto horse = state->get_game_entity(survivors->at(i));
+		halt_for_engagement(horse, time);
+		auto queue = std::dynamic_pointer_cast<component::CommandQueue>(
+			horse->get_component(component::component_t::COMMANDQUEUE));
+		while (not queue->get_queue().empty(time)) {
+			queue->pop_command(time);
+		}
+		auto activity = std::dynamic_pointer_cast<component::Activity>(
+			horse->get_component(component::component_t::ACTIVITY));
+		activity->init(time);
+		horse->get_manager()->run_activity_system(time);
+		auto current = std::dynamic_pointer_cast<component::Position>(
+			horse->get_component(component::component_t::POSITION))->get_positions().get(time);
+		this->attack_orders.insert_or_assign(
+			horse->get_id(), AttackOrder{current, enemy_id, time, true, true});
+		if (approaches[i]) {
+			system::Move::move_default(horse, state, *approaches[i], time);
+		}
+	}
+	return true;
+}
+
 void FVD::combat_tick(const std::shared_ptr<GameState> &state,
                       const time::time_t &time) {
 	const auto horses = entities_by_definition(state, this->horse);
@@ -247,9 +324,10 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			}
 			return other->second->get_definition() == this->builder;
 		};
-		// A tower entering the three-tile alert area takes precedence over
-		// a Builder already targeted by the same AttackMove.
-		if (order.target and eligible(*order.target)
+		// A manual target is never preempted by a tower.
+		// A tower entering the three-tile alert area otherwise takes
+		// precedence over a Builder already targeted by AttackMove.
+		if (not order.focus_target and order.target and eligible(*order.target)
 		    and state->get_game_entity(*order.target)->get_definition() == this->builder) {
 			for (auto tower_id : towers) {
 				if (not eligible(tower_id)) {
@@ -272,6 +350,13 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				halt_for_engagement(horse, time);
 			}
 			order.target.reset();
+		}
+		if (order.focus_target and not order.target) {
+			// The explicit target died or became invalid. Do not convert
+			// a focus command into automatic AttackMove targeting.
+			halt_for_engagement(horse, time);
+			this->attack_orders.erase(order_it);
+			continue;
 		}
 		if (not order.target) {
 			// A tower within three tiles takes priority over a nearby
@@ -352,6 +437,11 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				order.next_attack = time + this->horse_cooldown;
 				if (not state->get_game_entities().contains(target)) {
 					order.target.reset();
+					if (order.focus_target) {
+						halt_for_engagement(horse, time);
+						this->attack_orders.erase(order_it);
+						continue;
+					}
 				}
 			}
 			continue;

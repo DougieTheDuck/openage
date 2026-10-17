@@ -16,6 +16,7 @@ enum class command_t {
 	MOVE,
 	BUILD_TOWER,
 	ATTACK_MOVE,
+	FOCUS_ATTACK,
 };
 
 } // namespace openage::gamestate::component::command

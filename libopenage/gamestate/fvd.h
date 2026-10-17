@@ -123,6 +123,11 @@ public:
 	                       player_id_t owner, const std::vector<entity_id_t> &ids,
 	                       const coord::phys3 &destination, const time::time_t &time);
 
+	/** Focus a specific enemy entity, overriding automatic tower priority. */
+	bool issue_focus_attack(const std::shared_ptr<GameState> &state,
+	                        player_id_t owner, const std::vector<entity_id_t> &ids,
+	                        entity_id_t enemy_id, const time::time_t &time);
+
 	/** Remove the autonomous engagement portion when superseded by another order. */
 	void cancel_attack_move(entity_id_t id);
 
@@ -150,6 +155,7 @@ private:
 		std::optional<entity_id_t> target;
 		time::time_t next_attack;
 		bool reached_destination = false;
+		bool focus_target = false;
 	};
 
 	struct PendingBuild {

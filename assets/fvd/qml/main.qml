@@ -65,6 +65,8 @@ Item {
 			text: root.placing
 			    ? "Tower placement: click a map tile | Right-click or Esc to cancel"
 			    : root.attacking ? "Attack-move: click map | Right-click or Esc cancels"
+			    : root.canAttack
+			    ? "Hunter: Right-click enemy to focus | Right-click ground to move | A: Attack-move"
 			    : "Flat plains | 1: Hunter | 2-8: Builders | Drag to select | Right-click to move"
 			horizontalAlignment: Text.AlignHCenter
 		}

@@ -877,4 +877,126 @@ void fvd_hunter_builder_aggro() {
 	TESTEQUALS(late_health->get_attribute(
 		at(5.1), "fvd.data.entities.Health")->get(at(5.1)) < late_hp, true);
 }
+
+
+void fvd_hunter_focus_attack() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double sec) { return time::time_t::from_double(sec); };
+
+	entity_id_t owner_builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (ownership->get_owners().get(time::TIME_ZERO) == player_id_t{5}) {
+			owner_builder = id;
+			break;
+		}
+	}
+	TESTEQUALS(owner_builder != 0, true);
+	TESTEQUALS(fvd->request_build(state, 5, {owner_builder}, {68, 69, 0}, at(0)), true);
+	loop->reach_time(at(15), state);
+	entity_id_t tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			tower = id;
+			break;
+		}
+	}
+	TESTEQUALS(tower != 0, true);
+	auto tower_entity = state->get_game_entity(tower);
+	auto tower_live = std::dynamic_pointer_cast<component::Live>(
+		tower_entity->get_component(component::component_t::LIVE));
+	auto hp_tower = tower_live->get_attribute(
+		at(15), "fvd.data.entities.Health")->get(at(15));
+
+	// Tower and Builder are equally close to the Hunter horse.
+	// Focus-attack must pursue the specifically chosen Builder.
+	auto builder = entities->spawn_game_entity(
+		loop, state, 2, "fvd.data.entities.Builder", {72, 69, 0}, at(15));
+	auto horse = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {70, 69, 0}, at(15));
+	auto builder_live = std::dynamic_pointer_cast<component::Live>(
+		builder->get_component(component::component_t::LIVE));
+	auto hp_builder = builder_live->get_attribute(
+		at(15), "fvd.data.entities.Health")->get(at(15));
+
+	// Command authentication and target validation happen before altering
+	// any existing orders. Unknown, friendly or foreign targets fail.
+	TESTEQUALS(fvd->issue_focus_attack(
+		state, 2, {horse->get_id()}, builder->get_id(), at(15)), false);
+	TESTEQUALS(fvd->issue_focus_attack(
+		state, 1, {horse->get_id()}, horse->get_id(), at(15)), false);
+	TESTEQUALS(fvd->issue_focus_attack(
+		state, 1, {horse->get_id()}, entity_id_t{999999}, at(15)), false);
+	TESTEQUALS(fvd->issue_focus_attack(
+		state, 1, {horse->get_id(), owner_builder}, builder->get_id(), at(15)), false);
+
+	// Exercise the same command entry point used by right-click picking.
+	event::SendCommandHandler command;
+	bool accepted = false;
+	command.invoke(*loop, nullptr, state, at(15),
+	               {{"type", component::command::command_t::FOCUS_ATTACK},
+	                {"owner", player_id_t{1}},
+	                {"target_entity", builder->get_id()},
+	                {"entity_ids", std::vector<entity_id_t>{horse->get_id()}},
+	                {"result_cb", std::function<void(bool)>{[&accepted](bool result) {
+		                accepted = result;
+	                }}}});
+	TESTEQUALS(accepted, true);
+	auto horse_move = std::dynamic_pointer_cast<component::Move>(
+		horse->get_component(component::component_t::MOVE));
+	TESTEQUALS(horse_move->get_active_target().has_value(), true);
+	fvd->combat_tick(state, at(15));
+	fvd->combat_tick(state, at(16));
+	TESTEQUALS(builder_live->get_attribute(
+		at(16), "fvd.data.entities.Health")->get(at(16)) < hp_builder, true);
+	TESTEQUALS(tower_live->get_attribute(
+		at(16), "fvd.data.entities.Health")->get(at(16)), hp_tower);
+
+	// An explicit target remains the priority for its entire lifetime.
+	for (int i = 17; i <= 25 and state->get_game_entities().contains(builder->get_id()); ++i) {
+		fvd->combat_tick(state, at(i));
+	}
+	TESTEQUALS(state->get_game_entities().contains(builder->get_id()), false);
+	fvd->combat_tick(state, at(26));
+	TESTEQUALS(horse_move->get_active_target().has_value(), false);
+	TESTEQUALS(tower_live->get_attribute(
+		at(26), "fvd.data.entities.Health")->get(at(26)), hp_tower);
+
+	// A fresh focus order can be replaced by an ordinary Move, so no
+	// stale focus remains to override subsequent human commands.
+	auto other_builder = entities->spawn_game_entity(
+		loop, state, 3, "fvd.data.entities.Builder", {71, 69, 0}, at(27));
+	TESTEQUALS(fvd->issue_focus_attack(
+		state, 1, {horse->get_id()}, other_builder->get_id(), at(27)), true);
+	accepted = false;
+	command.invoke(*loop, nullptr, state, at(27),
+	               {{"type", component::command::command_t::MOVE},
+	                {"owner", player_id_t{1}},
+	                {"target", coord::phys3{75, 69, 0}},
+	                {"entity_ids", std::vector<entity_id_t>{horse->get_id()}},
+	                {"result_cb", std::function<void(bool)>{[&accepted](bool result) {
+		                accepted = result;
+	                }}}});
+	TESTEQUALS(accepted, true);
+	auto other_live = std::dynamic_pointer_cast<component::Live>(
+		other_builder->get_component(component::component_t::LIVE));
+	auto other_hp = other_live->get_attribute(
+		at(27), "fvd.data.entities.Health")->get(at(27));
+	fvd->combat_tick(state, at(28));
+	TESTEQUALS(other_live->get_attribute(
+		at(28), "fvd.data.entities.Health")->get(at(28)), other_hp);
+}
 }

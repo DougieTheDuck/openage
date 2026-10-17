@@ -153,6 +153,34 @@ the AttackMove.
 - **WHEN** a horse on AttackMove detects a Builder and a completed tower within three tiles
 - **THEN** it targets the tower first, even if the Builder is closer
 
+### Requirement: Human Hunter can explicitly focus an enemy
+
+A local Hunter SHALL be able to right-click a visible Builder or completed
+tower to assign that specific entity as the selected horses' focus target.
+The simulation SHALL validate the selected horses and enemy ownership before
+applying the order. Focused horses SHALL approach and attack the chosen target
+without automatically switching to closer towers, and SHALL stop focusing
+when the target dies or another Move or AttackMove order supersedes it.
+
+#### Scenario: Hunter focuses a Builder defended by a tower
+- **WHEN** the Hunter right-clicks a Builder with a tower nearby
+- **THEN** selected surviving Hunter horses attack that Builder rather than
+  the tower, even when the tower is closer
+
+#### Scenario: Focus target dies
+- **WHEN** the chosen enemy dies
+- **THEN** the horses stop focusing it without automatically switching
+  to a nearby defensive tower
+
+#### Scenario: Focus order is replaced
+- **WHEN** the Hunter issues Move or AttackMove after a focus order
+- **THEN** the new order supersedes the focus
+
+#### Scenario: Invalid focus target or selection
+- **WHEN** the focus request references an unknown, friendly or dead entity,
+  or includes any non-Hunter unit in the selected group
+- **THEN** the simulation rejects the entire order without changing existing orders
+
 #### Scenario: Horse reaches its destination without an enemy
 - **WHEN** a horse finishes AttackMove with no eligible Builder or tower within three tiles
 - **THEN** it remains stationary, watches for nearby enemies, and awaits another Hunter command

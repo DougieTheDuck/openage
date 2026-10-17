@@ -31,7 +31,8 @@ The 20-second delay, one-second interval, horse collision radius and shove durat
 Horses are controlled by the human Hunter. Select one or drag to select a group, press A or the HUD's Attack-move button, then left-click a destination.
 Attack-moving horses detect Builders and completed enemy towers within three tiles and approach to melee range before striking.
 Towers always take automatic targeting priority over Builders when both are nearby, even if a Builder is closer.
-An explicit focus-attack order to override that priority is planned but not yet available; ordinary Move and Attack-move do not currently allow forcing a nearby Builder target.
+To override automatic tower priority in local gameplay, select Hunter horses and right-click an enemy Builder or completed tower: the horses focus that exact target until it dies or you give another order.
+Right-click empty terrain remains ordinary Move. Focus-attack has not yet been added to the multiplayer command protocol.
 They resume their original destination after an engagement, or stay there alert for nearby towers after arriving.
 If a selected horse dies before a group command is issued, its surviving teammates still carry out the order.
 Right-click issues an ordinary Move without seeking enemies; Escape cancels attack-move targeting.
