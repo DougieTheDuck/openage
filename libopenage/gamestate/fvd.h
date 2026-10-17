@@ -30,6 +30,7 @@ class EventEntity;
 
 namespace openage::gamestate {
 class EntityFactory;
+class GameEntity;
 class GameState;
 class TerrainFactory;
 
@@ -130,6 +131,14 @@ public:
 	bool queue_build(const std::shared_ptr<GameState> &state,
 	                 player_id_t owner, const std::vector<entity_id_t> &selected,
 	                 const coord::phys3 &position, const time::time_t &time);
+
+	/**
+	 * Right-click a foundation owned by this Builder to discard all other
+	 * orders and immediately begin constructing the selected foundation.
+	 */
+	bool prioritize_foundation(const std::shared_ptr<GameState> &state,
+	                           player_id_t owner, const std::vector<entity_id_t> &selected,
+	                           entity_id_t foundation_id, const time::time_t &time);
 
 	/** Number of sites waiting after the Builder's currently active tower. */
 	size_t get_queued_build_count(entity_id_t builder) const;
@@ -237,6 +246,28 @@ public:
 	std::vector<FVDArrowState> get_arrow_state(const time::time_t &now) const;
 
 private:
+	/** A queued tower retains a concrete, pickable foundation entity. */
+	struct QueuedBuildSite {
+		coord::tile site;
+		entity_id_t foundation_id;
+	};
+
+	/** Shared construction path and movement setup for new/queued sites. */
+	bool start_build(const std::shared_ptr<GameState> &state,
+	                 player_id_t owner, const std::vector<entity_id_t> &selected,
+	                 const coord::phys3 &position, const time::time_t &time,
+	                 std::optional<entity_id_t> existing_foundation);
+
+	/** Find a reachable vacant adjacent tile with public Pathfinder API. */
+	std::optional<coord::phys3> find_build_stand(
+		const std::shared_ptr<GameState> &state,
+		const std::shared_ptr<GameEntity> &builder,
+		const coord::tile &site, const time::time_t &time) const;
+
+	/** Remove queued foundations and release their footprint reservations. */
+	void clear_queued_builds(const std::shared_ptr<GameState> &state,
+	                        entity_id_t builder, const time::time_t &time);
+
 	struct AttackOrder {
 		coord::phys3 destination;
 		std::optional<entity_id_t> target;
@@ -350,7 +381,7 @@ private:
 	std::unordered_map<entity_id_t, time::time_t> tower_next_shot;
 	std::array<std::atomic<uint64_t>, 9> player_kills{};
 	std::unordered_map<entity_id_t, PendingBuild> build_orders;
-	std::unordered_map<entity_id_t, std::deque<coord::tile>> queued_builds;
+	std::unordered_map<entity_id_t, std::deque<QueuedBuildSite>> queued_builds;
 	std::unordered_map<coord::tile, entity_id_t> reserved_tiles;
 	std::unordered_map<entity_id_t, TowerFootprint> tower_footprints;
 };

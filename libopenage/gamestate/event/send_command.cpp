@@ -85,6 +85,23 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			}
 			return;
 		}
+		// Right-clicking a visible foundation while commanding a Builder
+		// replaces its construction queue rather than issuing a Move.
+		// All identity/ownership/queued-site checks stay authoritative.
+		if (command_type == component::command::command_t::MOVE
+		    and owner >= 2 and params.check_type<entity_id_t>("target_entity")) {
+			auto target_id = params.get<entity_id_t>("target_entity");
+			auto target = gstate->get_game_entities().find(target_id);
+			if (target != gstate->get_game_entities().end()
+			    and target->second->get_definition() == "fvd.data.entities.Foundation") {
+				const bool accepted = fvd->prioritize_foundation(
+					gstate, owner, ids, target_id, time);
+				if (result_cb) {
+					result_cb(accepted);
+				}
+				return;
+			}
+		}
 		if (command_type == component::command::command_t::FOCUS_ATTACK) {
 			const bool accepted = params.check_type<entity_id_t>("target_entity")
 			                   and fvd->issue_focus_attack(

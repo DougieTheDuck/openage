@@ -103,9 +103,16 @@ Horse(engine.util.game_entity.GameEntity):
 
 Foundation(engine.util.game_entity.GameEntity):
     GameEntity.types = {}
-    GameEntity.abilities = {Idle}
+    GameEntity.abilities = {Idle, Selectable}
     GameEntity.modifiers = {}
     GameEntity.variants = {}
+
+    Selectable(engine.ability.type.Selectable):
+        Selectable.selection_box = Box
+
+        Box(engine.util.selection_box.type.Rectangle):
+            Rectangle.width = 1.0
+            Rectangle.height = 1.0
 
     Idle(engine.ability.type.Idle):
         Ability.properties = {engine.ability.property.type.Animated: Animated}

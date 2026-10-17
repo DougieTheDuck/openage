@@ -4,6 +4,7 @@
 #include <functional>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 #include "assets/mod_manager.h"
 #include "config.h"
@@ -1152,5 +1153,114 @@ void fvd_build_queue() {
 	TESTEQUALS(fvd->is_tile_reserved({45, 66}), false);
 	TESTEQUALS(fvd->is_tile_reserved({42, 66}), false);
 	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+}
+
+void fvd_retask_foundation() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+
+	std::array<entity_id_t, 9> builders{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto owner = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		builders.at(owner->get_owners().get(time::TIME_ZERO)) = id;
+	}
+	auto builder = builders.at(2);
+	const std::vector<entity_id_t> selected{builder};
+	TESTEQUALS(fvd->queue_build(state, 2, selected, {61, 66, 0}, at(0)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, selected, {57, 66, 0}, at(0)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, selected, {54, 66, 0}, at(0)), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{2});
+
+	auto foundations = [&]() {
+		std::unordered_map<coord::tile, entity_id_t> ids;
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			if (entity->get_definition() == "fvd.data.entities.Foundation") {
+				auto position = std::dynamic_pointer_cast<component::Position>(
+					entity->get_component(component::component_t::POSITION));
+				ids[position->get_positions().get(at(0)).to_tile()] = id;
+			}
+		}
+		return ids;
+	};
+	auto markers = foundations();
+	TESTEQUALS(markers.size(), size_t{3});
+	TESTEQUALS(markers.contains(coord::tile{61, 66}), true);
+	TESTEQUALS(markers.contains(coord::tile{57, 66}), true);
+	TESTEQUALS(markers.contains(coord::tile{54, 66}), true);
+	auto chosen = markers.at(coord::tile{54, 66});
+	TESTEQUALS(fvd->prioritize_foundation(state, 3, {builders[3]}, chosen, at(0)), false);
+	TESTEQUALS(fvd->prioritize_foundation(state, 2, selected, entity_id_t{999999}, at(0)), false);
+
+	// Use the same right-click Move command path as local game input.
+	bool accepted = false;
+	event::SendCommandHandler command;
+	command.invoke(*loop, nullptr, state, at(0),
+	               {{"type", component::command::command_t::MOVE},
+	                {"owner", player_id_t{2}}, {"entity_ids", selected},
+	                {"target", coord::phys3{54, 66, 0}},
+	                {"target_entity", chosen},
+	                {"result_cb", std::function<void(bool)>{[&accepted](bool result) {
+		                accepted = result;
+	                }}}});
+	TESTEQUALS(accepted, true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{54, 66}));
+	markers = foundations();
+	TESTEQUALS(markers.size(), size_t{1});
+	TESTEQUALS(markers.at(coord::tile{54, 66}), chosen);
+	TESTEQUALS(fvd->is_tile_reserved({61, 66}), false);
+	TESTEQUALS(fvd->is_tile_reserved({57, 66}), false);
+	TESTEQUALS(fvd->is_tile_reserved({54, 66}), true);
+
+	// Clicking the active foundation retains its order ID and progress,
+	// discarding the remaining queue without restarting construction.
+	auto order_id = fvd->get_build_order(builder)->get_id();
+	TESTEQUALS(fvd->queue_build(state, 2, selected, {48, 66, 0}, at(0)), true);
+	TESTEQUALS(foundations().size(), size_t{2});
+	TESTEQUALS(fvd->prioritize_foundation(state, 2, selected, chosen, at(0)), true);
+	TESTEQUALS(fvd->get_build_order(builder)->get_id(), order_id);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	TESTEQUALS(foundations().size(), size_t{1});
+	TESTEQUALS(fvd->is_tile_reserved({48, 66}), false);
+
+	loop->reach_time(at(35), state);
+	TESTEQUALS(fvd->get_build_order(builder) == nullptr, true);
+	TESTEQUALS(state->get_game_entities().contains(chosen), false);
+	bool completed = false;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			auto position = std::dynamic_pointer_cast<component::Position>(
+				entity->get_component(component::component_t::POSITION));
+			completed = completed
+				or position->get_positions().get(at(35)).to_tile() == coord::tile{54, 66};
+		}
+	}
+	TESTEQUALS(completed, true);
+
+	// Ordinary movement cancels both current and future foundations.
+	TESTEQUALS(fvd->queue_build(state, 2, selected, {45, 66, 0}, at(36)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, selected, {42, 66, 0}, at(36)), true);
+	TESTEQUALS(foundations().size(), size_t{2});
+	command.invoke(*loop, nullptr, state, at(36),
+	               {{"type", component::command::command_t::MOVE},
+	                {"owner", player_id_t{2}}, {"entity_ids", selected},
+	                {"target", coord::phys3{40, 70, 0}}});
+	TESTEQUALS(foundations().empty(), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	TESTEQUALS(fvd->is_tile_reserved({45, 66}), false);
+	TESTEQUALS(fvd->is_tile_reserved({42, 66}), false);
 }
 }

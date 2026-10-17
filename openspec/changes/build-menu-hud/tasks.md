@@ -8,3 +8,5 @@
 - [ ] 1.6 Test QML interactions manually plus any testable controller state; run available checks.
 
 - [x] 1.7 Add local Shift-click FIFO queued construction, tile reservations, cancellation and regression tests. Network queue forwarding remains a separate integration.
+- [x] 1.8 Render every queued site as a persistent pickable foundation; right-click to retask the owning Builder while canceling other jobs.
+- [x] 1.9 Remove Ctrl-left-click construction and its Shift+Ctrl variant.

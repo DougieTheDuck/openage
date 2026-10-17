@@ -48,6 +48,40 @@ replacing the active order SHALL release future queued reservations.
 - **WHEN** a queued site cannot be built when it reaches the front
 - **THEN** the Builder skips that site and tries the next queued location
 
+### Requirement: Queued sites have persistent foundation markers
+
+Every accepted queued tower location SHALL immediately create a world
+Foundation entity associated with its owner, Builder, and reserved
+footprint. The foundation SHALL remain visible and pickable until work
+begins there or the order is canceled. Canceling an order SHALL remove
+its unbuilt marker as well as its reservation.
+
+#### Scenario: Queue three sites
+- **WHEN** a Builder Shift-clicks three valid locations
+- **THEN** each has a visible foundation marker before work begins there
+
+#### Scenario: Builder reassigns work to a queued foundation
+- **WHEN** a Builder is selected and the player right-clicks one of that
+  Builder's queued foundation markers
+- **THEN** every other active and pending construction order is canceled
+- **AND** the other queued foundations and reservations disappear
+- **AND** the selected foundation remains and construction begins there
+
+#### Scenario: Builder targets its active foundation
+- **WHEN** the player right-clicks the foundation for the current order
+- **THEN** the current job continues without losing progress
+- **AND** all other pending construction orders are canceled
+
+#### Scenario: Another Builder attempts to retask a foreign foundation
+- **WHEN** the selected Builder does not own the foundation's order
+- **THEN** no construction order is changed
+
+### Requirement: No Ctrl-click construction shortcut
+
+The Ctrl-left-click development shortcut SHALL NOT place towers.
+Construction placement SHALL use the Build Tower action and its
+ordinary/Shift-click modes.
+
 ### Requirement: Hunter has no build action
 
 Player 1 SHALL have no enabled construction menu, even though that player
