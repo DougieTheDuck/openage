@@ -336,19 +336,6 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			time_loop->get_clock()->get_time(), params);
 	}};
 
-	binding_action create_entity_action{forward_action_t::SEND, create_entity_event};
-	Event ev_mouse_lmb_ctrl{
-		event_class::MOUSE_BUTTON,
-		Qt::MouseButton::LeftButton,
-		Qt::KeyboardModifier::ControlModifier,
-		QEvent::MouseButtonRelease};
-
-	ctx->bind(ev_mouse_lmb_ctrl, create_entity_action);
-	ctx->bind(Event{event_class::MOUSE_BUTTON, Qt::MouseButton::LeftButton,
-	                static_cast<int>(Qt::KeyboardModifier::ControlModifier
-	                                 | Qt::KeyboardModifier::ShiftModifier),
-	                QEvent::MouseButtonRelease}, create_entity_action);
-
 	auto fvd = simulation->get_game()->get_state()->get_fvd();
 	if (fvd) {
 		binding_func_t start_placement{[](const event_arguments &,
@@ -404,16 +391,23 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 
 		// The render-thread pick reports only an entity ID. Target
 		// ownership, type, and life are checked on the simulation thread.
-		auto send_order = [simulation, time_loop, mouse_pos, owner, ids = selection.ids](
+		const bool hunter_selection = owner == 1 and not selection.ids.empty()
+			and (selection.kind == SelectionKind::HORSE
+			     or selection.kind == SelectionKind::GROUP_HORSES);
+		const bool builder_selection = owner >= 2 and selection.ids.size() == 1
+			and selection.kind == SelectionKind::BUILDER;
+		auto send_order = [simulation, time_loop, mouse_pos, owner, ids = selection.ids,
+		                   hunter_selection, builder_selection](
 			std::optional<gamestate::entity_id_t> picked) {
 			event::EventHandler::param_map::map_t params{
-				{"type", picked ? gamestate::component::command::command_t::FOCUS_ATTACK
-				                : gamestate::component::command::command_t::MOVE},
+				{"type", picked and hunter_selection
+				           ? gamestate::component::command::command_t::FOCUS_ATTACK
+				           : gamestate::component::command::command_t::MOVE},
 				{"target", mouse_pos},
 				{"owner", owner},
 				{"entity_ids", ids},
 			};
-			if (picked) {
+			if (picked and (hunter_selection or builder_selection)) {
 				params.emplace("target_entity", *picked);
 			}
 			simulation->get_event_loop()->submit_event(
@@ -421,9 +415,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				simulation->get_game()->get_state(),
 				time_loop->get_clock()->get_time(), params);
 		};
-		if (owner == 1 and not selection.ids.empty()
-		    and (selection.kind == SelectionKind::HORSE
-		         or selection.kind == SelectionKind::GROUP_HORSES)) {
+		if (hunter_selection or builder_selection) {
 			pick_entity(args.mouse, send_order);
 		}
 		else {

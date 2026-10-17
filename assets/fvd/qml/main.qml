@@ -148,7 +148,7 @@ Item {
 			color: "#ffffff"
 			font.pixelSize: 14
 			text: root.placing
-			    ? "Build: click to place | Shift+click queue | Green valid / Red blocked | Esc cancel"
+			    ? "Build: click | Shift+click queue | Right-click foundation to retask | Esc cancel"
 			    : root.attacking ? "Attack-move: click map | Right-click or Esc cancels"
 			    : root.canAttack
 			    ? "Hunter: Right-click enemy to focus | Right-click ground to move | A: Attack-move"

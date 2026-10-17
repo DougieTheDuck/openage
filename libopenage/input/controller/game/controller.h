@@ -205,9 +205,10 @@ private:
 /**
  * Setup default controller action bindings:
  *
- * - CTRL + Left Mouse click: Create game entity.
- * - Right Mouse click: Move to terrain; Hunter right-click on a visible
- *   enemy: Focus-attack the picked entity.
+ * - B, then Left Mouse click: Build a tower; Shift-click to append sites.
+ * - Right Mouse click: Move to terrain; Hunter right-clicks enemy to
+ *   focus-attack, while a Builder right-clicks a queued foundation to
+ *   clear its other orders and construct that foundation.
  *
  * @param ctx Binding context the actions are added to.
  * @param time_loop Time loop for getting simulation time.

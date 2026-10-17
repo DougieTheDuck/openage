@@ -54,7 +54,11 @@ Select a Builder, click **Build Tower** (or press **B**) and move the cursor to 
 Click once to replace the active construction order, or **hold Shift while clicking** to queue multiple sites for the same Builder. Shift-click keeps placement mode active until Esc or right-click.
 Queued sites reserve their entire footprints immediately; after finishing one tower, the Builder starts the next. Inaccessible queued sites are skipped and the HUD shows the number waiting.
 Right-click or press **Escape** while choosing a tile to cancel placement without moving the Builder.
-The original Ctrl-left-click build shortcut remains available for development.
+The old Ctrl-left-click construction shortcut has been removed. Press B or use the Build Tower HUD button instead.
+Each queued site displays a persistent, pickable foundation as soon as the order is accepted.
+With the Builder selected, right-click one of its own foundations to clear all other construction orders and immediately work on that foundation.
+Right-clicking the foundation already being built keeps its progress but cancels the rest of the queue.
+Moving the Builder to ordinary terrain cancels all outstanding foundations and reservations.
 Footprint preview and queued tower count are displayed in the HUD; detailed construction progress is not yet shown.
 The simulation validates ownership and reserves the target tile, so the Hunter and other Builders cannot claim the same site.
 The Builder walks to an available neighboring tile and constructs for the configured duration.
