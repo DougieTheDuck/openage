@@ -127,6 +127,34 @@ enum class PlayerRole : uint16_t {
 	BUILDER = 2,
 };
 
+/** A stable identity in the pre-match lobby; not yet a game player slot. */
+struct LobbyParticipant {
+	uint64_t participant_id{0};
+	std::string name{};
+	bool is_host{false};
+};
+
+/** Complete host-authored pre-match participant list. */
+struct ParticipantSnapshot {
+	uint64_t revision{0};
+	uint64_t host_participant_id{0};
+	std::vector<LobbyParticipant> participants{};
+};
+
+/** One immutable participant-to-game-player mapping established at start. */
+struct LobbyAssignment {
+	uint64_t participant_id{0};
+	gamestate::player_id_t player_id{0};
+	PlayerRole role{PlayerRole::BUILDER};
+};
+
+/** Host-only match-start announcement with the Hunter draw and Builder slots. */
+struct StartMatch {
+	uint64_t lobby_revision{0};
+	uint64_t host_participant_id{0};
+	std::vector<LobbyAssignment> assignments{};
+};
+
 /** One playable player in authoritative world state. */
 struct PlayerState {
 	gamestate::player_id_t player_id{0};
@@ -221,6 +249,14 @@ std::vector<uint8_t> encode_server_reject(const ServerReject &reject);
 
 /** Decode and validate a ServerReject payload. */
 ServerReject decode_server_reject(const std::vector<uint8_t> &payload);
+
+/** Encode/decode complete pre-start lobby participant snapshots. */
+std::vector<uint8_t> encode_participant_snapshot(const ParticipantSnapshot &snapshot);
+ParticipantSnapshot decode_participant_snapshot(const std::vector<uint8_t> &payload);
+
+/** Encode/decode the authoritative participant-to-game-player assignment. */
+std::vector<uint8_t> encode_start_match(const StartMatch &start);
+StartMatch decode_start_match(const std::vector<uint8_t> &payload);
 
 /** Encode a CommandIntent payload. */
 std::vector<uint8_t> encode_command_intent(const CommandIntent &intent);

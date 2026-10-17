@@ -6,6 +6,37 @@ The host participant submits commands through the same validation boundary but d
 
 See [the engine architecture](../architecture.md) for the subsystem boundaries and [the synchronized-match design](../../../openspec/changes/synchronized-match/design.md) for the gameplay authority model.
 
+## Pre-match lobby core
+
+`network::HostLobby` now owns the pre-start participant roster independently
+from the game-state player slots. The host can add/remove named guests (at most
+eight humans), publish a complete `ParticipantSnapshot`, and start exactly
+once when at least two people are present. Invalid, repeated and late joins,
+unknown or host departures, and duplicate participant identities are rejected.
+
+At Start, the host chooses one Hunter using a uniformly selected ticket in
+`[0, 2*N-1)`: the host has one ticket and every guest has two. This yields
+one-third host Hunter probability for two humans and one-fifteenth for eight.
+The Hunter receives gameplay slot 1, and remaining players receive distinct
+random Builder slots 2..N via Fisher-Yates. The lottery can use production
+randomness or an injected bounded draw for deterministic tests. Lobby identity
+and slot assignment become immutable at Start.
+
+`PARTICIPANT_SNAPSHOT` and `START_MATCH` now have validated payload
+encoders/decoders. Both include host participant ID and lobby revision.
+`PARTICIPANT_SNAPSHOT` includes each stable participant ID, host flag and
+name; `START_MATCH` includes the final participant-to-player mapping and
+Hunter/Builder role. The decoder rejects invalid sizes, reserved flags,
+duplicate identities and malformed role allocations.
+
+**Integration still required:** the direct-IP and relay lobby socket handlers
+must broadcast these payloads, present them in Qt, and start the simulation
+using **only the assigned participants**. Currently `host_handshake` still
+binds the game player slot at acceptance, so it must be adapted to distinguish
+pre-start participant identity from final player identity before this lobby
+can be used in real multiplayer. This new module does not claim that the
+graphical lobby is playable yet.
+
 ## Transport
 
 The first transport uses TCP through Winsock on Windows.

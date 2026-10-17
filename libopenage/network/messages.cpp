@@ -7,6 +7,7 @@
 
 #include "error/error.h"
 #include "network/serialization.h"
+#include "network/lobby.h"
 
 namespace openage::network {
 
@@ -238,6 +239,87 @@ ServerReject decode_server_reject(const std::vector<uint8_t> &payload) {
 		throw Error{MSG(err) << "FVD handshake rejection reason must not be empty"};
 	}
 	return reject;
+}
+
+std::vector<uint8_t> encode_participant_snapshot(const ParticipantSnapshot &snapshot) {
+	validate_participant_snapshot(snapshot);
+	std::vector<uint8_t> bytes;
+	append_u64(bytes, snapshot.revision);
+	append_u64(bytes, snapshot.host_participant_id);
+	append_u16(bytes, static_cast<uint16_t>(snapshot.participants.size()));
+	append_u16(bytes, 0);
+	for (const auto &p : snapshot.participants) {
+		append_u64(bytes, p.participant_id);
+		append_u16(bytes, p.is_host ? 1 : 0);
+		append_u16(bytes, 0);
+		append_string(bytes, p.name, MAX_PARTICIPANT_NAME_SIZE);
+	}
+	return bytes;
+}
+
+ParticipantSnapshot decode_participant_snapshot(const std::vector<uint8_t> &bytes) {
+	PayloadReader reader{bytes};
+	ParticipantSnapshot snapshot{};
+	snapshot.revision = reader.u64();
+	snapshot.host_participant_id = reader.u64();
+	const auto count = reader.u16();
+	if (reader.u16() != 0 or count == 0 or count > MAX_STATE_PLAYERS) {
+		throw Error{MSG(err) << "Invalid FVD participant snapshot flags or size"};
+	}
+	snapshot.participants.reserve(count);
+	for (uint16_t i = 0; i < count; ++i) {
+		const auto id = reader.u64();
+		const auto flags = reader.u16();
+		if ((flags & ~uint16_t{1}) != 0 or reader.u16() != 0) {
+			throw Error{MSG(err) << "Unsupported FVD participant flags"};
+		}
+		snapshot.participants.push_back({
+			id, reader.string(MAX_PARTICIPANT_NAME_SIZE), (flags & 1) != 0});
+	}
+	reader.finish();
+	validate_participant_snapshot(snapshot);
+	return snapshot;
+}
+
+std::vector<uint8_t> encode_start_match(const StartMatch &start) {
+	validate_start_match(start);
+	std::vector<uint8_t> bytes;
+	append_u64(bytes, start.lobby_revision);
+	append_u64(bytes, start.host_participant_id);
+	append_u16(bytes, static_cast<uint16_t>(start.assignments.size()));
+	append_u16(bytes, 0);
+	for (const auto &assignment : start.assignments) {
+		append_u64(bytes, assignment.participant_id);
+		append_u64(bytes, assignment.player_id);
+		append_u16(bytes, static_cast<uint16_t>(assignment.role));
+		append_u16(bytes, 0);
+	}
+	return bytes;
+}
+
+StartMatch decode_start_match(const std::vector<uint8_t> &bytes) {
+	PayloadReader reader{bytes};
+	StartMatch start{};
+	start.lobby_revision = reader.u64();
+	start.host_participant_id = reader.u64();
+	const auto count = reader.u16();
+	if (reader.u16() != 0 or count < 2 or count > MAX_STATE_PLAYERS) {
+		throw Error{MSG(err) << "Invalid FVD start-match flags or participant count"};
+	}
+	start.assignments.reserve(count);
+	for (uint16_t i = 0; i < count; ++i) {
+		auto participant_id = reader.u64();
+		auto player_id = reader.u64();
+		const auto role = reader.u16();
+		if (reader.u16() != 0 or not is_known_player_role(role)) {
+			throw Error{MSG(err) << "Unknown FVD start-match role or flags"};
+		}
+		start.assignments.push_back({
+			participant_id, player_id, static_cast<PlayerRole>(role)});
+	}
+	reader.finish();
+	validate_start_match(start);
+	return start;
 }
 
 std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {

@@ -90,6 +90,7 @@ def tests_cpp():
     yield "openage::network::tests::messages"
     yield "openage::network::tests::protocol"
     yield "openage::network::tests::handshake"
+    yield "openage::network::tests::lobby"
     yield "openage::network::tests::session"
     yield "openage::network::tests::command_mailbox"
     yield "openage::network::tests::connection_mailbox"
