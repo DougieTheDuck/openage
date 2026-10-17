@@ -393,25 +393,28 @@ bool TcpConnection::is_open() const {
 
 TcpListener::TcpListener() :
 	socket_handle{INVALID_SOCKET_HANDLE},
-	port{0} {}
+	port{0},
+	socket_lifetime_mutex{} {}
 
 TcpListener::TcpListener(uintptr_t socket_handle, uint16_t port) :
 	socket_handle{socket_handle},
-	port{port} {}
+	port{port},
+	socket_lifetime_mutex{} {}
 
 TcpListener::~TcpListener() {
 	this->close();
 }
 
 TcpListener::TcpListener(TcpListener &&other) noexcept :
-	socket_handle{std::exchange(other.socket_handle, INVALID_SOCKET_HANDLE)},
-	port{std::exchange(other.port, 0)} {}
+	socket_handle{other.socket_handle.exchange(INVALID_SOCKET_HANDLE)},
+	port{other.port.exchange(0)},
+	socket_lifetime_mutex{} {}
 
 TcpListener &TcpListener::operator=(TcpListener &&other) noexcept {
 	if (this != &other) {
 		this->close();
-		this->socket_handle = std::exchange(other.socket_handle, INVALID_SOCKET_HANDLE);
-		this->port = std::exchange(other.port, 0);
+		this->socket_handle.store(other.socket_handle.exchange(INVALID_SOCKET_HANDLE));
+		this->port.store(other.port.exchange(0));
 	}
 	return *this;
 }
@@ -457,21 +460,46 @@ TcpListener TcpListener::listen(const std::string &address, uint16_t port) {
 		throw Error{MSG(err) << "Could not listen on TCP endpoint " << address
 		                     << ":" << port << ": " << last_socket_error()};
 	}
+	try {
+		make_socket_nonblocking(listening);
+	}
+	catch (...) {
+		close_socket(listening);
+		throw;
+	}
 	return TcpListener{from_native(listening), socket_port(listening)};
 }
 
 TcpConnection TcpListener::accept() {
-	if (not this->is_open()) {
+	std::shared_lock socket_lock{this->socket_lifetime_mutex};
+	auto socket_handle = this->socket_handle.load();
+	if (socket_handle == INVALID_SOCKET_HANDLE) {
 		throw Error{MSG(err) << "Cannot accept from a closed TCP listener"};
 	}
 
 	native_socket_t accepted = INVALID_NATIVE_SOCKET;
 	while (accepted == INVALID_NATIVE_SOCKET) {
-		accepted = ::accept(to_native(this->socket_handle), nullptr, nullptr);
-		if (accepted == INVALID_NATIVE_SOCKET && not interrupted_socket_call()) {
-			throw Error{MSG(err) << "Could not accept FVD TCP connection: "
-			                     << last_socket_error()};
+		if (this->socket_handle.load() != socket_handle) {
+			throw Error{MSG(err) << "FVD TCP listener closed during accept"};
 		}
+		accepted = ::accept(to_native(socket_handle), nullptr, nullptr);
+		if (accepted != INVALID_NATIVE_SOCKET) {
+			break;
+		}
+		if (interrupted_socket_call()) {
+			continue;
+		}
+		if (would_block_socket_call()) {
+			auto ready = wait_for_socket(to_native(socket_handle), false);
+			if (ready >= 0 or interrupted_socket_call()) {
+				continue;
+			}
+		}
+		if (this->socket_handle.load() != socket_handle) {
+			throw Error{MSG(err) << "FVD TCP listener closed during accept"};
+		}
+		throw Error{MSG(err) << "Could not accept FVD TCP connection: "
+		                     << last_socket_error()};
 	}
 	prevent_sigpipe(accepted);
 	try {
@@ -485,22 +513,23 @@ TcpConnection TcpListener::accept() {
 }
 
 uint16_t TcpListener::get_port() const {
-	return this->port;
+	return this->port.load();
 }
 
 void TcpListener::close() {
-	if (not this->is_open()) {
+	auto socket_handle = this->socket_handle.exchange(INVALID_SOCKET_HANDLE);
+	if (socket_handle == INVALID_SOCKET_HANDLE) {
 		return;
 	}
-	auto socket = to_native(this->socket_handle);
-	this->socket_handle = INVALID_SOCKET_HANDLE;
-	this->port = 0;
+	this->port.store(0);
+	auto socket = to_native(socket_handle);
 	shutdown_socket(socket);
+	std::unique_lock socket_lock{this->socket_lifetime_mutex};
 	close_socket(socket);
 }
 
 bool TcpListener::is_open() const {
-	return this->socket_handle != INVALID_SOCKET_HANDLE;
+	return this->socket_handle.load() != INVALID_SOCKET_HANDLE;
 }
 
 } // namespace openage::network

@@ -79,10 +79,16 @@ public:
 	 * @return A completed pair when this connection supplies its second role,
 	 * or nullopt after storing the first role or rejecting the connection.
 	 */
-	std::optional<RelayPair> admit(TcpConnection connection);
+	std::optional<RelayPair> admit(TcpConnection &connection);
+
+	/** Admit a temporary connection. */
+	std::optional<RelayPair> admit(TcpConnection &&connection);
 
 	/** Close and remove a pair that has not completed admission. */
 	bool cancel(uint64_t match_id, gamestate::player_id_t player_id);
+
+	/** Close and remove every pair that has not completed admission. */
+	size_t cancel_all();
 
 	/** Number of provisioned pairs still awaiting one or both roles. */
 	size_t pair_count() const;

@@ -103,8 +103,9 @@ public:
 private:
 	TcpListener(uintptr_t socket_handle, uint16_t port);
 
-	uintptr_t socket_handle;
-	uint16_t port;
+	std::atomic<uintptr_t> socket_handle;
+	std::atomic<uint16_t> port;
+	mutable std::shared_mutex socket_lifetime_mutex;
 };
 
 } // namespace openage::network

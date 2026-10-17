@@ -127,6 +127,10 @@ def main(argv=None):
 
     init_subparser(subparsers.add_parser("test", parents=[global_cli, cfg_cli]))
 
+    from .relay.main import init_subparser
+
+    init_subparser(subparsers.add_parser("relay", parents=[global_cli]))
+
     from .convert.main import init_subparser
 
     init_subparser(subparsers.add_parser("convert", parents=[global_cli]))

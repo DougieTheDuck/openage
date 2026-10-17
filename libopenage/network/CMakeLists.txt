@@ -20,6 +20,8 @@ add_sources(libopenage
 	relay.cpp
 	relay_process_test.cpp
 	relay_registry_test.cpp
+	relay_service.cpp
+	relay_service_test.cpp
 	relay_test.cpp
 	replication.cpp
 	replication_test.cpp
@@ -28,4 +30,8 @@ add_sources(libopenage
 	session_test.cpp
 	transport.cpp
 	transport_test.cpp
+)
+
+pxdgen(
+	relay_service.h
 )

@@ -278,7 +278,7 @@ void RelayPairRegistry::provision(const RelayPairCredentials &credentials) {
 		PendingPair{credentials, std::nullopt, std::nullopt});
 }
 
-std::optional<RelayPair> RelayPairRegistry::admit(TcpConnection connection) {
+std::optional<RelayPair> RelayPairRegistry::admit(TcpConnection &connection) {
 	std::optional<RelayConnect> connect{};
 	try {
 		connect = receive_relay_connect(connection);
@@ -341,6 +341,10 @@ std::optional<RelayPair> RelayPairRegistry::admit(TcpConnection connection) {
 	return completed;
 }
 
+std::optional<RelayPair> RelayPairRegistry::admit(TcpConnection &&connection) {
+	return this->admit(connection);
+}
+
 bool RelayPairRegistry::cancel(uint64_t match_id,
                                gamestate::player_id_t player_id) {
 	if (match_id == 0 or player_id == 0) {
@@ -348,6 +352,13 @@ bool RelayPairRegistry::cancel(uint64_t match_id,
 	}
 	std::scoped_lock lock{this->mutex};
 	return this->pairs.erase({match_id, player_id}) > 0;
+}
+
+size_t RelayPairRegistry::cancel_all() {
+	std::scoped_lock lock{this->mutex};
+	auto count = this->pairs.size();
+	this->pairs.clear();
+	return count;
 }
 
 size_t RelayPairRegistry::pair_count() const {

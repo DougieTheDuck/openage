@@ -211,6 +211,19 @@ void relay_registry() {
 		registry.cancel(third_credentials.match_id, third_credentials.player_id),
 		false);
 	TESTTHROWS(registry.cancel(0, third_credentials.player_id));
+
+	registry.provision(first_credentials);
+	registry.provision(second_credentials);
+	auto pending_first_host = open_admission(
+		listener.get_port(), registry_connect(first_credentials, RelayRole::HOST));
+	TESTEQUALS(registry.admit(listener.accept()).has_value(), false);
+	auto pending_second_guest = open_admission(
+		listener.get_port(), registry_connect(second_credentials, RelayRole::GUEST));
+	TESTEQUALS(registry.admit(listener.accept()).has_value(), false);
+	TESTEQUALS(registry.cancel_all(), size_t{2});
+	TESTEQUALS(pending_first_host.receive_frame().has_value(), false);
+	TESTEQUALS(pending_second_guest.receive_frame().has_value(), false);
+	TESTEQUALS(registry.pair_count(), size_t{0});
 }
 
 } // namespace openage::network::tests
