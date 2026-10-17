@@ -810,6 +810,7 @@ void run_guest(uint16_t port) {
 	impacted_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*impacted_frame);
 	auto impacted_patch = decode_world_delta(impacted_frame->payload);
+	TESTEQUALS(impacted_patch.changed.arrows.empty(), true);
 	replication.accept_delta(impacted_patch) == DeltaDisposition::APPLY or TESTFAIL;
 	auto impacted = replication.get_world_state().value();
 	TESTEQUALS(impacted_patch.changed.base_revision, uint64_t{6});

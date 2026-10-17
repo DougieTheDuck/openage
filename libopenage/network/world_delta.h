@@ -10,9 +10,9 @@
 namespace openage::network {
 
 /**
- * A WorldDelta contains only changed records and explicit removals.
- * All record sets use their stable identity (entity ID, order ID, tile, etc.).
- * The header and the optional lifetime-score change are authoritative.
+ * A WorldDelta contains changed records and removals for persistent objects.
+ * Arrows have a known end time and expire locally without network tombstones.
+ * Record sets use stable identities; headers and score updates are authoritative.
  */
 struct WorldDelta {
 	WorldState changed{};
@@ -22,8 +22,10 @@ struct WorldDelta {
 	std::vector<coord::tile> removed_reservations{};
 	std::vector<uint64_t> removed_constructions{};
 	std::vector<gamestate::entity_id_t> removed_attack_orders{};
-	std::vector<uint64_t> removed_arrows{};
 };
+
+/** An arrow is a timed visual: no new network data is needed for expiry. */
+bool arrow_visible_at(const ArrowState &arrow, const time::time_t &time);
 
 /** Compare two complete, recipient-specific states and produce a true patch. */
 WorldDelta make_world_delta(const WorldState &previous, const WorldState &current);

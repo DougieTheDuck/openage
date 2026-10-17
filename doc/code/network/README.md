@@ -196,12 +196,15 @@ Protocol major version 3 added persistent participant connection status to playe
 Protocol major version 4 adds the individual Tower kill-count field to every entity record and must not connect to version 3 peers.
 Protocol major version 5 adds the distinct incremental WorldDelta payload and is
 incompatible with version 4 clients.
+Protocol major version 6 removes arrow tombstones: clients expire replicated
+projectiles locally from their launch/impact timestamps. Version 5 peers are
+incompatible with the shortened delta payload.
 Protocol minor version 1 supports optional relay admission within the same protocol major version.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
 
 ### Incremental WorldDelta payload (protocol 5)
 
-A delta has a 32-byte header, a length-delimited partial WorldState section
+A delta has a 28-byte header, a length-delimited partial WorldState section
 (encoded using the same individual record representation as a snapshot) and
 six lists of removal identifiers. Its header contains:
 
@@ -210,8 +213,8 @@ six lists of removal identifiers. Its header contains:
 | 0 | 2 | Delta flags: bit 0 means the recipient lifetime kill count changed |
 | 2 | 2 | Reserved, zero |
 | 4 | 4 | Partial WorldState section length |
-| 8 | 24 | Six 4-byte removal counts, in the order below |
-| 32 | variable | Partial WorldState, then removal IDs |
+| 8 | 20 | Five 4-byte removal counts, in the order below |
+| 28 | variable | Partial WorldState, then removal IDs |
 
 The partial section carries base/world revisions, simulation time, map size and
 recipient identity, followed by **upserts only**. Player, entity, reservation,
@@ -222,7 +225,10 @@ is retained. An empty player list is valid in a delta but not a snapshot.
 
 Removal lists follow in this order: player IDs (u64), entity IDs (u64),
 reservation coordinates (two signed i64), construction order IDs (u64),
-Hunter attack-order horse IDs (u64), and arrow IDs (u64).
+and Hunter attack-order horse IDs (u64). Arrows have no removal list:
+the client stops rendering each arrow once its simulation time reaches
+the supplied impact time and prunes it from the reconstructed world state
+when applying subsequent updates.
 The decoder bounds every count, requires exact payload length, and rejects
 unsupported flags and malformed records. Applying a delta rejects unknown or
 duplicate removals, conflicting updates/removals, noncontiguous revisions,
@@ -302,7 +308,8 @@ Clients apply only contiguous revisions and request a snapshot after a gap.
 The initial implementation has no client prediction.
 Clients render the reconstructed authoritative world and may interpolate presentation positions without changing simulation state.
 Individual projectile launch records are sent when they appear, not repeated
-while an arrow remains in flight. They are removed by ID after impact.
+while an arrow remains in flight. Their impact timestamp is sufficient for
+client-side visual expiration; no arrow removal ID is transmitted.
 Unit positions are sampled and transmitted only when they change; curve or
 movement-path replication remains a separate future optimization.
 

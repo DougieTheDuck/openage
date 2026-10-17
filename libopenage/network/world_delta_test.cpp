@@ -29,6 +29,13 @@ void world_delta() {
 	initial.arrows = {{
 		55, 2, 10, {65, 65, 1}, {60, 60, 0},
 		time::time_t::from_int(20), time::time_t::from_double(20.2)}};
+	// The guest can stop drawing at the prescribed time, without a packet.
+	TESTEQUALS(arrow_visible_at(
+		initial.arrows.front(), time::time_t::from_double(19.9)), false);
+	TESTEQUALS(arrow_visible_at(
+		initial.arrows.front(), time::time_t::from_double(20.1)), true);
+	TESTEQUALS(arrow_visible_at(
+		initial.arrows.front(), time::time_t::from_double(20.2)), false);
 
 	WorldDeltaBaseline host{};
 	TESTEQUALS(host.initialized(), false);
@@ -57,8 +64,8 @@ void world_delta() {
 	TESTEQUALS(rebuilt.arrows.size(), size_t{1});
 	TESTEQUALS(rebuilt.local_kill_count, uint64_t{4});
 
-	// Replace one entity, insert another, delete the old horse; construct,
-	// attack and arrow records all gain real tombstones.
+	// Replace one entity, insert another, delete the old horse; persistent
+	// objects gain tombstones but arrows expire from their impact time.
 	auto changed = no_change;
 	changed.world_revision = 12;
 	changed.simulation_time = time::time_t::from_double(20.2);
@@ -84,7 +91,6 @@ void world_delta() {
 	TESTEQUALS(delta.removed_reservations.size(), size_t{1});
 	TESTEQUALS(delta.removed_constructions.size(), size_t{1});
 	TESTEQUALS(delta.removed_attack_orders.size(), size_t{1});
-	TESTEQUALS(delta.removed_arrows.size(), size_t{1});
 	TESTEQUALS(delta.changed.arrows.size(), size_t{1});
 	auto encoded = encode_world_delta(delta);
 	TESTEQUALS(encoded.size() < encode_world_state(changed).size(), true);
@@ -101,6 +107,7 @@ void world_delta() {
 	TESTEQUALS(applied.attack_orders.empty(), true);
 	TESTEQUALS(applied.arrows.size(), size_t{1});
 	TESTEQUALS(applied.arrows.front().arrow_id, uint64_t{56});
+	// Arrow 55 expired at t=20.2 without a removal ID being transmitted.
 
 	// Corruption, duplicate removals, wrong players and gaps cannot
 	// change a client's last accepted state.

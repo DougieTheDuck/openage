@@ -143,9 +143,9 @@ void validate_header(const WorldState &previous, const WorldState &next) {
 
 constexpr uint32_t MAX_REMOVALS[] = {
 	MAX_STATE_PLAYERS, MAX_STATE_ENTITIES, MAX_STATE_RESERVATIONS,
-	MAX_STATE_CONSTRUCTIONS, MAX_STATE_ATTACK_ORDERS, MAX_STATE_ARROWS
+	MAX_STATE_CONSTRUCTIONS, MAX_STATE_ATTACK_ORDERS
 };
-constexpr size_t DELTA_HEADER_BYTES = 32;
+constexpr size_t DELTA_HEADER_BYTES = 28;
 constexpr uint16_t LOCAL_KILLS_CHANGED = 1;
 
 void check_count(size_t count, uint32_t limit) {
@@ -160,6 +160,10 @@ void check_room(const std::vector<uint8_t> &bytes, size_t offset, size_t length)
 }
 
 } // namespace
+
+bool arrow_visible_at(const ArrowState &arrow, const time::time_t &now) {
+	return now >= arrow.launch_time and now < arrow.impact_time;
+}
 
 WorldDelta make_world_delta(const WorldState &previous, const WorldState &current) {
 	validate_header(previous, current);
@@ -183,8 +187,24 @@ WorldDelta make_world_delta(const WorldState &previous, const WorldState &curren
 	           delta.changed.constructions, delta.removed_constructions, construction_key);
 	difference(previous.attack_orders, current.attack_orders,
 	           delta.changed.attack_orders, delta.removed_attack_orders, attack_key);
-	difference(previous.arrows, current.arrows,
-	           delta.changed.arrows, delta.removed_arrows, arrow_key);
+	// Arrows are immutable launch events. The client discards them at impact_time,
+	// so an arrow's absence from the next host capture needs no tombstone.
+	std::unordered_map<uint64_t, const ArrowState *> old_arrows;
+	for (const auto &arrow : previous.arrows) {
+		if (not old_arrows.emplace(arrow.arrow_id, &arrow).second) {
+			throw Error{MSG(err) << "Duplicate FVD arrow in previous world state"};
+		}
+	}
+	std::unordered_set<uint64_t> seen;
+	for (const auto &arrow : current.arrows) {
+		if (not seen.insert(arrow.arrow_id).second) {
+			throw Error{MSG(err) << "Duplicate FVD arrow in next world state"};
+		}
+		auto existing = old_arrows.find(arrow.arrow_id);
+		if (existing == old_arrows.end() or not same(*existing->second, arrow)) {
+			delta.changed.arrows.push_back(arrow);
+		}
+	}
 	return delta;
 }
 
@@ -207,7 +227,17 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	patch(next.reservations, changed.reservations, delta.removed_reservations, reservation_key);
 	patch(next.constructions, changed.constructions, delta.removed_constructions, construction_key);
 	patch(next.attack_orders, changed.attack_orders, delta.removed_attack_orders, attack_key);
-	patch(next.arrows, changed.arrows, delta.removed_arrows, arrow_key);
+	// No arrow removal IDs are sent. The impact timestamp provides a
+	// deterministic expiry point even when the target or firing tower dies.
+	for (const auto &arrow : changed.arrows) {
+		if (arrow.impact_time <= changed.simulation_time) {
+			throw Error{MSG(err) << "FVD delta contains an already-expired arrow"};
+		}
+	}
+	patch(next.arrows, changed.arrows, std::vector<uint64_t>{}, arrow_key);
+	std::erase_if(next.arrows, [&](const ArrowState &arrow) {
+		return arrow.impact_time <= changed.simulation_time;
+	});
 	if (std::none_of(next.players.begin(), next.players.end(), [&](const auto &player) {
 		return player.player_id == next.local_player_id;
 	})) {
@@ -232,10 +262,10 @@ std::vector<uint8_t> encode_world_delta(const WorldDelta &delta) {
 	if (body.size() > std::numeric_limits<uint32_t>::max()) {
 		throw Error{MSG(err) << "FVD world delta body too large"};
 	}
-	const std::array<size_t, 6> counts{
+	const std::array<size_t, 5> counts{
 		delta.removed_players.size(), delta.removed_entities.size(),
 		delta.removed_reservations.size(), delta.removed_constructions.size(),
-		delta.removed_attack_orders.size(), delta.removed_arrows.size()};
+		delta.removed_attack_orders.size()};
 	for (size_t i = 0; i < counts.size(); ++i) {
 		check_count(counts[i], MAX_REMOVALS[i]);
 	}
@@ -255,8 +285,7 @@ std::vector<uint8_t> encode_world_delta(const WorldDelta &delta) {
 	}
 	for (auto id : delta.removed_constructions) append_u64(bytes, id);
 	for (auto id : delta.removed_attack_orders) append_u64(bytes, id);
-	for (auto id : delta.removed_arrows) append_u64(bytes, id);
-	if (bytes.size() > MAX_PAYLOAD_SIZE) {
+ 	if (bytes.size() > MAX_PAYLOAD_SIZE) {
 		throw Error{MSG(err) << "FVD world delta exceeds frame payload"};
 	}
 	return bytes;
@@ -269,7 +298,7 @@ WorldDelta decode_world_delta(const std::vector<uint8_t> &bytes) {
 		throw Error{MSG(err) << "Unsupported FVD world delta flags"};
 	}
 	const size_t body_size = read_u32(bytes.data() + 4);
-	std::array<uint32_t, 6> counts{};
+	std::array<uint32_t, 5> counts{};
 	size_t trailing_bytes = 0;
 	for (size_t i = 0; i < counts.size(); ++i) {
 		counts[i] = read_u32(bytes.data() + 8 + i * 4);
@@ -306,7 +335,6 @@ WorldDelta decode_world_delta(const std::vector<uint8_t> &bytes) {
 	}
 	for (uint32_t i = 0; i < counts[3]; ++i) delta.removed_constructions.push_back(next_u64());
 	for (uint32_t i = 0; i < counts[4]; ++i) delta.removed_attack_orders.push_back(next_u64());
-	for (uint32_t i = 0; i < counts[5]; ++i) delta.removed_arrows.push_back(next_u64());
 	return delta;
 }
 

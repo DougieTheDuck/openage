@@ -546,7 +546,43 @@ void Presenter::render() {
 			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 			if (fvd) {
 				const auto now = this->time_loop->get_clock()->get_time();
-				const auto arrows = fvd->get_visible_arrows(now);
+				std::vector<gamestate::FVD::ArrowTrail> arrows{};
+				if (this->fvd_replication) {
+					// Replicate each launch once. The guest animates the flight and
+					// hides it at impact_time without an arrow removal packet.
+					auto replicated = this->fvd_replication->get_world_state();
+					if (replicated) {
+						arrows.reserve(replicated->arrows.size());
+						for (const auto &arrow : replicated->arrows) {
+							if (not network::arrow_visible_at(arrow, now)) {
+								continue;
+							}
+							const auto duration = (arrow.impact_time - arrow.launch_time).to_double();
+							if (duration <= 0.0) {
+								continue;
+							}
+							const auto progress = std::clamp(
+								(now - arrow.launch_time).to_double() / duration, 0.0, 1.0);
+							auto position_at = [&](double fraction) {
+								auto lerp = [fraction](coord::phys_t a, coord::phys_t b) {
+									return coord::phys_t::from_double(
+										a.to_double() + (b.to_double() - a.to_double()) * fraction);
+								};
+								return coord::phys3{
+									lerp(arrow.start.ne, arrow.destination.ne),
+									lerp(arrow.start.se, arrow.destination.se),
+									lerp(arrow.start.up, arrow.destination.up)
+										+ coord::phys_t::from_double(2.0 * fraction * (1.0 - fraction))};
+							};
+							arrows.push_back({
+								position_at(std::max(0.0, progress - 0.22)),
+								position_at(progress), progress});
+						}
+					}
+				}
+				else {
+					arrows = fvd->get_visible_arrows(now);
+				}
 				QVariantList arrow_streaks;
 				arrow_streaks.reserve(arrows.size());
 				if (not arrows.empty()) {

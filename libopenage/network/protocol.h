@@ -16,7 +16,7 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 /**
  * Current protocol version.
  */
-constexpr uint16_t PROTOCOL_MAJOR = 5;
+constexpr uint16_t PROTOCOL_MAJOR = 6;
 constexpr uint16_t PROTOCOL_MINOR = 1;
 
 /** Oldest protocol minor version compatible with this implementation. */
