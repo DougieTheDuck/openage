@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,8 @@ constexpr uint32_t MAX_STATE_PLAYERS = 8;
 constexpr uint32_t MAX_STATE_ENTITIES = 16384;
 constexpr uint32_t MAX_STATE_RESERVATIONS = 16384;
 constexpr uint32_t MAX_STATE_CONSTRUCTIONS = 1024;
+constexpr uint32_t MAX_STATE_ATTACK_ORDERS = 16384;
+constexpr uint32_t MAX_STATE_ARROWS = 2048;
 
 /** Largest displayable command rejection reason. */
 constexpr uint32_t MAX_REJECTION_REASON_SIZE = 4096;
@@ -112,6 +115,8 @@ struct EntityState {
 	gamestate::player_id_t owner_id{0};
 	std::string definition{};
 	coord::phys3 position{0, 0, 0};
+	std::optional<int64_t> health{};
+	std::optional<int64_t> maximum_health{};
 };
 
 /** FVD role assigned to one playable player. */
@@ -149,16 +154,40 @@ struct ConstructionState {
 	gamestate::entity_id_t site_entity_id{0};
 };
 
+/** One active Hunter AttackMove or focus-attack order. */
+struct AttackOrderState {
+	gamestate::entity_id_t horse_id{0};
+	coord::phys3 destination{0, 0, 0};
+	std::optional<gamestate::entity_id_t> target_id{};
+	bool reached_destination{false};
+	bool focus_target{false};
+};
+
+/** One authoritative tower arrow currently in flight. */
+struct ArrowState {
+	uint64_t arrow_id{0};
+	gamestate::player_id_t owner_id{0};
+	gamestate::entity_id_t target_id{0};
+	coord::phys3 start{0, 0, 0};
+	coord::phys3 destination{0, 0, 0};
+	time::time_t launch_time{};
+	time::time_t impact_time{};
+};
+
 /** Complete authoritative FVD state carried by a snapshot or delta. */
 struct WorldState {
 	uint64_t base_revision{0};
 	uint64_t world_revision{0};
 	time::time_t simulation_time{};
 	uint32_t map_size{0};
+	gamestate::player_id_t local_player_id{0};
+	uint64_t local_kill_count{0};
 	std::vector<PlayerState> players{};
 	std::vector<EntityState> entities{};
 	std::vector<TileReservation> reservations{};
 	std::vector<ConstructionState> constructions{};
+	std::vector<AttackOrderState> attack_orders{};
+	std::vector<ArrowState> arrows{};
 };
 
 /** Request for a full snapshot after a client cannot apply a world delta. */

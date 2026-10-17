@@ -9,6 +9,7 @@
 #include "error/error.h"
 #include "event/eventhandler.h"
 #include "event/event_loop.h"
+#include "gamestate/component/api/live.h"
 #include "gamestate/component/internal/commands/types.h"
 #include "gamestate/component/internal/ownership.h"
 #include "gamestate/component/internal/position.h"
@@ -34,6 +35,34 @@ gamestate::component::command::command_t simulation_command(CommandKind kind) {
 		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
 		                     << static_cast<uint16_t>(kind)};
 	}
+}
+
+std::optional<std::pair<int64_t, int64_t>> entity_health(
+	const std::shared_ptr<gamestate::GameEntity> &entity,
+	const time::time_t &time) {
+	if (not entity->has_component(gamestate::component::component_t::LIVE)) {
+		return std::nullopt;
+	}
+	auto live = std::dynamic_pointer_cast<gamestate::component::Live>(
+		entity->get_component(gamestate::component::component_t::LIVE));
+	if (not live) {
+		throw Error{MSG(err) << "Game entity " << entity->get_id()
+		                     << " has an invalid Live component"};
+	}
+	for (const auto &setting : live->get_ability().get_set("Live.attributes")) {
+		auto setting_value = std::dynamic_pointer_cast<nyan::ObjectValue>(setting.get_ptr());
+		auto setting_object = live->get_ability().get_view()->get_object(
+			setting_value->get_name());
+		auto attribute_name = setting_object.get_object(
+			"AttributeSetting.attribute").get_name();
+		if (attribute_name.ends_with(".Health")) {
+			return std::pair{
+				live->get_attribute(time, attribute_name)->get(time),
+				setting_object.get_int("AttributeSetting.max_value")};
+		}
+	}
+	throw Error{MSG(err) << "Live game entity " << entity->get_id()
+	                     << " has no Health attribute"};
 }
 
 } // namespace
@@ -68,7 +97,8 @@ WorldState capture_fvd_state(
 	const std::shared_ptr<gamestate::GameState> &state,
 	const time::time_t &time,
 	uint64_t base_revision,
-	uint64_t world_revision) {
+	uint64_t world_revision,
+	gamestate::player_id_t recipient) {
 	auto fvd = state->get_fvd();
 	if (not fvd) {
 		throw Error{MSG(err) << "FVD world replication requires an FVD scenario"};
@@ -76,12 +106,17 @@ WorldState capture_fvd_state(
 	if (fvd->get_map_size() > std::numeric_limits<uint32_t>::max()) {
 		throw Error{MSG(err) << "FVD map is too large for network replication"};
 	}
+	if (recipient == 0 or recipient > fvd->get_player_count()) {
+		throw Error{MSG(err) << "FVD world replication requires a playable recipient"};
+	}
 
 	WorldState result{};
 	result.base_revision = base_revision;
 	result.world_revision = world_revision;
 	result.simulation_time = time;
 	result.map_size = static_cast<uint32_t>(fvd->get_map_size());
+	result.local_player_id = recipient;
+	result.local_kill_count = fvd->get_kills(recipient);
 	result.players.reserve(fvd->get_player_count());
 	for (gamestate::player_id_t player_id = 1;
 	     player_id <= fvd->get_player_count(); ++player_id) {
@@ -114,12 +149,18 @@ WorldState capture_fvd_state(
 			throw Error{MSG(err) << "Game entity " << entity_id
 			                     << " has invalid replicated FVD components"};
 		}
-		result.entities.push_back({
+		auto health = entity_health(entity, time);
+		EntityState entity_state{
 			entity_id,
 			ownership->get_owners().get(time),
 			entity->get_definition(),
 			position->get_positions().get(time),
-		});
+		};
+		if (health) {
+			entity_state.health = health->first;
+			entity_state.maximum_health = health->second;
+		}
+		result.entities.push_back(std::move(entity_state));
 	}
 	for (const auto &reservation : fvd->get_reserved_tiles()) {
 		result.reservations.push_back({reservation.tile, reservation.builder_id});
@@ -135,6 +176,26 @@ WorldState capture_fvd_state(
 				: ConstructionPhase::UNDER_CONSTRUCTION,
 			construction.phase_end_time,
 			construction.site_entity_id,
+		});
+	}
+	for (const auto &order : fvd->get_attack_order_state()) {
+		result.attack_orders.push_back({
+			order.horse_id,
+			order.destination,
+			order.target_id,
+			order.reached_destination,
+			order.focus_target,
+		});
+	}
+	for (const auto &arrow : fvd->get_arrow_state(time)) {
+		result.arrows.push_back({
+			arrow.arrow_id,
+			arrow.owner,
+			arrow.target_id,
+			arrow.start,
+			arrow.destination,
+			arrow.launch_time,
+			arrow.impact_time,
 		});
 	}
 	return result;

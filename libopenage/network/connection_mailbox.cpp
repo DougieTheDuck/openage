@@ -62,11 +62,19 @@ Frame make_outbound_frame(ConnectionSession &session,
 					encode_command_result(typed_message));
 			}
 			else if constexpr (std::is_same_v<message_t, WorldSnapshotMessage>) {
+				if (typed_message.state.local_player_id
+				    != session.get_identity().player_id) {
+					throw Error{MSG(err) << "FVD snapshot recipient does not match its session"};
+				}
 				return session.make_frame(
 					MessageType::WORLD_SNAPSHOT,
 					encode_world_state(typed_message.state));
 			}
 			else if constexpr (std::is_same_v<message_t, WorldDeltaMessage>) {
+				if (typed_message.state.local_player_id
+				    != session.get_identity().player_id) {
+					throw Error{MSG(err) << "FVD delta recipient does not match its session"};
+				}
 				return session.make_frame(
 					MessageType::WORLD_DELTA,
 					encode_world_state(typed_message.state));

@@ -59,6 +59,26 @@ struct FVDTileReservation {
 	entity_id_t builder_id;
 };
 
+/** Read-only description of one active Hunter combat order. */
+struct FVDAttackOrderState {
+	entity_id_t horse_id;
+	coord::phys3 destination;
+	std::optional<entity_id_t> target_id;
+	bool reached_destination;
+	bool focus_target;
+};
+
+/** Read-only description of one authoritative arrow in flight. */
+struct FVDArrowState {
+	uint64_t arrow_id;
+	player_id_t owner;
+	entity_id_t target_id;
+	coord::phys3 start;
+	coord::phys3 destination;
+	time::time_t launch_time;
+	time::time_t impact_time;
+};
+
 /**
  * Flat plains scenario with one Hunter and the remaining players as Builders.
  */
@@ -193,6 +213,12 @@ public:
 	/** Capture reserved footprint tiles in coordinate order. */
 	std::vector<FVDTileReservation> get_reserved_tiles() const;
 
+	/** Capture active Hunter orders in horse-ID order. */
+	std::vector<FVDAttackOrderState> get_attack_order_state() const;
+
+	/** Capture arrows in flight in arrow-ID order. */
+	std::vector<FVDArrowState> get_arrow_state(const time::time_t &now) const;
+
 private:
 	struct AttackOrder {
 		coord::phys3 destination;
@@ -293,6 +319,9 @@ private:
 	std::optional<time::time_t> first_hunter_spawn_time;
 	/** Visual history only; shot hit events remain authoritative. */
 	struct ArrowVisual {
+		uint64_t arrow_id;
+		player_id_t owner;
+		entity_id_t target_id;
 		coord::phys3 start;
 		coord::phys3 destination;
 		time::time_t launch_time;
@@ -300,6 +329,7 @@ private:
 	};
 	mutable std::mutex arrow_visuals_mutex;
 	std::vector<ArrowVisual> arrow_visuals;
+	uint64_t next_arrow_id = 1;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
 	std::unordered_set<entity_id_t> dead_horses;

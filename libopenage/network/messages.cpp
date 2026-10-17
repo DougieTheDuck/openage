@@ -13,6 +13,10 @@ namespace openage::network {
 namespace {
 
 constexpr size_t COMMAND_PREFIX_SIZE = 16;
+constexpr uint16_t ENTITY_HAS_HEALTH = 1 << 0;
+constexpr uint16_t ATTACK_HAS_TARGET = 1 << 0;
+constexpr uint16_t ATTACK_REACHED_DESTINATION = 1 << 1;
+constexpr uint16_t ATTACK_FOCUS_TARGET = 1 << 2;
 class PayloadReader {
 public:
 	explicit PayloadReader(const std::vector<uint8_t> &payload) :
@@ -322,10 +326,15 @@ std::vector<uint8_t> encode_world_state(const WorldState &state) {
 	if (state.map_size == 0) {
 		throw Error{MSG(err) << "FVD state requires a nonzero map size"};
 	}
+	if (state.local_player_id == 0) {
+		throw Error{MSG(err) << "FVD state requires a local player"};
+	}
 	if (state.players.size() > MAX_STATE_PLAYERS
 	    or state.entities.size() > MAX_STATE_ENTITIES
 	    or state.reservations.size() > MAX_STATE_RESERVATIONS
-	    or state.constructions.size() > MAX_STATE_CONSTRUCTIONS) {
+	    or state.constructions.size() > MAX_STATE_CONSTRUCTIONS
+	    or state.attack_orders.size() > MAX_STATE_ATTACK_ORDERS
+	    or state.arrows.size() > MAX_STATE_ARROWS) {
 		throw Error{MSG(err) << "FVD state collection exceeds its protocol limit"};
 	}
 
@@ -334,10 +343,15 @@ std::vector<uint8_t> encode_world_state(const WorldState &state) {
 	append_u64(output, state.world_revision);
 	append_i64(output, state.simulation_time.get_raw_value());
 	append_u32(output, state.map_size);
+	append_u64(output, state.local_player_id);
+	append_u64(output, state.local_kill_count);
 	append_u32(output, static_cast<uint32_t>(state.players.size()));
 	append_u32(output, static_cast<uint32_t>(state.entities.size()));
 	append_u32(output, static_cast<uint32_t>(state.reservations.size()));
 	append_u32(output, static_cast<uint32_t>(state.constructions.size()));
+	append_u32(output, static_cast<uint32_t>(state.attack_orders.size()));
+	append_u32(output, static_cast<uint32_t>(state.arrows.size()));
+	bool found_local_player = false;
 	for (const auto &player : state.players) {
 		if (player.player_id == 0
 		    or not is_known_player_role(static_cast<uint16_t>(player.role))) {
@@ -346,15 +360,30 @@ std::vector<uint8_t> encode_world_state(const WorldState &state) {
 		append_u64(output, player.player_id);
 		append_u16(output, static_cast<uint16_t>(player.role));
 		append_u16(output, 0);
+		found_local_player = found_local_player
+		                  or player.player_id == state.local_player_id;
+	}
+	if (not found_local_player) {
+		throw Error{MSG(err) << "FVD state local player is not playable"};
 	}
 	for (const auto &entity : state.entities) {
 		if (entity.definition.empty()) {
 			throw Error{MSG(err) << "FVD state contains an invalid entity"};
 		}
+		if (entity.health.has_value() != entity.maximum_health.has_value()
+		    or (entity.health
+		        and (*entity.maximum_health <= 0 or *entity.health < 0
+		             or *entity.health > *entity.maximum_health))) {
+			throw Error{MSG(err) << "FVD state contains invalid entity health"};
+		}
 		append_u64(output, entity.entity_id);
 		append_u64(output, entity.owner_id);
 		append_string(output, entity.definition, MAX_ENTITY_DEFINITION_SIZE);
 		append_position(output, entity.position);
+		append_u16(output, entity.health ? ENTITY_HAS_HEALTH : 0);
+		append_u16(output, 0);
+		append_i64(output, entity.health.value_or(0));
+		append_i64(output, entity.maximum_health.value_or(0));
 	}
 	for (const auto &reservation : state.reservations) {
 		append_tile(output, reservation.tile);
@@ -374,6 +403,29 @@ std::vector<uint8_t> encode_world_state(const WorldState &state) {
 		append_i64(output, construction.phase_end_time.get_raw_value());
 		append_u64(output, construction.site_entity_id);
 	}
+	for (const auto &order : state.attack_orders) {
+		uint16_t flags = order.target_id ? ATTACK_HAS_TARGET : 0;
+		flags |= order.reached_destination ? ATTACK_REACHED_DESTINATION : 0;
+		flags |= order.focus_target ? ATTACK_FOCUS_TARGET : 0;
+		append_u64(output, order.horse_id);
+		append_position(output, order.destination);
+		append_u16(output, flags);
+		append_u16(output, 0);
+		append_u64(output, order.target_id.value_or(0));
+	}
+	for (const auto &arrow : state.arrows) {
+		if (arrow.arrow_id == 0 or arrow.owner_id == 0
+		    or arrow.impact_time <= arrow.launch_time) {
+			throw Error{MSG(err) << "FVD state contains an invalid arrow"};
+		}
+		append_u64(output, arrow.arrow_id);
+		append_u64(output, arrow.owner_id);
+		append_u64(output, arrow.target_id);
+		append_position(output, arrow.start);
+		append_position(output, arrow.destination);
+		append_i64(output, arrow.launch_time.get_raw_value());
+		append_i64(output, arrow.impact_time.get_raw_value());
+	}
 	if (output.size() > MAX_PAYLOAD_SIZE) {
 		throw Error{MSG(err) << "FVD state exceeds the maximum frame payload"};
 	}
@@ -390,14 +442,23 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 	if (state.map_size == 0) {
 		throw Error{MSG(err) << "FVD state requires a nonzero map size"};
 	}
+	state.local_player_id = reader.u64();
+	state.local_kill_count = reader.u64();
+	if (state.local_player_id == 0) {
+		throw Error{MSG(err) << "FVD state requires a local player"};
+	}
 	auto player_count = reader.u32();
 	auto entity_count = reader.u32();
 	auto reservation_count = reader.u32();
 	auto construction_count = reader.u32();
+	auto attack_order_count = reader.u32();
+	auto arrow_count = reader.u32();
 	if (player_count > MAX_STATE_PLAYERS
 	    or entity_count > MAX_STATE_ENTITIES
 	    or reservation_count > MAX_STATE_RESERVATIONS
-	    or construction_count > MAX_STATE_CONSTRUCTIONS) {
+	    or construction_count > MAX_STATE_CONSTRUCTIONS
+	    or attack_order_count > MAX_STATE_ATTACK_ORDERS
+	    or arrow_count > MAX_STATE_ARROWS) {
 		throw Error{MSG(err) << "FVD state collection exceeds its protocol limit"};
 	}
 	state.players.reserve(player_count);
@@ -412,6 +473,11 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 		}
 		state.players.push_back({player_id, static_cast<PlayerRole>(role)});
 	}
+	if (std::none_of(state.players.begin(), state.players.end(), [&](const auto &player) {
+		return player.player_id == state.local_player_id;
+	})) {
+		throw Error{MSG(err) << "FVD state local player is not playable"};
+	}
 	state.entities.reserve(entity_count);
 	for (uint32_t i = 0; i < entity_count; ++i) {
 		auto entity_id = reader.u64();
@@ -420,8 +486,25 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 		if (definition.empty()) {
 			throw Error{MSG(err) << "FVD state contains an invalid entity"};
 		}
-		state.entities.push_back(
-			{entity_id, owner_id, std::move(definition), read_position(reader)});
+		auto position = read_position(reader);
+		auto flags = reader.u16();
+		if ((flags & ~ENTITY_HAS_HEALTH) != 0 or reader.u16() != 0) {
+			throw Error{MSG(err) << "Unsupported FVD entity state flags"};
+		}
+		auto health = reader.i64();
+		auto maximum_health = reader.i64();
+		EntityState entity{entity_id, owner_id, std::move(definition), position};
+		if ((flags & ENTITY_HAS_HEALTH) != 0) {
+			if (maximum_health <= 0 or health < 0 or health > maximum_health) {
+				throw Error{MSG(err) << "FVD state contains invalid entity health"};
+			}
+			entity.health = health;
+			entity.maximum_health = maximum_health;
+		}
+		else if (health != 0 or maximum_health != 0) {
+			throw Error{MSG(err) << "FVD entity health is present without its flag"};
+		}
+		state.entities.push_back(std::move(entity));
 	}
 	state.reservations.reserve(reservation_count);
 	for (uint32_t i = 0; i < reservation_count; ++i) {
@@ -448,6 +531,45 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 		}
 		construction.phase = static_cast<ConstructionPhase>(phase);
 		state.constructions.push_back(construction);
+	}
+	state.attack_orders.reserve(attack_order_count);
+	for (uint32_t i = 0; i < attack_order_count; ++i) {
+		AttackOrderState order{};
+		order.horse_id = reader.u64();
+		order.destination = read_position(reader);
+		auto flags = reader.u16();
+		if ((flags & ~(ATTACK_HAS_TARGET
+		              | ATTACK_REACHED_DESTINATION
+		              | ATTACK_FOCUS_TARGET)) != 0
+		    or reader.u16() != 0) {
+			throw Error{MSG(err) << "Unsupported FVD attack order flags"};
+		}
+		auto target_id = reader.u64();
+		if ((flags & ATTACK_HAS_TARGET) != 0) {
+			order.target_id = target_id;
+		}
+		else if (target_id != 0) {
+			throw Error{MSG(err) << "FVD attack target is present without its flag"};
+		}
+		order.reached_destination = (flags & ATTACK_REACHED_DESTINATION) != 0;
+		order.focus_target = (flags & ATTACK_FOCUS_TARGET) != 0;
+		state.attack_orders.push_back(order);
+	}
+	state.arrows.reserve(arrow_count);
+	for (uint32_t i = 0; i < arrow_count; ++i) {
+		ArrowState arrow{};
+		arrow.arrow_id = reader.u64();
+		arrow.owner_id = reader.u64();
+		arrow.target_id = reader.u64();
+		arrow.start = read_position(reader);
+		arrow.destination = read_position(reader);
+		arrow.launch_time = time::time_t::from_raw_value(reader.i64());
+		arrow.impact_time = time::time_t::from_raw_value(reader.i64());
+		if (arrow.arrow_id == 0 or arrow.owner_id == 0
+		    or arrow.impact_time <= arrow.launch_time) {
+			throw Error{MSG(err) << "FVD state contains an invalid arrow"};
+		}
+		state.arrows.push_back(arrow);
 	}
 	reader.finish();
 	return state;

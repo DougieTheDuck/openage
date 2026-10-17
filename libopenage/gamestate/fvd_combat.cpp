@@ -172,6 +172,41 @@ std::vector<FVD::ArrowTrail> FVD::get_visible_arrows(const time::time_t &now) co
 	return result;
 }
 
+std::vector<FVDAttackOrderState> FVD::get_attack_order_state() const {
+	std::vector<FVDAttackOrderState> result;
+	result.reserve(this->attack_orders.size());
+	for (const auto &[horse_id, order] : this->attack_orders) {
+		result.push_back({horse_id,
+		                  order.destination,
+		                  order.target,
+		                  order.reached_destination,
+		                  order.focus_target});
+	}
+	std::sort(result.begin(), result.end(), [](const auto &left, const auto &right) {
+		return left.horse_id < right.horse_id;
+	});
+	return result;
+}
+
+std::vector<FVDArrowState> FVD::get_arrow_state(const time::time_t &now) const {
+	std::vector<FVDArrowState> result;
+	std::lock_guard lock{this->arrow_visuals_mutex};
+	result.reserve(this->arrow_visuals.size());
+	for (const auto &arrow : this->arrow_visuals) {
+		if (now < arrow.launch_time or now >= arrow.impact_time) {
+			continue;
+		}
+		result.push_back({arrow.arrow_id,
+		                  arrow.owner,
+		                  arrow.target_id,
+		                  arrow.start,
+		                  arrow.destination,
+		                  arrow.launch_time,
+		                  arrow.impact_time});
+	}
+	return result;
+}
+
 uint64_t FVD::get_kills(player_id_t owner) const {
 	return owner > 0 and owner < this->player_kills.size()
 	         ? this->player_kills[owner].load() : 0;
@@ -563,7 +598,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				this->arrow_visuals.erase(this->arrow_visuals.begin());
 			}
 			this->arrow_visuals.push_back(
-				ArrowVisual{start, destination, time, time + this->arrow_travel});
+				ArrowVisual{this->next_arrow_id++, owner, nearest, start, destination,
+				            time, time + this->arrow_travel});
 		}
 		loop->create_event("game.fvd_arrow_hit", this->horse_spawn_target, state,
 		                   time + this->arrow_travel,

@@ -105,17 +105,27 @@ A client replaces its replicated world after accepting either message, while the
 | 8 | 8 | World revision carried by this message |
 | 16 | 8 | Authoritative simulation time as its raw signed fixed-point value |
 | 24 | 4 | Square map size in tiles |
-| 28 | 4 | Playable player count, at most 8 |
-| 32 | 4 | Entity count, at most 16,384 |
-| 36 | 4 | Reserved tile count, at most 16,384 |
-| 40 | 4 | Active construction count, at most 1,024 |
-| 44 | variable | Player, entity, reservation and construction records in that order |
+| 28 | 8 | Recipient player ID |
+| 36 | 8 | Recipient player's kill count |
+| 44 | 4 | Playable player count, at most 8 |
+| 48 | 4 | Entity count, at most 16,384 |
+| 52 | 4 | Reserved tile count, at most 16,384 |
+| 56 | 4 | Active construction count, at most 1,024 |
+| 60 | 4 | Active Hunter attack-order count, at most 16,384 |
+| 64 | 4 | In-flight arrow count, at most 2,048 |
+| 68 | variable | Player, entity, reservation, construction, attack-order and arrow records in that order |
 
 A player record contains an 8-byte player ID, a 2-byte Hunter or Builder role and 2 zero flag bytes.
-An entity record contains an 8-byte entity ID, 8-byte owner ID, a length-prefixed nyan definition of at most 256 UTF-8 bytes and three signed Q16.16 position coordinates.
+An entity record contains an 8-byte entity ID, 8-byte owner ID, a length-prefixed nyan definition of at most 256 UTF-8 bytes, three signed Q16.16 position coordinates, 2 flag bytes, 2 reserved zero bytes and signed 8-byte current and maximum health values.
+Health flag bit 0 is set when both health values apply; entities without a `Live` ability carry zero values and clear the flag.
 A reservation record contains two signed 8-byte tile coordinates and the 8-byte ID of the Builder holding the tile.
 A construction record contains its 8-byte order, owner and Builder IDs, two signed 8-byte target tile coordinates, a 2-byte planned or under-construction phase, 2 zero flag bytes, an 8-byte phase deadline and the 8-byte foundation or tower entity ID.
+An attack-order record contains an 8-byte horse ID, three signed Q16.16 destination coordinates, 2 flag bytes, 2 reserved zero bytes and an 8-byte target entity ID.
+Attack-order flag bits 0, 1 and 2 indicate a target ID, arrival at the requested destination and an explicit focus target respectively.
+An arrow record contains 8-byte arrow, owner and target IDs, three signed Q16.16 launch coordinates, three signed Q16.16 destination coordinates and signed 8-byte launch and impact times.
 Completed towers remain in the entity list and have no active construction record or reserved tiles.
+Killed entities disappear from the next complete state, while arrows disappear at their impact time and the resulting health or death is present in that same state.
+The host builds state separately for each connection, so the payload contains only its recipient's kill total and cannot expose a public leaderboard.
 Protocol major version 2 introduced this complete state layout because it is incompatible with the earlier position-only payload.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
 

@@ -62,17 +62,20 @@ def _wait_for_port(ready_path: Path, host: subprocess.Popen) -> int:
 
 
 def test() -> None:
-    """Move an FVD Builder through host and guest processes over TCP."""
+    """Synchronize FVD world state through host and guest processes over TCP."""
     runner = Path(config.BUILD_BIN_DIR) / "run.py"
     if not runner.is_file():
         raise TestError(f"network process test runner does not exist: {runner}")
 
-    command = [
-        sys.executable,
-        str(runner),
-        "test",
-        "network::tests::fvd_process_worker",
-    ]
+    if Path(sys.executable).stem.casefold() == "run":
+        command = [sys.executable, "test", "network::tests::fvd_process_worker"]
+    else:
+        command = [
+            sys.executable,
+            str(runner),
+            "test",
+            "network::tests::fvd_process_worker",
+        ]
     with tempfile.TemporaryDirectory(prefix="openage-fvd-network-") as temp_dir:
         temp_path = Path(temp_dir)
         ready_path = temp_path / "host.ready"
@@ -94,7 +97,7 @@ def test() -> None:
                 host_environment["OPENAGE_FVD_NETWORK_TEST_READY_FILE"] = str(ready_path)
                 host = subprocess.Popen(
                     command,
-                    cwd=config.BUILD_SRC_DIR,
+                    cwd=config.BUILD_BIN_DIR,
                     env=host_environment,
                     stdout=host_log,
                     stderr=subprocess.STDOUT,
@@ -106,7 +109,7 @@ def test() -> None:
                 guest_environment["OPENAGE_FVD_NETWORK_TEST_PORT"] = str(port)
                 guest = subprocess.Popen(
                     command,
-                    cwd=config.BUILD_SRC_DIR,
+                    cwd=config.BUILD_BIN_DIR,
                     env=guest_environment,
                     stdout=guest_log,
                     stderr=subprocess.STDOUT,

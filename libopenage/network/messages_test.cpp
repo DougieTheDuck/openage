@@ -144,23 +144,32 @@ void messages() {
 	state.world_revision = 5;
 	state.simulation_time = time::time_t::from_double(3.25);
 	state.map_size = 128;
+	state.local_player_id = 2;
+	state.local_kill_count = 3;
 	state.players = {
 		{1, PlayerRole::HUNTER},
 		{2, PlayerRole::BUILDER},
 	};
 	state.entities = {
-		{100, 1, "fvd.data.entities.Horse", {10.5, 20.25, 0}},
+		{100, 1, "fvd.data.entities.Horse", {10.5, 20.25, 0}, 17, 25},
 		{200, 2, "fvd.data.entities.Foundation", {-1.0, 2.0, 3.0}},
 	};
 	state.reservations = {{{10, 20}, 300}};
 	state.constructions = {{
 		7, 2, 300, {10, 20}, ConstructionPhase::PLANNED,
 		time::time_t::from_double(4.5), 200}};
+	state.attack_orders = {{
+		100, {12.0, 21.0, 0}, 300, false, true}};
+	state.arrows = {{
+		9, 2, 100, {10.0, 20.0, 1.3}, {10.5, 20.25, 0.45},
+		time::time_t::from_double(3.25), time::time_t::from_double(3.45)}};
 	auto decoded_state = decode_world_state(encode_world_state(state));
 	TESTEQUALS(decoded_state.base_revision, state.base_revision);
 	TESTEQUALS(decoded_state.world_revision, state.world_revision);
 	TESTEQUALS(decoded_state.simulation_time, state.simulation_time);
 	TESTEQUALS(decoded_state.map_size, state.map_size);
+	TESTEQUALS(decoded_state.local_player_id, state.local_player_id);
+	TESTEQUALS(decoded_state.local_kill_count, state.local_kill_count);
 	TESTEQUALS(decoded_state.players.size(), state.players.size());
 	for (size_t i = 0; i < state.players.size(); ++i) {
 		TESTEQUALS(decoded_state.players[i].player_id, state.players[i].player_id);
@@ -172,6 +181,13 @@ void messages() {
 		TESTEQUALS(decoded_state.entities[i].owner_id, state.entities[i].owner_id);
 		TESTEQUALS(decoded_state.entities[i].definition, state.entities[i].definition);
 		TESTEQUALS(decoded_state.entities[i].position, state.entities[i].position);
+		TESTEQUALS(decoded_state.entities[i].health.has_value(),
+		           state.entities[i].health.has_value());
+		if (state.entities[i].health) {
+			TESTEQUALS(*decoded_state.entities[i].health, *state.entities[i].health);
+			TESTEQUALS(*decoded_state.entities[i].maximum_health,
+			           *state.entities[i].maximum_health);
+		}
 	}
 	TESTEQUALS(decoded_state.reservations.size(), size_t{1});
 	TESTEQUALS(decoded_state.reservations.front().tile, (coord::tile{10, 20}));
@@ -185,6 +201,19 @@ void messages() {
 	           time::time_t::from_double(4.5));
 	TESTEQUALS(decoded_state.constructions.front().site_entity_id,
 	           gamestate::entity_id_t{200});
+	TESTEQUALS(decoded_state.attack_orders.size(), size_t{1});
+	TESTEQUALS(decoded_state.attack_orders.front().horse_id,
+	           gamestate::entity_id_t{100});
+	decoded_state.attack_orders.front().target_id.has_value() or TESTFAIL;
+	TESTEQUALS(*decoded_state.attack_orders.front().target_id,
+	           gamestate::entity_id_t{300});
+	TESTEQUALS(decoded_state.attack_orders.front().focus_target, true);
+	TESTEQUALS(decoded_state.arrows.size(), size_t{1});
+	TESTEQUALS(decoded_state.arrows.front().arrow_id, uint64_t{9});
+	TESTEQUALS(decoded_state.arrows.front().target_id,
+	           gamestate::entity_id_t{100});
+	TESTEQUALS(decoded_state.arrows.front().impact_time,
+	           time::time_t::from_double(3.45));
 
 	auto truncated_state = encode_world_state(state);
 	truncated_state.resize(truncated_state.size() - 8);
@@ -193,9 +222,20 @@ void messages() {
 	auto trailing_state = encode_world_state(state);
 	trailing_state.push_back(0);
 	TESTTHROWS(decode_world_state(trailing_state));
+	auto invalid_health = state;
+	invalid_health.entities.front().health = 26;
+	TESTTHROWS(encode_world_state(invalid_health));
+	auto foreign_local_player = state;
+	foreign_local_player.local_player_id = 8;
+	TESTTHROWS(encode_world_state(foreign_local_player));
+	auto invalid_arrow = state;
+	invalid_arrow.arrows.front().impact_time = invalid_arrow.arrows.front().launch_time;
+	TESTTHROWS(encode_world_state(invalid_arrow));
 
 	WorldState maximum_state{};
 	maximum_state.map_size = 1;
+	maximum_state.local_player_id = 1;
+	maximum_state.players = {{1, PlayerRole::HUNTER}};
 	maximum_state.entities.resize(MAX_STATE_ENTITIES + 1);
 	TESTTHROWS(encode_world_state(maximum_state));
 	WorldState missing_map{};
