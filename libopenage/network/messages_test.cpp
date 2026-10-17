@@ -148,7 +148,7 @@ void messages() {
 	state.local_kill_count = 3;
 	state.players = {
 		{1, PlayerRole::HUNTER},
-		{2, PlayerRole::BUILDER},
+		{2, PlayerRole::BUILDER, false},
 	};
 	state.entities = {
 		{100, 1, "fvd.data.entities.Horse", {10.5, 20.25, 0}, 17, 25},
@@ -174,6 +174,8 @@ void messages() {
 	for (size_t i = 0; i < state.players.size(); ++i) {
 		TESTEQUALS(decoded_state.players[i].player_id, state.players[i].player_id);
 		decoded_state.players[i].role == state.players[i].role or TESTFAIL;
+		TESTEQUALS(decoded_state.players[i].connected,
+		           state.players[i].connected);
 	}
 	TESTEQUALS(decoded_state.entities.size(), state.entities.size());
 	for (size_t i = 0; i < state.entities.size(); ++i) {
@@ -222,6 +224,9 @@ void messages() {
 	auto trailing_state = encode_world_state(state);
 	trailing_state.push_back(0);
 	TESTTHROWS(decode_world_state(trailing_state));
+	auto unsupported_player_flags = encode_world_state(state);
+	unsupported_player_flags[79] |= 2;
+	TESTTHROWS(decode_world_state(unsupported_player_flags));
 	auto invalid_health = state;
 	invalid_health.entities.front().health = 26;
 	TESTTHROWS(encode_world_state(invalid_health));

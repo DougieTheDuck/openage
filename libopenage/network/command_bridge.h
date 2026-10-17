@@ -23,6 +23,8 @@ class Commander;
 
 namespace openage::network {
 
+class MatchConnectionState;
+
 /** Result callback invoked when the authoritative host decides the command. */
 using command_result_callback_t = std::function<void(bool)>;
 
@@ -43,6 +45,7 @@ void submit_authenticated_command(
 /** Capture complete authoritative FVD state at a simulation time. */
 WorldState capture_fvd_state(
 	const std::shared_ptr<gamestate::GameState> &state,
+	const MatchConnectionState &connections,
 	const time::time_t &time,
 	uint64_t base_revision,
 	uint64_t world_revision,

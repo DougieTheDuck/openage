@@ -129,6 +129,7 @@ enum class PlayerRole : uint16_t {
 struct PlayerState {
 	gamestate::player_id_t player_id{0};
 	PlayerRole role{PlayerRole::BUILDER};
+	bool connected{true};
 };
 
 /** One tile held by an unfinished construction order. */

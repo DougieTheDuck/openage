@@ -18,6 +18,7 @@
 #include "gamestate/fvd.h"
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
+#include "network/match_connection_state.h"
 
 namespace openage::network {
 
@@ -95,6 +96,7 @@ void submit_authenticated_command(
 
 WorldState capture_fvd_state(
 	const std::shared_ptr<gamestate::GameState> &state,
+	const MatchConnectionState &connections,
 	const time::time_t &time,
 	uint64_t base_revision,
 	uint64_t world_revision,
@@ -108,6 +110,9 @@ WorldState capture_fvd_state(
 	}
 	if (recipient == 0 or recipient > fvd->get_player_count()) {
 		throw Error{MSG(err) << "FVD world replication requires a playable recipient"};
+	}
+	if (connections.get_player_count() != fvd->get_player_count()) {
+		throw Error{MSG(err) << "FVD connection state does not match the playable player count"};
 	}
 
 	WorldState result{};
@@ -123,6 +128,7 @@ WorldState capture_fvd_state(
 		result.players.push_back({
 			player_id,
 			player_id == 1 ? PlayerRole::HUNTER : PlayerRole::BUILDER,
+			connections.is_connected(player_id),
 		});
 	}
 

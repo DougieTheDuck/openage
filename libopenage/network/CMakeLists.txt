@@ -10,6 +10,7 @@ add_sources(libopenage
 	fvd_loopback_test.cpp
 	handshake.cpp
 	handshake_test.cpp
+	match_connection_state.cpp
 	messages.cpp
 	messages_test.cpp
 	protocol.cpp

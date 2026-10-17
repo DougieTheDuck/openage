@@ -7,6 +7,7 @@
 #include <variant>
 
 #include "network/handshake.h"
+#include "network/match_connection_state.h"
 #include "network/transport.h"
 #include "testing/testing.h"
 
@@ -34,6 +35,24 @@ ClientHello disconnect_test_hello(const char *name) {
 } // namespace
 
 void connection_mailbox() {
+	TESTTHROWS(MatchConnectionState{0});
+	MatchConnectionState match_connections{3};
+	TESTEQUALS(match_connections.get_player_count(), size_t{3});
+	TESTEQUALS(match_connections.is_connected(2), true);
+	match_connections.bind_remote({42, 2});
+	match_connections.accepts_commands({42, 2}) or TESTFAIL;
+	not match_connections.accepts_commands({42, 3}) or TESTFAIL;
+	TESTTHROWS(match_connections.bind_remote({42, 3}));
+	TESTTHROWS(match_connections.bind_remote({43, 2}));
+	auto match_disconnected = match_connections.disconnect_remote(
+		{42, 2}, DisconnectReason::CONNECTION_LOST);
+	TESTEQUALS(match_disconnected.player_id, gamestate::player_id_t{2});
+	TESTEQUALS(match_connections.is_connected(2), false);
+	not match_connections.accepts_commands({42, 2}) or TESTFAIL;
+	TESTTHROWS(match_connections.disconnect_remote(
+		{42, 2}, DisconnectReason::CONNECTION_LOST));
+	TESTTHROWS(match_connections.bind_remote({44, 2}));
+
 	TESTTHROWS(OutboundMailbox{0});
 	OutboundMailbox outbound{2};
 	TESTEQUALS(outbound.capacity(), size_t{2});

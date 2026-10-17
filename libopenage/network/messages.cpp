@@ -13,6 +13,7 @@ namespace openage::network {
 namespace {
 
 constexpr size_t COMMAND_PREFIX_SIZE = 16;
+constexpr uint16_t PLAYER_CONNECTED = 1 << 0;
 constexpr uint16_t ENTITY_HAS_HEALTH = 1 << 0;
 constexpr uint16_t ATTACK_HAS_TARGET = 1 << 0;
 constexpr uint16_t ATTACK_REACHED_DESTINATION = 1 << 1;
@@ -359,7 +360,7 @@ std::vector<uint8_t> encode_world_state(const WorldState &state) {
 		}
 		append_u64(output, player.player_id);
 		append_u16(output, static_cast<uint16_t>(player.role));
-		append_u16(output, 0);
+		append_u16(output, player.connected ? PLAYER_CONNECTED : 0);
 		found_local_player = found_local_player
 		                  or player.player_id == state.local_player_id;
 	}
@@ -468,10 +469,15 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 		if (player_id == 0 or not is_known_player_role(role)) {
 			throw Error{MSG(err) << "FVD state contains an invalid player"};
 		}
-		if (reader.u16() != 0) {
+		auto flags = reader.u16();
+		if ((flags & ~PLAYER_CONNECTED) != 0) {
 			throw Error{MSG(err) << "Unsupported FVD player state flags"};
 		}
-		state.players.push_back({player_id, static_cast<PlayerRole>(role)});
+		state.players.push_back({
+			player_id,
+			static_cast<PlayerRole>(role),
+			(flags & PLAYER_CONNECTED) != 0,
+		});
 	}
 	if (std::none_of(state.players.begin(), state.players.end(), [&](const auto &player) {
 		return player.player_id == state.local_player_id;

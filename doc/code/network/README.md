@@ -115,7 +115,8 @@ A client replaces its replicated world after accepting either message, while the
 | 64 | 4 | In-flight arrow count, at most 2,048 |
 | 68 | variable | Player, entity, reservation, construction, attack-order and arrow records in that order |
 
-A player record contains an 8-byte player ID, a 2-byte Hunter or Builder role and 2 zero flag bytes.
+A player record contains an 8-byte player ID, a 2-byte Hunter or Builder role and 2 flag bytes.
+Player flag bit 0 is set while that participant remains connected to the running match.
 An entity record contains an 8-byte entity ID, 8-byte owner ID, a length-prefixed nyan definition of at most 256 UTF-8 bytes, three signed Q16.16 position coordinates, 2 flag bytes, 2 reserved zero bytes and signed 8-byte current and maximum health values.
 Health flag bit 0 is set when both health values apply; entities without a `Live` ability carry zero values and clear the flag.
 A reservation record contains two signed 8-byte tile coordinates and the 8-byte ID of the Builder holding the tile.
@@ -126,7 +127,8 @@ An arrow record contains 8-byte arrow, owner and target IDs, three signed Q16.16
 Completed towers remain in the entity list and have no active construction record or reserved tiles.
 Killed entities disappear from the next complete state, while arrows disappear at their impact time and the resulting health or death is present in that same state.
 The host builds state separately for each connection, so the payload contains only its recipient's kill total and cannot expose a public leaderboard.
-Protocol major version 2 introduced this complete state layout because it is incompatible with the earlier position-only payload.
+Protocol major version 2 introduced the complete state layout because it is incompatible with the earlier position-only payload.
+Protocol major version 3 added persistent participant connection status to player records.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
 
 ### Snapshot request payload
@@ -201,5 +203,7 @@ Before match start, a disconnected participant is removed from the lobby and the
 After match start, the host keeps the disconnected player's entities, ownership and already accepted orders in authoritative state.
 The player ID is not reassigned, no new commands are accepted for the closed session, and the match continues for the remaining participants.
 Every remaining connection receives one `ParticipantDisconnected` notification.
+The host also marks the participant disconnected in the next authoritative world revision, so a recovery snapshot cannot lose this status.
+`network::MatchConnectionState` owns the fixed participant-to-session bindings and rejects a second binding after a participant disconnects.
 If the authoritative host disconnects, clients end the match because no peer may silently replace its simulation.
 Failure to enqueue a connection lifecycle event is fatal to the host session because continuing would conceal a disconnect from authoritative state.
