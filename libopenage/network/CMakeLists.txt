@@ -19,6 +19,7 @@ add_sources(libopenage
 	protocol_test.cpp
 	relay.cpp
 	relay_process_test.cpp
+	relay_registry_test.cpp
 	relay_test.cpp
 	replication.cpp
 	replication_test.cpp

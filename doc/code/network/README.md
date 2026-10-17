@@ -36,8 +36,10 @@ The relay consumes `RelayConnect`, rejects malformed, unauthorized or duplicate-
 Normal `ClientHello` and gameplay frames follow `RelayReady` unchanged.
 The relay admission token proves possession to the relay but is visible on the current unencrypted TCP connection, so a public deployment must protect the relay transport before treating it as an Internet security boundary.
 
-`network::accept_relay_pair` serves one provisioned pair and `network::forward_relay_pair` owns that pair until either side disconnects.
-A lobby-facing relay service can allocate one such pair for every remote player while preserving the existing one-session-per-connection host code.
+`network::RelayPairRegistry` holds a bounded set of lobby-provisioned pairs and safely admits connections from concurrent service workers.
+A pair leaves the registry when both roles authenticate, while lobby cancellation removes a pending pair and closes any role that already connected.
+Each completed pair is passed to its own `network::forward_relay_pair`, which closes both connections when either side disconnects without affecting other pairs.
+`network::accept_relay_pair` remains the single-pair convenience entry point used by deterministic tests.
 Direct TCP remains available for LAN play and deterministic transport tests.
 
 ## Session and gameplay boundary

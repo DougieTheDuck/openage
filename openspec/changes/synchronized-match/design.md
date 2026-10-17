@@ -41,7 +41,8 @@ Keep direct guest-to-host TCP for LAN play and automated transport tests.
 For Internet play, the authoritative host and every guest make outbound TCP connections to a relay so router port forwarding is not required.
 Use one relay connection per host-to-guest pair, allowing the existing host and guest handshake, session identity and sequence validation to run unchanged after pairing.
 The lobby supplies separate single-use host and guest bearer tokens for every pair.
-The relay authenticates the pair, forwards complete protocol frames in both directions and never runs or changes the authoritative simulation.
+The relay holds a bounded registry of provisioned pairs, admits each role independently and removes cancelled or completed admissions.
+Each completed pair forwards frames independently, so a disconnect closes only that pair and never runs or changes the authoritative simulation.
 Transport encryption and lobby-to-relay provisioning remain required before a public deployment.
 
 Frames use a fixed 32-byte network-order header containing `FVDN` magic,

@@ -5,6 +5,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <map>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -46,8 +49,64 @@ struct RelayPairCredentials {
 
 /** The two authenticated connections for one relay pair. */
 struct RelayPair {
+	uint64_t match_id{};
+	gamestate::player_id_t player_id{};
 	TcpConnection host{};
 	TcpConnection guest{};
+};
+
+/**
+ * Thread-safe registry of lobby-provisioned relay pairs awaiting admission.
+ *
+ * A pair leaves the registry permanently when both roles authenticate.
+ * Cancelling a pending pair closes whichever side has already connected.
+ */
+class RelayPairRegistry {
+public:
+	/** Create a registry with a fixed upper bound on pending pairs. */
+	explicit RelayPairRegistry(size_t max_pairs);
+
+	/**
+	 * Add credentials for one pair.
+	 *
+	 * Pair identities and tokens must be unique among pending pairs.
+	 */
+	void provision(const RelayPairCredentials &credentials);
+
+	/**
+	 * Authenticate one newly accepted connection.
+	 *
+	 * @return A completed pair when this connection supplies its second role,
+	 * or nullopt after storing the first role or rejecting the connection.
+	 */
+	std::optional<RelayPair> admit(TcpConnection connection);
+
+	/** Close and remove a pair that has not completed admission. */
+	bool cancel(uint64_t match_id, gamestate::player_id_t player_id);
+
+	/** Number of provisioned pairs still awaiting one or both roles. */
+	size_t pair_count() const;
+
+	/** Number of authenticated connections held by pending pairs. */
+	size_t connection_count() const;
+
+private:
+	struct PairKey {
+		uint64_t match_id;
+		gamestate::player_id_t player_id;
+
+		bool operator<(const PairKey &other) const;
+	};
+
+	struct PendingPair {
+		RelayPairCredentials credentials;
+		std::optional<TcpConnection> host;
+		std::optional<TcpConnection> guest;
+	};
+
+	const size_t max_pairs;
+	mutable std::mutex mutex;
+	std::map<PairKey, PendingPair> pairs;
 };
 
 /** Encode and validate a relay admission payload. */

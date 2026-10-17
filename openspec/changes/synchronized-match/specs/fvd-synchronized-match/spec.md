@@ -101,3 +101,11 @@ The networking implementation SHALL support pairing one outbound authoritative h
 #### Scenario: Relay credential has the wrong role or pair
 - **WHEN** a peer presents a token that does not authorize its requested host or guest role for that match and player
 - **THEN** the relay rejects that connection without consuming either valid side of the pair
+
+#### Scenario: Multiple relay pairs are active
+- **WHEN** the lobby provisions multiple host-to-guest pairs and their roles connect in any order
+- **THEN** each completed pair forwards independently and a disconnect closes only the affected pair
+
+#### Scenario: Lobby cancels pending relay admission
+- **WHEN** the lobby cancels a provisioned pair before both roles arrive
+- **THEN** the relay removes the admission and closes any role that already connected

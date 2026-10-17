@@ -111,6 +111,10 @@ def tests_cpp():
     )
     yield "openage::network::tests::relay", "FVD relay admission and forwarding"
     yield (
+        "openage::network::tests::relay_registry",
+        "FVD concurrent relay pair admission, isolation and cancellation",
+    )
+    yield (
         "openage::network::tests::relay_process_worker",
         "Internal worker for the FVD three-process relay test",
         lambda _env: False,

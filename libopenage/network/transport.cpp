@@ -16,6 +16,7 @@
 #include <ws2tcpip.h>
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -35,6 +36,7 @@ constexpr native_socket_t INVALID_NATIVE_SOCKET = -1;
 
 constexpr uintptr_t INVALID_SOCKET_HANDLE = (std::numeric_limits<uintptr_t>::max)();
 constexpr int LISTEN_BACKLOG = 8;
+constexpr long SOCKET_WAIT_MICROSECONDS = 250000;
 
 native_socket_t to_native(uintptr_t handle) {
 	return static_cast<native_socket_t>(handle);
@@ -82,6 +84,48 @@ bool interrupted_socket_call() {
 #else
 	return errno == EINTR;
 #endif
+}
+
+bool would_block_socket_call() {
+#if defined(_WIN32)
+	return WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+	return errno == EAGAIN or errno == EWOULDBLOCK;
+#endif
+}
+
+void make_socket_nonblocking(native_socket_t socket) {
+#if defined(_WIN32)
+	u_long enabled = 1;
+	if (ioctlsocket(socket, FIONBIO, &enabled) != 0) {
+		throw Error{MSG(err) << "Could not make FVD TCP socket nonblocking: "
+		                     << last_socket_error()};
+	}
+#else
+	auto flags = fcntl(socket, F_GETFL, 0);
+	if (flags < 0 or fcntl(socket, F_SETFL, flags | O_NONBLOCK) != 0) {
+		throw Error{MSG(err) << "Could not make FVD TCP socket nonblocking: "
+		                     << last_socket_error()};
+	}
+#endif
+}
+
+int wait_for_socket(native_socket_t socket, bool writable) {
+	fd_set sockets{};
+	FD_ZERO(&sockets);
+	FD_SET(socket, &sockets);
+	timeval timeout{};
+	timeout.tv_usec = SOCKET_WAIT_MICROSECONDS;
+#if defined(_WIN32)
+	constexpr int descriptor_count = 0;
+#else
+	auto descriptor_count = socket + 1;
+#endif
+	return select(descriptor_count,
+	              writable ? nullptr : &sockets,
+	              writable ? &sockets : nullptr,
+	              nullptr,
+	              &timeout);
 }
 
 void close_socket(native_socket_t socket) {
@@ -216,6 +260,13 @@ TcpConnection TcpConnection::connect(const std::string &address, uint16_t port) 
 		throw Error{MSG(err) << "Could not connect to TCP endpoint " << address
 		                     << ":" << port << ": " << last_socket_error()};
 	}
+	try {
+		make_socket_nonblocking(connected);
+	}
+	catch (...) {
+		close_socket(connected);
+		throw;
+	}
 	return TcpConnection{from_native(connected)};
 }
 
@@ -229,6 +280,9 @@ void TcpConnection::send_frame(const Frame &frame) {
 	auto bytes = encode_frame(frame);
 	size_t offset = 0;
 	while (offset < bytes.size()) {
+		if (this->socket_handle.load() != socket_handle) {
+			throw Error{MSG(err) << "FVD TCP connection closed during frame send"};
+		}
 		auto remaining = bytes.size() - offset;
 		auto chunk_size = remaining > static_cast<size_t>((std::numeric_limits<int>::max)())
 		                    ? (std::numeric_limits<int>::max)()
@@ -243,6 +297,15 @@ void TcpConnection::send_frame(const Frame &frame) {
 		}
 		if (sent < 0 && interrupted_socket_call()) {
 			continue;
+		}
+		if (sent < 0 && would_block_socket_call()) {
+			auto ready = wait_for_socket(to_native(socket_handle), true);
+			if (ready >= 0) {
+				continue;
+			}
+			if (interrupted_socket_call()) {
+				continue;
+			}
 		}
 		throw Error{MSG(err) << "Could not send FVD TCP frame: " << last_socket_error()};
 	}
@@ -262,6 +325,10 @@ std::optional<Frame> TcpConnection::receive_frame() {
 
 	std::array<uint8_t, 4096> buffer{};
 	while (true) {
+		if (this->socket_handle.load() != socket_handle) {
+			socket_lock.unlock();
+			return std::nullopt;
+		}
 		auto received = ::recv(to_native(socket_handle),
 		                       reinterpret_cast<char *>(buffer.data()),
 		                       static_cast<int>(buffer.size()),
@@ -288,6 +355,19 @@ std::optional<Frame> TcpConnection::receive_frame() {
 		}
 		if (interrupted_socket_call()) {
 			continue;
+		}
+		if (would_block_socket_call()) {
+			auto ready = wait_for_socket(to_native(socket_handle), false);
+			if (ready >= 0) {
+				continue;
+			}
+			if (interrupted_socket_call()) {
+				continue;
+			}
+		}
+		if (this->socket_handle.load() != socket_handle) {
+			socket_lock.unlock();
+			return std::nullopt;
 		}
 		auto error = last_socket_error();
 		socket_lock.unlock();
@@ -394,6 +474,13 @@ TcpConnection TcpListener::accept() {
 		}
 	}
 	prevent_sigpipe(accepted);
+	try {
+		make_socket_nonblocking(accepted);
+	}
+	catch (...) {
+		close_socket(accepted);
+		throw;
+	}
 	return TcpConnection{from_native(accepted)};
 }
 
