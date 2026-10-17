@@ -143,19 +143,48 @@ void messages() {
 	state.base_revision = 4;
 	state.world_revision = 5;
 	state.simulation_time = time::time_t::from_double(3.25);
-	state.positions = {
-		{100, {10.5, 20.25, 0}},
-		{200, {-1.0, 2.0, 3.0}},
+	state.map_size = 128;
+	state.players = {
+		{1, PlayerRole::HUNTER},
+		{2, PlayerRole::BUILDER},
 	};
+	state.entities = {
+		{100, 1, "fvd.data.entities.Horse", {10.5, 20.25, 0}},
+		{200, 2, "fvd.data.entities.Foundation", {-1.0, 2.0, 3.0}},
+	};
+	state.reservations = {{{10, 20}, 300}};
+	state.constructions = {{
+		7, 2, 300, {10, 20}, ConstructionPhase::PLANNED,
+		time::time_t::from_double(4.5), 200}};
 	auto decoded_state = decode_world_state(encode_world_state(state));
 	TESTEQUALS(decoded_state.base_revision, state.base_revision);
 	TESTEQUALS(decoded_state.world_revision, state.world_revision);
 	TESTEQUALS(decoded_state.simulation_time, state.simulation_time);
-	TESTEQUALS(decoded_state.positions.size(), state.positions.size());
-	for (size_t i = 0; i < state.positions.size(); ++i) {
-		TESTEQUALS(decoded_state.positions[i].entity_id, state.positions[i].entity_id);
-		TESTEQUALS(decoded_state.positions[i].position, state.positions[i].position);
+	TESTEQUALS(decoded_state.map_size, state.map_size);
+	TESTEQUALS(decoded_state.players.size(), state.players.size());
+	for (size_t i = 0; i < state.players.size(); ++i) {
+		TESTEQUALS(decoded_state.players[i].player_id, state.players[i].player_id);
+		decoded_state.players[i].role == state.players[i].role or TESTFAIL;
 	}
+	TESTEQUALS(decoded_state.entities.size(), state.entities.size());
+	for (size_t i = 0; i < state.entities.size(); ++i) {
+		TESTEQUALS(decoded_state.entities[i].entity_id, state.entities[i].entity_id);
+		TESTEQUALS(decoded_state.entities[i].owner_id, state.entities[i].owner_id);
+		TESTEQUALS(decoded_state.entities[i].definition, state.entities[i].definition);
+		TESTEQUALS(decoded_state.entities[i].position, state.entities[i].position);
+	}
+	TESTEQUALS(decoded_state.reservations.size(), size_t{1});
+	TESTEQUALS(decoded_state.reservations.front().tile, (coord::tile{10, 20}));
+	TESTEQUALS(decoded_state.reservations.front().builder_id,
+	           gamestate::entity_id_t{300});
+	TESTEQUALS(decoded_state.constructions.size(), size_t{1});
+	TESTEQUALS(decoded_state.constructions.front().order_id, uint64_t{7});
+	decoded_state.constructions.front().phase == ConstructionPhase::PLANNED
+		or TESTFAIL;
+	TESTEQUALS(decoded_state.constructions.front().phase_end_time,
+	           time::time_t::from_double(4.5));
+	TESTEQUALS(decoded_state.constructions.front().site_entity_id,
+	           gamestate::entity_id_t{200});
 
 	auto truncated_state = encode_world_state(state);
 	truncated_state.resize(truncated_state.size() - 8);
@@ -166,11 +195,11 @@ void messages() {
 	TESTTHROWS(decode_world_state(trailing_state));
 
 	WorldState maximum_state{};
-	maximum_state.positions.resize(MAX_STATE_POSITIONS);
-	auto maximum_payload = encode_world_state(maximum_state);
-	maximum_payload.size() <= MAX_PAYLOAD_SIZE or TESTFAIL;
-	maximum_state.positions.emplace_back();
+	maximum_state.map_size = 1;
+	maximum_state.entities.resize(MAX_STATE_ENTITIES + 1);
 	TESTTHROWS(encode_world_state(maximum_state));
+	WorldState missing_map{};
+	TESTTHROWS(encode_world_state(missing_map));
 
 	SnapshotRequest snapshot_request{17};
 	auto encoded_snapshot_request = encode_snapshot_request(snapshot_request);

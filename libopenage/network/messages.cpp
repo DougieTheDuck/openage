@@ -13,8 +13,6 @@ namespace openage::network {
 namespace {
 
 constexpr size_t COMMAND_PREFIX_SIZE = 16;
-constexpr size_t POSITION_SIZE = 32;
-
 class PayloadReader {
 public:
 	explicit PayloadReader(const std::vector<uint8_t> &payload) :
@@ -97,6 +95,16 @@ bool is_known_command_status(uint16_t value) {
 	    && value <= static_cast<uint16_t>(CommandStatus::REJECTED);
 }
 
+bool is_known_player_role(uint16_t value) {
+	return value >= static_cast<uint16_t>(PlayerRole::HUNTER)
+	    && value <= static_cast<uint16_t>(PlayerRole::BUILDER);
+}
+
+bool is_known_construction_phase(uint16_t value) {
+	return value >= static_cast<uint16_t>(ConstructionPhase::PLANNED)
+	    && value <= static_cast<uint16_t>(ConstructionPhase::UNDER_CONSTRUCTION);
+}
+
 void append_position(std::vector<uint8_t> &output, const coord::phys3 &position) {
 	append_i64(output, position.ne.get_raw_value());
 	append_i64(output, position.se.get_raw_value());
@@ -109,6 +117,15 @@ coord::phys3 read_position(PayloadReader &reader) {
 		coord::phys_t::from_raw_value(reader.i64()),
 		coord::phys_t::from_raw_value(reader.i64()),
 	};
+}
+
+void append_tile(std::vector<uint8_t> &output, const coord::tile &tile) {
+	append_i64(output, tile.ne);
+	append_i64(output, tile.se);
+}
+
+coord::tile read_tile(PayloadReader &reader) {
+	return {reader.i64(), reader.i64()};
 }
 
 void append_string(std::vector<uint8_t> &output,
@@ -302,20 +319,63 @@ CommandResult decode_command_result(const std::vector<uint8_t> &payload) {
 }
 
 std::vector<uint8_t> encode_world_state(const WorldState &state) {
-	if (state.positions.size() > MAX_STATE_POSITIONS) {
-		throw Error{MSG(err) << "FVD state contains more than "
-		                     << MAX_STATE_POSITIONS << " positions"};
+	if (state.map_size == 0) {
+		throw Error{MSG(err) << "FVD state requires a nonzero map size"};
+	}
+	if (state.players.size() > MAX_STATE_PLAYERS
+	    or state.entities.size() > MAX_STATE_ENTITIES
+	    or state.reservations.size() > MAX_STATE_RESERVATIONS
+	    or state.constructions.size() > MAX_STATE_CONSTRUCTIONS) {
+		throw Error{MSG(err) << "FVD state collection exceeds its protocol limit"};
 	}
 
 	std::vector<uint8_t> output{};
-	output.reserve(28 + state.positions.size() * POSITION_SIZE);
 	append_u64(output, state.base_revision);
 	append_u64(output, state.world_revision);
 	append_i64(output, state.simulation_time.get_raw_value());
-	append_u32(output, static_cast<uint32_t>(state.positions.size()));
-	for (const auto &position : state.positions) {
-		append_u64(output, position.entity_id);
-		append_position(output, position.position);
+	append_u32(output, state.map_size);
+	append_u32(output, static_cast<uint32_t>(state.players.size()));
+	append_u32(output, static_cast<uint32_t>(state.entities.size()));
+	append_u32(output, static_cast<uint32_t>(state.reservations.size()));
+	append_u32(output, static_cast<uint32_t>(state.constructions.size()));
+	for (const auto &player : state.players) {
+		if (player.player_id == 0
+		    or not is_known_player_role(static_cast<uint16_t>(player.role))) {
+			throw Error{MSG(err) << "FVD state contains an invalid player"};
+		}
+		append_u64(output, player.player_id);
+		append_u16(output, static_cast<uint16_t>(player.role));
+		append_u16(output, 0);
+	}
+	for (const auto &entity : state.entities) {
+		if (entity.definition.empty()) {
+			throw Error{MSG(err) << "FVD state contains an invalid entity"};
+		}
+		append_u64(output, entity.entity_id);
+		append_u64(output, entity.owner_id);
+		append_string(output, entity.definition, MAX_ENTITY_DEFINITION_SIZE);
+		append_position(output, entity.position);
+	}
+	for (const auto &reservation : state.reservations) {
+		append_tile(output, reservation.tile);
+		append_u64(output, reservation.builder_id);
+	}
+	for (const auto &construction : state.constructions) {
+		if (construction.order_id == 0 or construction.owner_id == 0
+		    or not is_known_construction_phase(static_cast<uint16_t>(construction.phase))) {
+			throw Error{MSG(err) << "FVD state contains an invalid construction order"};
+		}
+		append_u64(output, construction.order_id);
+		append_u64(output, construction.owner_id);
+		append_u64(output, construction.builder_id);
+		append_tile(output, construction.target);
+		append_u16(output, static_cast<uint16_t>(construction.phase));
+		append_u16(output, 0);
+		append_i64(output, construction.phase_end_time.get_raw_value());
+		append_u64(output, construction.site_entity_id);
+	}
+	if (output.size() > MAX_PAYLOAD_SIZE) {
+		throw Error{MSG(err) << "FVD state exceeds the maximum frame payload"};
 	}
 	return output;
 }
@@ -326,14 +386,68 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 	state.base_revision = reader.u64();
 	state.world_revision = reader.u64();
 	state.simulation_time = time::time_t::from_raw_value(reader.i64());
-	auto position_count = reader.u32();
-	if (position_count > MAX_STATE_POSITIONS) {
-		throw Error{MSG(err) << "FVD state contains more than "
-		                     << MAX_STATE_POSITIONS << " positions"};
+	state.map_size = reader.u32();
+	if (state.map_size == 0) {
+		throw Error{MSG(err) << "FVD state requires a nonzero map size"};
 	}
-	state.positions.reserve(position_count);
-	for (uint32_t i = 0; i < position_count; ++i) {
-		state.positions.push_back({reader.u64(), read_position(reader)});
+	auto player_count = reader.u32();
+	auto entity_count = reader.u32();
+	auto reservation_count = reader.u32();
+	auto construction_count = reader.u32();
+	if (player_count > MAX_STATE_PLAYERS
+	    or entity_count > MAX_STATE_ENTITIES
+	    or reservation_count > MAX_STATE_RESERVATIONS
+	    or construction_count > MAX_STATE_CONSTRUCTIONS) {
+		throw Error{MSG(err) << "FVD state collection exceeds its protocol limit"};
+	}
+	state.players.reserve(player_count);
+	for (uint32_t i = 0; i < player_count; ++i) {
+		auto player_id = reader.u64();
+		auto role = reader.u16();
+		if (player_id == 0 or not is_known_player_role(role)) {
+			throw Error{MSG(err) << "FVD state contains an invalid player"};
+		}
+		if (reader.u16() != 0) {
+			throw Error{MSG(err) << "Unsupported FVD player state flags"};
+		}
+		state.players.push_back({player_id, static_cast<PlayerRole>(role)});
+	}
+	state.entities.reserve(entity_count);
+	for (uint32_t i = 0; i < entity_count; ++i) {
+		auto entity_id = reader.u64();
+		auto owner_id = reader.u64();
+		auto definition = reader.string(MAX_ENTITY_DEFINITION_SIZE);
+		if (definition.empty()) {
+			throw Error{MSG(err) << "FVD state contains an invalid entity"};
+		}
+		state.entities.push_back(
+			{entity_id, owner_id, std::move(definition), read_position(reader)});
+	}
+	state.reservations.reserve(reservation_count);
+	for (uint32_t i = 0; i < reservation_count; ++i) {
+		auto tile = read_tile(reader);
+		auto builder_id = reader.u64();
+		state.reservations.push_back({tile, builder_id});
+	}
+	state.constructions.reserve(construction_count);
+	for (uint32_t i = 0; i < construction_count; ++i) {
+		ConstructionState construction{};
+		construction.order_id = reader.u64();
+		construction.owner_id = reader.u64();
+		construction.builder_id = reader.u64();
+		construction.target = read_tile(reader);
+		auto phase = reader.u16();
+		if (reader.u16() != 0) {
+			throw Error{MSG(err) << "Unsupported FVD construction state flags"};
+		}
+		construction.phase_end_time = time::time_t::from_raw_value(reader.i64());
+		construction.site_entity_id = reader.u64();
+		if (construction.order_id == 0 or construction.owner_id == 0
+		    or not is_known_construction_phase(phase)) {
+			throw Error{MSG(err) << "FVD state contains an invalid construction order"};
+		}
+		construction.phase = static_cast<ConstructionPhase>(phase);
+		state.constructions.push_back(construction);
 	}
 	reader.finish();
 	return state;

@@ -40,10 +40,9 @@ void submit_authenticated_command(
 	const time::time_t &time,
 	command_result_callback_t result_callback);
 
-/** Capture authoritative positions for replication at a simulation time. */
-WorldState capture_positions(
+/** Capture complete authoritative FVD state at a simulation time. */
+WorldState capture_fvd_state(
 	const std::shared_ptr<gamestate::GameState> &state,
-	const std::vector<gamestate::entity_id_t> &entity_ids,
 	const time::time_t &time,
 	uint64_t base_revision,
 	uint64_t world_revision);

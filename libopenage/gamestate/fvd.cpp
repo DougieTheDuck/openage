@@ -1127,4 +1127,48 @@ size_t FVD::get_player_count() const {
 	return this->player_count;
 }
 
+size_t FVD::get_map_size() const {
+	return this->map_size;
+}
+
+std::vector<FVDConstructionState> FVD::get_construction_state() const {
+	std::vector<FVDConstructionState> result{};
+	result.reserve(this->build_orders.size());
+	for (const auto &[builder_id, build] : this->build_orders) {
+		result.push_back({
+			build.order->get_id(),
+			build.order->get_owner(),
+			builder_id,
+			build.order->get_target(),
+			build.tower_id.has_value()
+				? FVDConstructionPhase::UNDER_CONSTRUCTION
+				: FVDConstructionPhase::PLANNED,
+			build.tower_id.has_value()
+				? build.arrival + this->construction_time
+				: build.arrival,
+			build.tower_id.value_or(build.foundation_id),
+		});
+	}
+	std::sort(result.begin(), result.end(),
+	          [](const auto &left, const auto &right) {
+		          return left.order_id < right.order_id;
+	          });
+	return result;
+}
+
+std::vector<FVDTileReservation> FVD::get_reserved_tiles() const {
+	std::vector<FVDTileReservation> result{};
+	result.reserve(this->reserved_tiles.size());
+	for (const auto &[tile, builder_id] : this->reserved_tiles) {
+		result.push_back({tile, builder_id});
+	}
+	std::sort(result.begin(), result.end(),
+	          [](const auto &left, const auto &right) {
+		          return left.tile.ne < right.tile.ne
+		              or (left.tile.ne == right.tile.ne
+		                  and left.tile.se < right.tile.se);
+	          });
+	return result;
+}
+
 } // namespace openage::gamestate

@@ -96,18 +96,28 @@ Coordinates are signed Q16.16 fixed-point values serialized from their raw 64-bi
 
 ### World state payload
 
-`WorldSnapshot` and `WorldDelta` use the same position payload.
+`WorldSnapshot` and `WorldDelta` carry complete authoritative FVD state at one simulation time.
+A client replaces its replicated world after accepting either message, while the base and world revisions still enforce ordered application.
 
 | Offset | Size | Field |
 |---:|---:|---|
 | 0 | 8 | Base world revision |
 | 8 | 8 | World revision carried by this message |
 | 16 | 8 | Authoritative simulation time as its raw signed fixed-point value |
-| 24 | 4 | Position count, at most 32,767 |
-| 28 | `32 * count` | Position records |
+| 24 | 4 | Square map size in tiles |
+| 28 | 4 | Playable player count, at most 8 |
+| 32 | 4 | Entity count, at most 16,384 |
+| 36 | 4 | Reserved tile count, at most 16,384 |
+| 40 | 4 | Active construction count, at most 1,024 |
+| 44 | variable | Player, entity, reservation and construction records in that order |
 
-Each position record contains an 8-byte entity ID followed by its three signed Q16.16 coordinates.
-The position-count limit keeps the complete payload within the 1 MiB frame limit.
+A player record contains an 8-byte player ID, a 2-byte Hunter or Builder role and 2 zero flag bytes.
+An entity record contains an 8-byte entity ID, 8-byte owner ID, a length-prefixed nyan definition of at most 256 UTF-8 bytes and three signed Q16.16 position coordinates.
+A reservation record contains two signed 8-byte tile coordinates and the 8-byte ID of the Builder holding the tile.
+A construction record contains its 8-byte order, owner and Builder IDs, two signed 8-byte target tile coordinates, a 2-byte planned or under-construction phase, 2 zero flag bytes, an 8-byte phase deadline and the 8-byte foundation or tower entity ID.
+Completed towers remain in the entity list and have no active construction record or reserved tiles.
+Protocol major version 2 introduced this complete state layout because it is incompatible with the earlier position-only payload.
+The encoder rejects any complete payload larger than the 1 MiB frame limit.
 
 ### Snapshot request payload
 

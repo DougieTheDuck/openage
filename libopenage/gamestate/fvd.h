@@ -36,6 +36,29 @@ namespace component::command {
 class BuildTowerCommand;
 }
 
+/** Construction phase exposed at the simulation/network boundary. */
+enum class FVDConstructionPhase : uint16_t {
+	PLANNED = 1,
+	UNDER_CONSTRUCTION = 2,
+};
+
+/** Read-only description of one active construction order. */
+struct FVDConstructionState {
+	uint64_t order_id;
+	player_id_t owner;
+	entity_id_t builder_id;
+	coord::tile target;
+	FVDConstructionPhase phase;
+	time::time_t phase_end_time;
+	entity_id_t site_entity_id;
+};
+
+/** One footprint tile reserved by an active construction order. */
+struct FVDTileReservation {
+	coord::tile tile;
+	entity_id_t builder_id;
+};
+
 /**
  * Flat plains scenario with one Hunter and the remaining players as Builders.
  */
@@ -148,6 +171,15 @@ public:
 
 	/** Get the number of playable players, excluding neutral player zero. */
 	size_t get_player_count() const;
+
+	/** Get the width and height of the square map in tiles. */
+	size_t get_map_size() const;
+
+	/** Capture active construction orders in stable order-ID order. */
+	std::vector<FVDConstructionState> get_construction_state() const;
+
+	/** Capture reserved footprint tiles in coordinate order. */
+	std::vector<FVDTileReservation> get_reserved_tiles() const;
 
 private:
 	struct AttackOrder {

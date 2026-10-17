@@ -2,6 +2,7 @@
 
 #include "command_bridge.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdlib>
 #include <exception>
@@ -48,6 +49,33 @@ AssetDigest test_asset_digest() {
 		digest[i] = static_cast<uint8_t>(i);
 	}
 	return digest;
+}
+
+const EntityState &find_entity(const WorldState &state,
+                                  gamestate::entity_id_t entity_id) {
+	auto found = std::find_if(
+		state.entities.begin(), state.entities.end(),
+		[entity_id](const auto &entity) { return entity.entity_id == entity_id; });
+	found != state.entities.end() or TESTFAIL;
+	return *found;
+}
+
+const EntityState &find_owned_entity(const WorldState &state,
+                                        gamestate::player_id_t owner_id) {
+	auto found = std::find_if(
+		state.entities.begin(), state.entities.end(),
+		[owner_id](const auto &entity) { return entity.owner_id == owner_id; });
+	found != state.entities.end() or TESTFAIL;
+	return *found;
+}
+
+const EntityState &find_defined_entity(const WorldState &state,
+                                          const std::string &definition) {
+	auto found = std::find_if(
+		state.entities.begin(), state.entities.end(),
+		[&definition](const auto &entity) { return entity.definition == definition; });
+	found != state.entities.end() or TESTFAIL;
+	return *found;
 }
 
 void run_host(TcpListener &listener, bool test_hunter_session) {
@@ -97,9 +125,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	CommandMailbox command_mailbox{16};
 	auto snapshot_frame = session.make_frame(
 		MessageType::WORLD_SNAPSHOT,
-		encode_world_state(
-			capture_positions(state, {*builder_id, *other_builder_id, horse->get_id()},
-			                  time::TIME_ZERO, 0, 0)));
+		encode_world_state(capture_fvd_state(state, time::TIME_ZERO, 0, 0)));
 	connection.send_frame(snapshot_frame);
 
 	auto command_frame = connection.receive_frame();
@@ -142,8 +168,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		loop->reach_time(sample_time, state);
 		auto delta_frame = session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(
-				capture_positions(state, intent.entity_ids, sample_time, 0, 1)));
+			encode_world_state(capture_fvd_state(state, sample_time, 0, 1)));
 		connection.send_frame(delta_frame);
 
 		auto spoofed_frame = connection.receive_frame();
@@ -158,8 +183,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		TESTEQUALS(spoofed_commands.size(), size_t{1});
 		auto &spoofed_command = spoofed_commands.front();
 		auto &spoofed = spoofed_command.intent;
-		auto before = capture_positions(
-			state, spoofed.entity_ids, sample_time, 0, 1);
+		auto before = capture_fvd_state(state, sample_time, 0, 1);
 		std::optional<bool> spoofed_accepted{};
 		submit_authenticated_command(
 			spoofed_command,
@@ -171,9 +195,9 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		loop->reach_time(sample_time, state);
 		spoofed_accepted.has_value() or TESTFAIL;
 		TESTEQUALS(*spoofed_accepted, false);
-		auto after = capture_positions(
-			state, spoofed.entity_ids, sample_time, 0, 1);
-		TESTEQUALS(after.positions.front().position, before.positions.front().position);
+		auto after = capture_fvd_state(state, sample_time, 0, 1);
+		TESTEQUALS(find_entity(after, spoofed.entity_ids.front()).position,
+		           find_entity(before, spoofed.entity_ids.front()).position);
 
 		CommandResult spoofed_result{};
 		spoofed_result.command_id = spoofed.command_id;
@@ -200,8 +224,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			auto &forged_hunter = forged_hunter_commands.front();
 			TESTEQUALS(static_cast<uint16_t>(forged_hunter.intent.kind),
 			           static_cast<uint16_t>(expected_kind));
-			auto horse_before = capture_positions(
-				state, forged_hunter.intent.entity_ids, sample_time, 0, 1);
+			auto horse_before = capture_fvd_state(state, sample_time, 0, 1);
 			std::optional<bool> forged_hunter_accepted{};
 			submit_authenticated_command(
 				forged_hunter,
@@ -213,10 +236,9 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			loop->reach_time(sample_time, state);
 			forged_hunter_accepted.has_value() or TESTFAIL;
 			TESTEQUALS(*forged_hunter_accepted, false);
-			auto horse_after = capture_positions(
-				state, forged_hunter.intent.entity_ids, sample_time, 0, 1);
-			TESTEQUALS(horse_after.positions.front().position,
-			           horse_before.positions.front().position);
+			auto horse_after = capture_fvd_state(state, sample_time, 0, 1);
+			TESTEQUALS(find_entity(horse_after, forged_hunter.intent.entity_ids.front()).position,
+			           find_entity(horse_before, forged_hunter.intent.entity_ids.front()).position);
 
 			CommandResult forged_hunter_result{};
 			forged_hunter_result.command_id = forged_hunter.intent.command_id;
@@ -231,6 +253,64 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		};
 		reject_forged_hunter_command(CommandKind::ATTACK_MOVE);
 		reject_forged_hunter_command(CommandKind::MOVE);
+
+		auto build_frame = connection.receive_frame();
+		build_frame.has_value() or TESTFAIL;
+		session.validate_incoming(*build_frame);
+		build_frame->message_type == MessageType::COMMAND_INTENT or TESTFAIL;
+		command_mailbox.try_push({
+			session.get_identity(),
+			decode_command_intent(build_frame->payload)})
+			or TESTFAIL;
+		auto build_commands = command_mailbox.drain(1);
+		TESTEQUALS(build_commands.size(), size_t{1});
+		auto &build = build_commands.front();
+		std::optional<bool> build_accepted{};
+		submit_authenticated_command(
+			build, loop, commander, state, sample_time,
+			[&](bool result) { build_accepted = result; });
+		loop->reach_time(sample_time, state);
+		build_accepted.has_value() or TESTFAIL;
+		TESTEQUALS(*build_accepted, true);
+
+		CommandResult build_result{};
+		build_result.command_id = build.intent.command_id;
+		build_result.status = CommandStatus::ACCEPTED;
+		build_result.world_revision = 2;
+		build_result.simulation_time = sample_time;
+		connection.send_frame(session.make_frame(
+			MessageType::COMMAND_RESULT,
+			encode_command_result(build_result)));
+
+		auto planned = capture_fvd_state(state, sample_time, 1, 2);
+		TESTEQUALS(planned.constructions.size(), size_t{1});
+		planned.constructions.front().phase == ConstructionPhase::PLANNED
+			or TESTFAIL;
+		not planned.reservations.empty() or TESTFAIL;
+		connection.send_frame(session.make_frame(
+			MessageType::WORLD_DELTA,
+			encode_world_state(planned)));
+
+		auto arrival = planned.constructions.front().phase_end_time;
+		loop->reach_time(arrival, state);
+		auto constructing = capture_fvd_state(state, arrival, 2, 3);
+		TESTEQUALS(constructing.constructions.size(), size_t{1});
+		constructing.constructions.front().phase
+			== ConstructionPhase::UNDER_CONSTRUCTION
+			or TESTFAIL;
+		connection.send_frame(session.make_frame(
+			MessageType::WORLD_DELTA,
+			encode_world_state(constructing)));
+
+		auto completion = constructing.constructions.front().phase_end_time;
+		loop->reach_time(completion, state);
+		auto completed = capture_fvd_state(state, completion, 3, 4);
+		completed.constructions.empty() or TESTFAIL;
+		completed.reservations.empty() or TESTFAIL;
+		find_defined_entity(completed, "fvd.data.entities.Tower");
+		connection.send_frame(session.make_frame(
+			MessageType::WORLD_DELTA,
+			encode_world_state(completed)));
 	}
 
 	if (not test_hunter_session) {
@@ -242,11 +322,10 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		hunter_connection, 1, test_asset_digest());
 	accepted_hunter_session.has_value() or TESTFAIL;
 	auto &hunter_session = *accepted_hunter_session;
-	auto hunter_time = time::time_t::from_int(30);
+	auto hunter_time = time::time_t::from_int(40);
 	auto hunter_snapshot_frame = hunter_session.make_frame(
 		MessageType::WORLD_SNAPSHOT,
-		encode_world_state(
-			capture_positions(state, {horse->get_id()}, hunter_time, 0, 1)));
+		encode_world_state(capture_fvd_state(state, hunter_time, 0, 4)));
 	hunter_connection.send_frame(hunter_snapshot_frame);
 
 	auto attack_frame = hunter_connection.receive_frame();
@@ -275,19 +354,18 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	CommandResult attack_result{};
 	attack_result.command_id = attack.intent.command_id;
 	attack_result.status = CommandStatus::ACCEPTED;
-	attack_result.world_revision = 2;
+	attack_result.world_revision = 5;
 	attack_result.simulation_time = hunter_time;
 	auto attack_result_frame = hunter_session.make_frame(
 		MessageType::COMMAND_RESULT,
 		encode_command_result(attack_result));
 	hunter_connection.send_frame(attack_result_frame);
 
-	auto attack_sample_time = time::time_t::from_int(31);
+	auto attack_sample_time = time::time_t::from_int(41);
 	loop->reach_time(attack_sample_time, state);
 	auto attack_delta_frame = hunter_session.make_frame(
 		MessageType::WORLD_DELTA,
-		encode_world_state(
-			capture_positions(state, {horse->get_id()}, attack_sample_time, 1, 2)));
+		encode_world_state(capture_fvd_state(state, attack_sample_time, 4, 5)));
 	hunter_connection.send_frame(attack_delta_frame);
 
 	auto hunter_build_frame = hunter_connection.receive_frame();
@@ -319,7 +397,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	CommandResult hunter_build_result{};
 	hunter_build_result.command_id = hunter_build.intent.command_id;
 	hunter_build_result.status = CommandStatus::REJECTED;
-	hunter_build_result.world_revision = 2;
+	hunter_build_result.world_revision = 5;
 	hunter_build_result.simulation_time = attack_sample_time;
 	hunter_build_result.reason = "Hunter cannot construct towers";
 	auto hunter_build_result_frame = hunter_session.make_frame(
@@ -343,10 +421,12 @@ void run_guest(uint16_t port) {
 	auto snapshot = decode_world_state(snapshot_frame->payload);
 	ReplicationTracker replication{};
 	replication.accept_snapshot(snapshot);
-	TESTEQUALS(snapshot.positions.size(), 3);
-	auto initial = snapshot.positions.front();
-	auto other = snapshot.positions[1];
-	auto horse = snapshot.positions.back();
+	TESTEQUALS(snapshot.map_size, uint32_t{128});
+	TESTEQUALS(snapshot.players.size(), size_t{8});
+	TESTEQUALS(snapshot.entities.size(), size_t{8});
+	auto initial = find_owned_entity(snapshot, 2);
+	auto other = find_owned_entity(snapshot, 3);
+	auto horse = find_owned_entity(snapshot, 1);
 	auto target = coord::phys3{
 		initial.position.ne,
 		initial.position.se + coord::phys_t::from_int(3),
@@ -379,9 +459,8 @@ void run_guest(uint16_t port) {
 	replication.accept_delta(delta) == DeltaDisposition::APPLY or TESTFAIL;
 	TESTEQUALS(delta.base_revision, uint64_t{0});
 	TESTEQUALS(delta.world_revision, uint64_t{1});
-	TESTEQUALS(delta.positions.size(), 1);
-	TESTEQUALS(delta.positions.front().entity_id, initial.entity_id);
-	TESTEQUALS(delta.positions.front().position, target);
+	TESTEQUALS(delta.entities.size() >= size_t{8}, true);
+	TESTEQUALS(find_entity(delta, initial.entity_id).position, target);
 
 	CommandIntent spoofed{};
 	spoofed.command_id = 2;
@@ -433,6 +512,62 @@ void run_guest(uint16_t port) {
 	};
 	send_forged_hunter_command(3, CommandKind::ATTACK_MOVE);
 	send_forged_hunter_command(4, CommandKind::MOVE);
+
+	CommandIntent build{};
+	build.command_id = 5;
+	build.kind = CommandKind::BUILD_TOWER;
+	build.entity_ids = {initial.entity_id};
+	build.target = {
+		target.ne,
+		target.se + coord::phys_t::from_int(4),
+		target.up};
+	client.send_frame(session.make_frame(
+		MessageType::COMMAND_INTENT,
+		encode_command_intent(build)));
+
+	auto build_result_frame = client.receive_frame();
+	build_result_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*build_result_frame);
+	build_result_frame->message_type == MessageType::COMMAND_RESULT or TESTFAIL;
+	auto build_result = decode_command_result(build_result_frame->payload);
+	build_result.status == CommandStatus::ACCEPTED or TESTFAIL;
+	TESTEQUALS(build_result.world_revision, uint64_t{2});
+
+	auto planned_frame = client.receive_frame();
+	planned_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*planned_frame);
+	auto planned = decode_world_state(planned_frame->payload);
+	replication.accept_delta(planned) == DeltaDisposition::APPLY or TESTFAIL;
+	TESTEQUALS(planned.constructions.size(), size_t{1});
+	planned.constructions.front().phase == ConstructionPhase::PLANNED
+		or TESTFAIL;
+	not planned.reservations.empty() or TESTFAIL;
+	TESTEQUALS(
+		find_entity(planned, planned.constructions.front().site_entity_id).definition,
+		"fvd.data.entities.Foundation");
+
+	auto constructing_frame = client.receive_frame();
+	constructing_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*constructing_frame);
+	auto constructing = decode_world_state(constructing_frame->payload);
+	replication.accept_delta(constructing) == DeltaDisposition::APPLY or TESTFAIL;
+	TESTEQUALS(constructing.constructions.size(), size_t{1});
+	constructing.constructions.front().phase
+		== ConstructionPhase::UNDER_CONSTRUCTION
+		or TESTFAIL;
+	TESTEQUALS(
+		find_entity(constructing,
+		            constructing.constructions.front().site_entity_id).definition,
+		"fvd.data.entities.Tower");
+
+	auto completed_frame = client.receive_frame();
+	completed_frame.has_value() or TESTFAIL;
+	session.validate_incoming(*completed_frame);
+	auto completed = decode_world_state(completed_frame->payload);
+	replication.accept_delta(completed) == DeltaDisposition::APPLY or TESTFAIL;
+	completed.constructions.empty() or TESTFAIL;
+	completed.reservations.empty() or TESTFAIL;
+	find_defined_entity(completed, "fvd.data.entities.Tower");
 }
 
 void run_hunter_guest(uint16_t port) {
@@ -449,9 +584,9 @@ void run_hunter_guest(uint16_t port) {
 	session.validate_incoming(*snapshot_frame);
 	snapshot_frame->message_type == MessageType::WORLD_SNAPSHOT or TESTFAIL;
 	auto snapshot = decode_world_state(snapshot_frame->payload);
-	TESTEQUALS(snapshot.world_revision, uint64_t{1});
-	TESTEQUALS(snapshot.positions.size(), size_t{1});
-	auto horse = snapshot.positions.front();
+	TESTEQUALS(snapshot.world_revision, uint64_t{4});
+	TESTEQUALS(snapshot.entities.size() >= size_t{8}, true);
+	auto horse = find_owned_entity(snapshot, 1);
 
 	CommandIntent attack{};
 	attack.command_id = 1;
@@ -473,18 +608,17 @@ void run_hunter_guest(uint16_t port) {
 	auto attack_result = decode_command_result(attack_result_frame->payload);
 	TESTEQUALS(attack_result.command_id, attack.command_id);
 	attack_result.status == CommandStatus::ACCEPTED or TESTFAIL;
-	TESTEQUALS(attack_result.world_revision, uint64_t{2});
+	TESTEQUALS(attack_result.world_revision, uint64_t{5});
 
 	auto delta_frame = client.receive_frame();
 	delta_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*delta_frame);
 	delta_frame->message_type == MessageType::WORLD_DELTA or TESTFAIL;
 	auto delta = decode_world_state(delta_frame->payload);
-	TESTEQUALS(delta.base_revision, uint64_t{1});
-	TESTEQUALS(delta.world_revision, uint64_t{2});
-	TESTEQUALS(delta.positions.size(), size_t{1});
-	TESTEQUALS(delta.positions.front().entity_id, horse.entity_id);
-	TESTEQUALS(delta.positions.front().position != horse.position, true);
+	TESTEQUALS(delta.base_revision, uint64_t{4});
+	TESTEQUALS(delta.world_revision, uint64_t{5});
+	TESTEQUALS(delta.entities.size() >= size_t{8}, true);
+	TESTEQUALS(find_entity(delta, horse.entity_id).position != horse.position, true);
 
 	CommandIntent build{};
 	build.command_id = 2;
@@ -503,7 +637,7 @@ void run_hunter_guest(uint16_t port) {
 	auto build_result = decode_command_result(build_result_frame->payload);
 	TESTEQUALS(build_result.command_id, build.command_id);
 	build_result.status == CommandStatus::REJECTED or TESTFAIL;
-	TESTEQUALS(build_result.world_revision, uint64_t{2});
+	TESTEQUALS(build_result.world_revision, uint64_t{5});
 	TESTEQUALS(build_result.reason, "Hunter cannot construct towers");
 }
 

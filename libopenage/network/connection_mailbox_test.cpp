@@ -45,6 +45,7 @@ void connection_mailbox() {
 	WorldDeltaMessage delta{};
 	delta.state.base_revision = 0;
 	delta.state.world_revision = 1;
+	delta.state.map_size = 128;
 	outbound.try_push(delta) or TESTFAIL;
 	outbound.try_push(ParticipantDisconnected{
 		3, DisconnectReason::CONNECTION_LOST})
@@ -65,6 +66,7 @@ void connection_mailbox() {
 	TESTEQUALS(decode_world_state(delta_frame.payload).world_revision, uint64_t{1});
 	WorldSnapshotMessage snapshot{};
 	snapshot.state.world_revision = 1;
+	snapshot.state.map_size = 128;
 	outbound.try_push(snapshot) or TESTFAIL;
 	outbound.try_push(ParticipantDisconnected{
 		3, DisconnectReason::LEFT_MATCH})

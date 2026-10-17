@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "coord/phys.h"
+#include "coord/tile.h"
 #include "gamestate/types.h"
 #include "network/protocol.h"
 #include "time/time.h"
@@ -30,8 +31,14 @@ constexpr uint32_t MAX_HANDSHAKE_REJECTION_SIZE = 4096;
 /** Largest entity selection accepted in one network command. */
 constexpr uint32_t MAX_COMMAND_ENTITIES = 1024;
 
-/** Largest position list accepted in one state message. */
-constexpr uint32_t MAX_STATE_POSITIONS = (MAX_PAYLOAD_SIZE - 28) / 32;
+/** Largest entity definition identifier accepted in world state. */
+constexpr uint32_t MAX_ENTITY_DEFINITION_SIZE = 256;
+
+/** Defensive collection limits for one world state payload. */
+constexpr uint32_t MAX_STATE_PLAYERS = 8;
+constexpr uint32_t MAX_STATE_ENTITIES = 16384;
+constexpr uint32_t MAX_STATE_RESERVATIONS = 16384;
+constexpr uint32_t MAX_STATE_CONSTRUCTIONS = 1024;
 
 /** Largest displayable command rejection reason. */
 constexpr uint32_t MAX_REJECTION_REASON_SIZE = 4096;
@@ -100,17 +107,58 @@ struct CommandResult {
 };
 
 /** One authoritative entity position. */
-struct EntityPosition {
+struct EntityState {
 	gamestate::entity_id_t entity_id{0};
+	gamestate::player_id_t owner_id{0};
+	std::string definition{};
 	coord::phys3 position{0, 0, 0};
 };
 
-/** Position subset carried by a world snapshot or delta. */
+/** FVD role assigned to one playable player. */
+enum class PlayerRole : uint16_t {
+	HUNTER = 1,
+	BUILDER = 2,
+};
+
+/** One playable player in authoritative world state. */
+struct PlayerState {
+	gamestate::player_id_t player_id{0};
+	PlayerRole role{PlayerRole::BUILDER};
+};
+
+/** One tile held by an unfinished construction order. */
+struct TileReservation {
+	coord::tile tile{0, 0};
+	gamestate::entity_id_t builder_id{0};
+};
+
+/** Network-visible phase of an unfinished construction order. */
+enum class ConstructionPhase : uint16_t {
+	PLANNED = 1,
+	UNDER_CONSTRUCTION = 2,
+};
+
+/** One authoritative unfinished tower construction order. */
+struct ConstructionState {
+	uint64_t order_id{0};
+	gamestate::player_id_t owner_id{0};
+	gamestate::entity_id_t builder_id{0};
+	coord::tile target{0, 0};
+	ConstructionPhase phase{ConstructionPhase::PLANNED};
+	time::time_t phase_end_time{};
+	gamestate::entity_id_t site_entity_id{0};
+};
+
+/** Complete authoritative FVD state carried by a snapshot or delta. */
 struct WorldState {
 	uint64_t base_revision{0};
 	uint64_t world_revision{0};
 	time::time_t simulation_time{};
-	std::vector<EntityPosition> positions{};
+	uint32_t map_size{0};
+	std::vector<PlayerState> players{};
+	std::vector<EntityState> entities{};
+	std::vector<TileReservation> reservations{};
+	std::vector<ConstructionState> constructions{};
 };
 
 /** Request for a full snapshot after a client cannot apply a world delta. */
