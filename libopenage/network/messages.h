@@ -49,6 +49,17 @@ enum class CommandStatus : uint16_t {
 	REJECTED = 2,
 };
 
+/** Reason an accepted participant connection ended. */
+enum class DisconnectReason : uint16_t {
+	CONNECTION_LOST = 1,
+	LEFT_MATCH = 2,
+	PROTOCOL_ERROR = 3,
+	HOST_SHUTDOWN = 4,
+};
+
+/** Whether a disconnect reason is defined by this protocol version. */
+bool is_known_disconnect_reason(DisconnectReason reason);
+
 /** SHA-256 digest of gameplay-affecting modpack manifests and data. */
 using AssetDigest = std::array<uint8_t, ASSET_DIGEST_SIZE>;
 
@@ -107,6 +118,12 @@ struct SnapshotRequest {
 	uint64_t last_applied_revision{0};
 };
 
+/** Authoritative notification that a participant left the match. */
+struct ParticipantDisconnected {
+	gamestate::player_id_t player_id{0};
+	DisconnectReason reason{DisconnectReason::CONNECTION_LOST};
+};
+
 /** Encode a ClientHello payload. */
 std::vector<uint8_t> encode_client_hello(const ClientHello &hello);
 
@@ -148,5 +165,13 @@ std::vector<uint8_t> encode_snapshot_request(const SnapshotRequest &request);
 
 /** Decode and validate a SnapshotRequest payload. */
 SnapshotRequest decode_snapshot_request(const std::vector<uint8_t> &payload);
+
+/** Encode a ParticipantDisconnected payload. */
+std::vector<uint8_t> encode_participant_disconnected(
+	const ParticipantDisconnected &disconnected);
+
+/** Decode and validate a ParticipantDisconnected payload. */
+ParticipantDisconnected decode_participant_disconnected(
+	const std::vector<uint8_t> &payload);
 
 } // namespace openage::network

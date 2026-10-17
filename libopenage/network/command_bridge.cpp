@@ -16,9 +16,26 @@
 
 namespace openage::network {
 
-void submit_command_intent(
-	const CommandIntent &intent,
-	gamestate::player_id_t assigned_player,
+namespace {
+
+gamestate::component::command::command_t simulation_command(CommandKind kind) {
+	switch (kind) {
+	case CommandKind::MOVE:
+		return gamestate::component::command::command_t::MOVE;
+	case CommandKind::ATTACK_MOVE:
+		return gamestate::component::command::command_t::ATTACK_MOVE;
+	case CommandKind::BUILD_TOWER:
+		return gamestate::component::command::command_t::BUILD_TOWER;
+	default:
+		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
+		                     << static_cast<uint16_t>(kind)};
+	}
+}
+
+} // namespace
+
+void submit_authenticated_command(
+	const AuthenticatedCommand &command,
 	const std::shared_ptr<::openage::event::EventLoop> &event_loop,
 	const std::shared_ptr<gamestate::event::Commander> &commander,
 	const std::shared_ptr<gamestate::GameState> &state,
@@ -27,16 +44,12 @@ void submit_command_intent(
 	if (not result_callback) {
 		throw Error{MSG(err) << "Network command intent requires a result callback"};
 	}
-	if (intent.kind != CommandKind::MOVE) {
-		result_callback(false);
-		return;
-	}
 
 	event::EventHandler::param_map::map_t params{
-		{"type", gamestate::component::command::command_t::MOVE},
-		{"target", intent.target},
-		{"owner", assigned_player},
-		{"entity_ids", intent.entity_ids},
+		{"type", simulation_command(command.intent.kind)},
+		{"target", command.intent.target},
+		{"owner", command.identity.player_id},
+		{"entity_ids", command.intent.entity_ids},
 		{"result_cb", std::move(result_callback)},
 	};
 	event_loop->submit_event(

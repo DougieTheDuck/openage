@@ -1046,9 +1046,12 @@ bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
 		auto entity = state->get_game_entity(id);
 		auto position = std::dynamic_pointer_cast<component::Position>(
 			entity->get_component(component::component_t::POSITION));
-		auto route = system::find_path(pathfinder, grid,
-		                              position->get_positions().get(time), destination, time);
-		if (route.empty()) {
+		auto route = pathfinder->get_path(path::PathRequest{
+			grid,
+			position->get_positions().get(time).to_tile(),
+			destination.to_tile(),
+			time});
+		if (route.status != path::PathResult::FOUND) {
 			return false;
 		}
 	}

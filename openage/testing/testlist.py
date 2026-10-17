@@ -89,11 +89,12 @@ def tests_cpp():
     yield "openage::network::tests::handshake"
     yield "openage::network::tests::session"
     yield "openage::network::tests::command_mailbox"
+    yield "openage::network::tests::connection_mailbox"
     yield "openage::network::tests::replication"
     yield "openage::network::tests::transport"
     yield (
         "openage::network::tests::fvd_loopback",
-        "FVD movement intent and authoritative state over loopback TCP",
+        "FVD command authority and state synchronization over loopback TCP",
     )
     yield (
         "openage::network::tests::fvd_process_worker",

@@ -3,10 +3,9 @@
 #pragma once
 
 #include <cstddef>
-#include <deque>
-#include <mutex>
 #include <vector>
 
+#include "network/bounded_mailbox.h"
 #include "network/messages.h"
 #include "network/session.h"
 
@@ -48,9 +47,7 @@ public:
 	size_t capacity() const;
 
 private:
-	const size_t max_pending;
-	mutable std::mutex mutex;
-	std::deque<AuthenticatedCommand> commands;
+	BoundedMailbox<AuthenticatedCommand> commands;
 };
 
 } // namespace openage::network

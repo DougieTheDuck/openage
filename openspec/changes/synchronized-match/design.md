@@ -27,9 +27,9 @@ one per second. Clients must not schedule independent horse spawns.
 
 - Prove loopback command -> host simulation -> remote observable state on
   two distinct processes, before integrating all combat and HUD systems.
-- Define input rate limits and disconnect handling.
-- Distinguish disconnect before and after game start; decide whether
-  abandoned Builder entities persist or matches pause/end.
+- Define input rate limits.
+- Follow the pre-match and mid-match disconnect policy in
+  [the networking documentation](../../../doc/code/network/README.md#disconnect-policy).
 
 ## Transport and protocol
 

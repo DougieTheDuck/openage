@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "gamestate/types.h"
+#include "network/command_mailbox.h"
 #include "network/messages.h"
 
 namespace openage::event {
@@ -26,14 +27,13 @@ namespace openage::network {
 using command_result_callback_t = std::function<void(bool)>;
 
 /**
- * Translate a player-independent network intent into a simulation event.
+ * Translate an authenticated network command into a simulation event.
  *
- * Ownership is supplied by the accepted ConnectionSession identity and never
- * read from the payload.
+ * Ownership comes from the immutable accepted-session identity paired with
+ * the intent by CommandMailbox.
  */
-void submit_command_intent(
-	const CommandIntent &intent,
-	gamestate::player_id_t assigned_player,
+void submit_authenticated_command(
+	const AuthenticatedCommand &command,
 	const std::shared_ptr<::openage::event::EventLoop> &event_loop,
 	const std::shared_ptr<gamestate::event::Commander> &commander,
 	const std::shared_ptr<gamestate::GameState> &state,

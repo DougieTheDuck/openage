@@ -30,9 +30,13 @@ The same object creates outbound frames with the negotiated version, correct ses
 After validation and payload decoding, connection threads place authenticated commands into a bounded `CommandMailbox`.
 The simulation thread drains this mailbox in FIFO arrival order and supplies its authoritative time when scheduling commands.
 A full mailbox is explicit backpressure: the connection handler must reject the command or disconnect the peer rather than dropping it silently.
+Simulation output is placed into one bounded `OutboundMailbox` per accepted connection.
+Its values are typed command results, snapshots, deltas or disconnect notifications; only the owning connection thread converts them to sequenced frames and writes the socket.
+An outbound mailbox that remains full identifies a client that cannot keep up, so the host disconnects that client instead of silently dropping authoritative state.
+Connection threads publish closed sessions through `ConnectionEventMailbox` for authoritative processing.
 
 Gameplay payloads never contain a claimed player ID.
-The network boundary passes the decoded `CommandIntent` and the session's assigned player to `submit_command_intent`.
+The network boundary passes the `AuthenticatedCommand` drained from the mailbox to `submit_authenticated_command`.
 The bridge schedules work on the authoritative event loop and returns a `CommandResult` decision.
 Gameplay code can add command behavior and replicated records without reading sockets, framing bytes or maintaining connection counters.
 Network code can change connection management without changing horse, projectile, damage or building simulation.
@@ -111,6 +115,14 @@ The position-count limit keeps the complete payload within the 1 MiB frame limit
 It is sent once when a client receives a delta whose base does not match that revision.
 The client suppresses later deltas until a complete recovery snapshot arrives.
 
+### Participant disconnected payload
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 8 | Nonzero player ID |
+| 8 | 2 | Reason: connection lost `1`, left match `2`, protocol error `3` or host shutdown `4` |
+| 10 | 2 | Flags, currently zero |
+
 ## Compatibility handshake
 
 `ClientHello` supplies the participant name, protocol version, game build version and an FVD asset manifest digest.
@@ -162,3 +174,12 @@ Clients apply only contiguous revisions and request a snapshot after a gap.
 
 The initial implementation has no client prediction.
 Clients render authoritative state and may interpolate presentation positions without changing simulation state.
+
+## Disconnect policy
+
+Before match start, a disconnected participant is removed from the lobby and their player slot may be assigned again.
+After match start, the host keeps the disconnected player's entities, ownership and already accepted orders in authoritative state.
+The player ID is not reassigned, no new commands are accepted for the closed session, and the match continues for the remaining participants.
+Every remaining connection receives one `ParticipantDisconnected` notification.
+If the authoritative host disconnects, clients end the match because no peer may silently replace its simulation.
+Failure to enqueue a connection lifecycle event is fatal to the host session because continuing would conceal a disconnect from authoritative state.

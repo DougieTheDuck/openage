@@ -179,6 +179,23 @@ void messages() {
 	           snapshot_request.last_applied_revision);
 	encoded_snapshot_request.push_back(0);
 	TESTTHROWS(decode_snapshot_request(encoded_snapshot_request));
+
+	ParticipantDisconnected disconnected{3, DisconnectReason::CONNECTION_LOST};
+	auto encoded_disconnected = encode_participant_disconnected(disconnected);
+	TESTEQUALS(encoded_disconnected.size(), size_t{12});
+	auto decoded_disconnected = decode_participant_disconnected(encoded_disconnected);
+	TESTEQUALS(decoded_disconnected.player_id, disconnected.player_id);
+	decoded_disconnected.reason == disconnected.reason or TESTFAIL;
+	TESTTHROWS(encode_participant_disconnected(
+		{0, DisconnectReason::CONNECTION_LOST}));
+	TESTTHROWS(encode_participant_disconnected(
+		{3, static_cast<DisconnectReason>(100)}));
+	auto invalid_disconnect_flags = encoded_disconnected;
+	invalid_disconnect_flags[11] = 1;
+	TESTTHROWS(decode_participant_disconnected(invalid_disconnect_flags));
+	auto trailing_disconnected = encoded_disconnected;
+	trailing_disconnected.push_back(0);
+	TESTTHROWS(decode_participant_disconnected(trailing_disconnected));
 }
 
 } // namespace openage::network::tests

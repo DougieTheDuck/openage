@@ -124,6 +124,12 @@ void append_string(std::vector<uint8_t> &output,
 
 } // namespace
 
+bool is_known_disconnect_reason(DisconnectReason reason) {
+	auto value = static_cast<uint16_t>(reason);
+	return value >= static_cast<uint16_t>(DisconnectReason::CONNECTION_LOST)
+	    && value <= static_cast<uint16_t>(DisconnectReason::HOST_SHUTDOWN);
+}
+
 std::vector<uint8_t> encode_client_hello(const ClientHello &hello) {
 	if (hello.participant_name.empty()) {
 		throw Error{MSG(err) << "FVD participant name must not be empty"};
@@ -344,6 +350,43 @@ SnapshotRequest decode_snapshot_request(const std::vector<uint8_t> &payload) {
 	SnapshotRequest request{reader.u64()};
 	reader.finish();
 	return request;
+}
+
+std::vector<uint8_t> encode_participant_disconnected(
+	const ParticipantDisconnected &disconnected) {
+	if (disconnected.player_id == 0) {
+		throw Error{MSG(err) << "Disconnected FVD participant ID must be nonzero"};
+	}
+	if (not is_known_disconnect_reason(disconnected.reason)) {
+		throw Error{MSG(err) << "Unknown FVD disconnect reason "
+		                     << static_cast<uint16_t>(disconnected.reason)};
+	}
+
+	std::vector<uint8_t> output{};
+	append_u64(output, disconnected.player_id);
+	append_u16(output, static_cast<uint16_t>(disconnected.reason));
+	append_u16(output, 0);
+	return output;
+}
+
+ParticipantDisconnected decode_participant_disconnected(
+	const std::vector<uint8_t> &payload) {
+	PayloadReader reader{payload};
+	ParticipantDisconnected disconnected{};
+	disconnected.player_id = reader.u64();
+	auto reason = reader.u16();
+	if (not is_known_disconnect_reason(static_cast<DisconnectReason>(reason))) {
+		throw Error{MSG(err) << "Unknown FVD disconnect reason " << reason};
+	}
+	disconnected.reason = static_cast<DisconnectReason>(reason);
+	if (reader.u16() != 0) {
+		throw Error{MSG(err) << "Unsupported FVD participant disconnect flags"};
+	}
+	reader.finish();
+	if (disconnected.player_id == 0) {
+		throw Error{MSG(err) << "Disconnected FVD participant ID must be nonzero"};
+	}
+	return disconnected;
 }
 
 } // namespace openage::network
