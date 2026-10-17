@@ -207,7 +207,7 @@ Item {
 			Text {
 				color: "#d6e6db"
 				font.pixelSize: 13
-				text: "Tower kills: " + (root.hud === null ? 0 : root.hud.kills)
+				text: "Tower kills: " + (root.hud === null || !root.hud.killsAvailable ? "—" : root.hud.kills)
 			}
 			Text {
 				visible: !root.hunter && (root.placing || root.queuedTowers > 0)

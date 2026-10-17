@@ -2,7 +2,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <optional>
 
 #include "network/messages.h"
 
@@ -23,6 +25,15 @@ enum class DeltaDisposition {
  */
 class ReplicationTracker {
 public:
+	/** Bind replication to the player assigned by the host session. */
+	explicit ReplicationTracker(gamestate::player_id_t assigned_player);
+
+	/** Assigned player identity, fixed for this match. */
+	gamestate::player_id_t get_local_player_id() const;
+
+	/** Displayable authoritative kills, unavailable until sync or after host loss. */
+	std::optional<uint64_t> get_local_kills() const;
+
 	/** Record a complete initial or recovery snapshot. */
 	void accept_snapshot(const WorldState &snapshot);
 
@@ -54,6 +65,10 @@ public:
 	SnapshotRequest make_snapshot_request() const;
 
 private:
+	const gamestate::player_id_t assigned_player;
+	// The presenter may read these while the connection thread applies updates.
+	std::atomic<uint64_t> displayed_kills{0};
+	std::atomic<bool> displayed_kills_valid{false};
 	bool host_connected{true};
 	bool initialized{false};
 	bool awaiting_snapshot{false};

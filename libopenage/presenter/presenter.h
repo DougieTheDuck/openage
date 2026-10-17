@@ -37,6 +37,10 @@ namespace time {
 class TimeLoop;
 }
 
+namespace network {
+class ReplicationTracker;
+}
+
 namespace renderer {
 class RenderPass;
 class Renderer;
@@ -125,6 +129,9 @@ public:
 	 */
 	void set_time_loop(const std::shared_ptr<time::TimeLoop> &time_loop);
 
+	/** Bind the recipient-specific network stream before starting the presenter. */
+	void set_fvd_replication(const std::shared_ptr<network::ReplicationTracker> &replication);
+
 	/**
 	 * Initialize the Qt application managing the graphical views. Required
 	 * for creating windows.
@@ -196,6 +203,8 @@ protected:
 
 	/** Qt bridge for FVD player HUD state and build-button actions. */
 	std::shared_ptr<QQmlPropertyMap> fvd_hud_state;
+	/** Guest HUD source; local-only matches continue to read their simulation. */
+	std::shared_ptr<network::ReplicationTracker> fvd_replication;
 	/** Most recent screen cursor coordinate, owned by the presenter thread. */
 	std::optional<coord::input> placement_cursor;
 

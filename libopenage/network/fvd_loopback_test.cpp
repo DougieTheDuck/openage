@@ -599,8 +599,9 @@ void run_guest(uint16_t port) {
 	session.validate_incoming(*snapshot_frame);
 	snapshot_frame->message_type == MessageType::WORLD_SNAPSHOT or TESTFAIL;
 	auto snapshot = decode_world_state(snapshot_frame->payload);
-	ReplicationTracker replication{};
+	ReplicationTracker replication{session.get_identity().player_id};
 	replication.accept_snapshot(snapshot);
+	TESTEQUALS(replication.get_local_kills().value(), uint64_t{0});
 	TESTEQUALS(snapshot.map_size, uint32_t{128});
 	TESTEQUALS(snapshot.players.size(), size_t{8});
 	TESTEQUALS(snapshot.entities.size(), size_t{8});
@@ -793,6 +794,7 @@ void run_guest(uint16_t port) {
 	session.validate_incoming(*killed_frame);
 	auto killed = decode_world_state(killed_frame->payload);
 	replication.accept_delta(killed) == DeltaDisposition::APPLY or TESTFAIL;
+	TESTEQUALS(replication.get_local_kills().value(), uint64_t{1});
 	TESTEQUALS(killed.base_revision, uint64_t{7});
 	TESTEQUALS(killed.world_revision, uint64_t{8});
 	TESTEQUALS(std::none_of(
@@ -816,8 +818,9 @@ void run_hunter_guest(uint16_t port) {
 	session.validate_incoming(*snapshot_frame);
 	snapshot_frame->message_type == MessageType::WORLD_SNAPSHOT or TESTFAIL;
 	auto snapshot = decode_world_state(snapshot_frame->payload);
-	ReplicationTracker replication{};
+	ReplicationTracker replication{session.get_identity().player_id};
 	replication.accept_snapshot(snapshot);
+	TESTEQUALS(replication.get_local_kills().value(), uint64_t{0});
 	TESTEQUALS(snapshot.world_revision, uint64_t{9});
 	TESTEQUALS(snapshot.local_player_id, gamestate::player_id_t{1});
 	TESTEQUALS(snapshot.local_kill_count, uint64_t{0});
