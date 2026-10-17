@@ -708,8 +708,16 @@ void fvd_hunter_combat() {
 		one->get_component(component::component_t::POSITION));
 	TESTEQUALS(horse_pos->get_positions().get(at(15.25)).ne != coord::phys_t::from_int(71), true);
 
-	// Completed towers automatically fire at Hunter units.
+	// Completed towers automatically fire at Hunter units. The visual
+	// streak exists during the flight, but cannot deal damage itself.
 	fvd->combat_tick(state, at(15));
+	TESTEQUALS(fvd->get_visible_arrows(at(14.9)).empty(), true);
+	auto trails = fvd->get_visible_arrows(at(15.1));
+	TESTEQUALS(trails.size(), size_t{1});
+	TESTEQUALS(trails.front().progress > 0.0, true);
+	TESTEQUALS(trails.front().progress < 1.0, true);
+	TESTEQUALS(trails.front().head != trails.front().tail, true);
+	TESTEQUALS(fvd->get_visible_arrows(at(15.2)).empty(), true);
 	loop->reach_time(at(15.2), state);
 	auto horse_live = std::dynamic_pointer_cast<component::Live>(
 		one->get_component(component::component_t::LIVE));

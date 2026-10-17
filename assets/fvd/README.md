@@ -39,7 +39,8 @@ Right-click issues an ordinary Move without seeking enemies; Escape cancels atta
 The gather point remains unimplemented.
 Completed towers automatically target nearby horses and fire scheduled arrows.
 Only authoritative impacts damage health; killing blows credit the tower's Builder.
-Logical arrow impacts are implemented, but visual arrow sprite rendering and network replication remain outstanding.
+Tower arrows now appear as brief camera-projected golden streaks with a small ballistic arc, drawn in the QML overlay from the authoritative launch time and flight duration. Visual shots are bounded for large battles, but all damage events still resolve normally.
+Network replication of those shot visuals remains outstanding; this overlay currently follows only the local authoritative simulation.
 Combat tuning is in scenario.nyan and the local player's tower kill count appears in the HUD.
 
 The local view initially controls player 2.

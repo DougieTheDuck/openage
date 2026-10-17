@@ -5,7 +5,7 @@
 - [x] 1.3 Add human Hunter owned-horse selection, including group selection, and ordinary Move orders.
 - [ ] 1.4 Add AttackMove orders through the existing controller, command queue, pathfinding and simulation; fight eligible enemies en route, then resume travel.
 - [ ] 1.5 Enforce Hunter-only horse command ownership in solo and network role assignments; reject Builder-issued Hunter orders.
-- [ ] 1.6 Add horse attack/damage behavior and tower targeting, arrow projectiles, damage and deaths for completed towers.
+- [x] 1.6 Add horse attack/damage behavior and tower targeting, logical arrow impacts, visual flight trails, damage and deaths for completed towers (remote visuals tracked by synchronized-match).
 - [x] 1.7 Add idempotent lethal-damage credit to the owner of a killing tower.
 - [x] 1.8 Expose only the current player's kill total through the local HUD (network delivery follows synchronized-match work).
 - [ ] 1.9 Test exact t=19/20/21/22-second spawning, idle groups, command handling, resumed AttackMove and simultaneous lethal hit attribution.

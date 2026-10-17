@@ -5,8 +5,11 @@
 #include <eigen3/Eigen/Dense>
 #include <QEvent>
 #include <QMouseEvent>
+#include <QVariantList>
+#include <QVariantMap>
 #include <QQmlPropertyMap>
 #include <QVariant>
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -361,6 +364,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("attacking", false);
 			this->fvd_hud_state->insert("placing", false);
 			this->fvd_hud_state->insert("kills", 0);
+			this->fvd_hud_state->insert("arrowStreaks", QVariantList{});
 			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->fvd_hud_state->insert("action", QString{});
 			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
@@ -498,6 +502,46 @@ void Presenter::render() {
 			this->fvd_hud_state->insert("attacking", this->game_controller->is_attack_move_active());
 			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 			if (fvd) {
+				const auto now = this->time_loop->get_clock()->get_time();
+				const auto arrows = fvd->get_visible_arrows(now);
+				QVariantList arrow_streaks;
+				arrow_streaks.reserve(arrows.size());
+				if (not arrows.empty()) {
+					const Eigen::Matrix4f camera_matrix = this->camera->get_projection_matrix()
+					                                     * this->camera->get_view_matrix();
+					const auto viewport = this->camera->get_viewport_size();
+					const auto screen_width = static_cast<float>(viewport[0]);
+					const auto screen_height = static_cast<float>(viewport[1]);
+					auto project = [&](const coord::phys3 &position) {
+						const auto world = position.to_scene3().to_world_space();
+						const Eigen::Vector4f clip = camera_matrix
+						                           * Eigen::Vector4f{world.x(), world.y(), world.z(), 1.0f};
+						return Eigen::Vector2f{
+							(clip.x() / clip.w() * 0.5f + 0.5f) * screen_width,
+							(0.5f - clip.y() / clip.w() * 0.5f) * screen_height};
+					};
+					for (const auto &arrow : arrows) {
+						auto tail = project(arrow.tail);
+						auto head = project(arrow.head);
+						// Keep QML Canvas work bounded to visible shots.
+						if (not std::isfinite(head.x()) or not std::isfinite(head.y())
+						    or (head.x() < -100 and tail.x() < -100)
+						    or (head.x() > screen_width + 100 and tail.x() > screen_width + 100)
+						    or (head.y() < -100 and tail.y() < -100)
+						    or (head.y() > screen_height + 100 and tail.y() > screen_height + 100)) {
+							continue;
+						}
+						arrow_streaks.push_back(QVariantMap{
+							{"x0", tail.x()}, {"y0", tail.y()},
+							{"x1", head.x()}, {"y1", head.y()},
+							{"alpha", std::min(1.0, (1.0 - arrow.progress) * 4.0)}});
+					}
+				}
+				// No Canvas repaint when nothing is on screen.
+				if (not arrow_streaks.empty()
+				    or not this->fvd_hud_state->value("arrowStreaks").toList().empty()) {
+					this->fvd_hud_state->insert("arrowStreaks", arrow_streaks);
+				}
 				auto countdown = fvd->get_hunter_spawn_countdown(
 					this->time_loop->get_clock()->get_time());
 				this->fvd_hud_state->insert("hunterCountdown",
