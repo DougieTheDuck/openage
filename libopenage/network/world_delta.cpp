@@ -87,6 +87,11 @@ void difference(const std::vector<Record> &before, const std::vector<Record> &af
 template<typename Record, typename Key, typename GetKey>
 void patch(std::vector<Record> &records, const std::vector<Record> &changes,
            const std::vector<Key> &removals, GetKey key) {
+	// Most records are unchanged on a typical FVD tick. Avoid building
+	// lookup tables and sorting thousands of entities on empty patches.
+	if (changes.empty() and removals.empty()) {
+		return;
+	}
 	std::unordered_map<Key, size_t> existing;
 	for (size_t i = 0; i < records.size(); ++i) {
 		if (not existing.emplace(key(records[i]), i).second) {
