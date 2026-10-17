@@ -8,12 +8,49 @@ Item {
 	property var hud: typeof fvdHud === "undefined" ? null : fvdHud
 	readonly property bool hunter: hud !== null && hud.controlled === 1
 	readonly property bool placing: hud !== null && hud.placing
+	readonly property bool placementValid: hud !== null && hud.placementValid
+	readonly property var placementFootprint: hud === null ? [] : hud.placementFootprint
+	readonly property int queuedTowers: hud === null ? 0 : hud.queuedTowers
 	readonly property bool canBuild: hud !== null && hud.canBuild
 	readonly property bool isTower: hud !== null && hud.isTower
 	readonly property bool canAttack: hud !== null && hud.canAttack
 	readonly property bool attacking: hud !== null && hud.attacking
 	readonly property int hunterCountdown: hud === null ? 0 : hud.hunterCountdown
 	readonly property var arrowStreaks: hud === null ? [] : hud.arrowStreaks
+
+	// Tile-accurate 2D build preview, using the same camera projection as
+	// world sprites. Mouse input still passes through to the game.
+	Canvas {
+		id: towerPreview
+		anchors.fill: parent
+		z: -1
+		visible: root.placing && root.placementFootprint.length > 0
+		onVisibleChanged: requestPaint()
+		Connections {
+			target: root
+			function onPlacementFootprintChanged() { towerPreview.requestPaint() }
+			function onPlacementValidChanged() { towerPreview.requestPaint() }
+		}
+		onPaint: {
+			var ctx = getContext("2d")
+			ctx.clearRect(0, 0, width, height)
+			var tiles = root.placementFootprint
+			ctx.lineWidth = 1.5
+			ctx.fillStyle = root.placementValid ? "rgba(65, 216, 111, 0.24)" : "rgba(240, 71, 71, 0.30)"
+			ctx.strokeStyle = root.placementValid ? "#74ed96" : "#ff6969"
+			for (var i = 0; i < tiles.length; ++i) {
+				var tile = tiles[i]
+				ctx.beginPath()
+				ctx.moveTo(tile.ax, tile.ay)
+				ctx.lineTo(tile.bx, tile.by)
+				ctx.lineTo(tile.cx, tile.cy)
+				ctx.lineTo(tile.dx, tile.dy)
+				ctx.closePath()
+				ctx.fill()
+				ctx.stroke()
+			}
+		}
+	}
 
 	// Screen-space display only. Simulation shot events determine impact
 	// and damage; this Canvas never creates selectable world objects.
@@ -111,7 +148,7 @@ Item {
 			color: "#ffffff"
 			font.pixelSize: 14
 			text: root.placing
-			    ? "Tower placement: click a map tile | Right-click or Esc to cancel"
+			    ? "Build: click to place | Shift+click queue | Green valid / Red blocked | Esc cancel"
 			    : root.attacking ? "Attack-move: click map | Right-click or Esc cancels"
 			    : root.canAttack
 			    ? "Hunter: Right-click enemy to focus | Right-click ground to move | A: Attack-move"
@@ -171,6 +208,13 @@ Item {
 				color: "#d6e6db"
 				font.pixelSize: 13
 				text: "Tower kills: " + (root.hud === null ? 0 : root.hud.kills)
+			}
+			Text {
+				visible: !root.hunter && (root.placing || root.queuedTowers > 0)
+				color: root.placing && !root.placementValid ? "#ffb6a8" : "#b5d9c4"
+				font.pixelSize: 12
+				text: "Queued towers: " + root.queuedTowers +
+				      (root.placing ? (root.placementValid ? " | Site ready" : " | Site blocked") : "")
 			}
 			Rectangle {
 				visible: root.canBuild || root.canAttack

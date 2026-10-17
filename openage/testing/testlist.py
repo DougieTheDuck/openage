@@ -132,6 +132,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_build_queue",
+        "FVD FIFO tower construction and reserved queued sites",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_hunter_spawning",
         "FVD Hunter horse spawn cadence and idle behavior",
         lambda env: env["has_assets"],

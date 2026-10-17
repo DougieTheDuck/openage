@@ -1083,4 +1083,74 @@ void fvd_hunter_focus_attack() {
 	TESTEQUALS(other_live->get_attribute(
 		at(28), "fvd.data.entities.Health")->get(at(28)), other_hp);
 }
+
+void fvd_build_queue() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double sec) { return time::time_t::from_double(sec); };
+	entity_id_t builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (ownership->get_owners().get(time::TIME_ZERO) == player_id_t{2}) {
+			builder = id;
+			break;
+		}
+	}
+	TESTEQUALS(builder != 0, true);
+	const std::vector<entity_id_t> selected{builder};
+	TESTEQUALS(fvd->can_place_tower(state, 2, selected, {61, 66, 0}, at(0)), true);
+	TESTEQUALS(fvd->can_place_tower(state, 1, selected, {61, 66, 0}, at(0)), false);
+	auto queue = [&](const coord::phys3 &site, double when) {
+		bool accepted = false;
+		event::SendCommandHandler commander;
+		commander.invoke(*loop, nullptr, state, at(when),
+		                 {{"type", component::command::command_t::BUILD_TOWER},
+		                  {"owner", player_id_t{2}}, {"queue", true},
+		                  {"entity_ids", selected}, {"target", site},
+		                  {"result_cb", std::function<void(bool)>{[&accepted](bool value) {
+			                  accepted = value;
+		                  }}}});
+		return accepted;
+	};
+	TESTEQUALS(queue({61, 66, 0}, 0), true);
+	TESTEQUALS(queue({57, 66, 0}, 0), true);
+	TESTEQUALS(queue({54, 66, 0}, 0), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{2});
+	TESTEQUALS(fvd->is_tile_reserved({54, 66}), true);
+	TESTEQUALS(queue({57, 66, 0}, 0), false);
+	TESTEQUALS(fvd->can_place_tower(state, 2, selected, {57, 66, 0}, at(0)), false);
+	loop->reach_time(at(0.1), state);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{1});
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{57, 66}));
+	loop->reach_time(at(40), state);
+	TESTEQUALS(fvd->get_build_order(builder) == nullptr, true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	size_t towers = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			++towers;
+		}
+	}
+	TESTEQUALS(towers, size_t{3});
+	TESTEQUALS(fvd->is_tile_reserved({57, 66}), false);
+	TESTEQUALS(fvd->is_tile_reserved({54, 66}), false);
+	TESTEQUALS(queue({45, 66, 0}, 41), true);
+	TESTEQUALS(queue({42, 66, 0}, 41), true);
+	TESTEQUALS(fvd->cancel_build(state, builder, at(41.1)), true);
+	TESTEQUALS(fvd->is_tile_reserved({45, 66}), false);
+	TESTEQUALS(fvd->is_tile_reserved({42, 66}), false);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+}
 }

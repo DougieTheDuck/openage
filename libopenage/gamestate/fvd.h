@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -99,6 +100,22 @@ public:
 	bool cancel_build(const std::shared_ptr<GameState> &state,
 	                  entity_id_t builder,
 	                  const time::time_t &time);
+
+	/** Validate ownership and the full tower footprint for placement preview. */
+	bool can_place_tower(const std::shared_ptr<GameState> &state,
+	                     player_id_t owner, const std::vector<entity_id_t> &selected,
+	                     const coord::phys3 &position, const time::time_t &time) const;
+
+	/** Append a construction site for a Builder, reserving the footprint. */
+	bool queue_build(const std::shared_ptr<GameState> &state,
+	                 player_id_t owner, const std::vector<entity_id_t> &selected,
+	                 const coord::phys3 &position, const time::time_t &time);
+
+	/** Number of sites waiting after the Builder's currently active tower. */
+	size_t get_queued_build_count(entity_id_t builder) const;
+
+	/** Full grid footprint of a potential tower. */
+	std::vector<coord::tile> get_tower_footprint(const coord::tile &site) const;
 
 	/** Get an unfinished construction order, or nullptr if absent. */
 	std::shared_ptr<component::command::BuildTowerCommand> get_build_order(
@@ -246,9 +263,6 @@ private:
 	                      entity_id_t newest_horse,
 	                      const time::time_t &time);
 
-	/** Get all tiles intersected by the configured tower hitbox. */
-	std::vector<coord::tile> get_tower_footprint(const coord::tile &site) const;
-
 	/** Apply or restore a tower footprint in the map path grids. */
 	void block_tower(const std::shared_ptr<GameState> &state,
 	                 entity_id_t tower_id,
@@ -306,6 +320,7 @@ private:
 	std::unordered_map<entity_id_t, time::time_t> tower_next_shot;
 	std::array<std::atomic<uint64_t>, 9> player_kills{};
 	std::unordered_map<entity_id_t, PendingBuild> build_orders;
+	std::unordered_map<entity_id_t, std::deque<coord::tile>> queued_builds;
 	std::unordered_map<coord::tile, entity_id_t> reserved_tiles;
 	std::unordered_map<entity_id_t, TowerFootprint> tower_footprints;
 };

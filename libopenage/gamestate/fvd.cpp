@@ -390,13 +390,12 @@ void FVD::unblock_tower(const std::shared_ptr<GameState> &state,
 	this->tower_footprints.erase(found);
 }
 
-bool FVD::request_build(const std::shared_ptr<GameState> &state,
-                        player_id_t owner,
-                        const std::vector<entity_id_t> &selected,
-                        const coord::phys3 &position,
-                        const time::time_t &time) {
+bool FVD::can_place_tower(const std::shared_ptr<GameState> &state,
+                          player_id_t owner,
+                          const std::vector<entity_id_t> &selected,
+                          const coord::phys3 &position,
+                          const time::time_t &time) const {
 	if (owner < 2 or owner > this->player_count) {
-		log::log(WARN << "Only Builder players can construct towers");
 		return false;
 	}
 	auto civilisation = state->get_player(owner)->get_db_view()->get_object(
@@ -440,6 +439,20 @@ bool FVD::request_build(const std::shared_ptr<GameState> &state,
 			return false;
 		}
 	}
+	return true;
+}
+
+bool FVD::request_build(const std::shared_ptr<GameState> &state,
+                        player_id_t owner,
+                        const std::vector<entity_id_t> &selected,
+                        const coord::phys3 &position,
+                        const time::time_t &time) {
+	if (not this->can_place_tower(state, owner, selected, position, time)) {
+		return false;
+	}
+	auto builder_id = selected.front();
+	auto entity = state->get_game_entity(builder_id);
+	auto site = position.to_tile();
 
 	auto current_position = std::dynamic_pointer_cast<component::Position>(
 		entity->get_component(component::component_t::POSITION))->get_positions().get(time);
@@ -531,6 +544,35 @@ bool FVD::request_build(const std::shared_ptr<GameState> &state,
 	return true;
 }
 
+size_t FVD::get_queued_build_count(entity_id_t builder) const {
+	auto it = this->queued_builds.find(builder);
+	return it == this->queued_builds.end() ? 0 : it->second.size();
+}
+
+bool FVD::queue_build(const std::shared_ptr<GameState> &state,
+                      player_id_t owner, const std::vector<entity_id_t> &selected,
+                      const coord::phys3 &position, const time::time_t &time) {
+	if (not this->can_place_tower(state, owner, selected, position, time)) {
+		return false;
+	}
+	auto builder = selected.front();
+	if (not this->build_orders.contains(builder)) {
+		// Shift-clicking the first tower starts work immediately.
+		return this->request_build(state, owner, selected, position, time);
+	}
+	constexpr size_t max_queued_towers = 64;
+	auto &waiting = this->queued_builds[builder];
+	if (waiting.size() >= max_queued_towers) {
+		return false;
+	}
+	auto site = position.to_tile();
+	for (const auto &tile : this->get_tower_footprint(site)) {
+		this->reserved_tiles.emplace(tile, builder);
+	}
+	waiting.push_back(site);
+	return true;
+}
+
 bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
                        entity_id_t builder,
                        const time::time_t &time) {
@@ -551,6 +593,19 @@ bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
 		this->destroy_tower(state, *it->second.tower_id, time);
 	}
 	this->build_orders.erase(it);
+	// Replacing or cancelling a build must release every planned site.
+	auto pending = this->queued_builds.find(builder);
+	if (pending != this->queued_builds.end()) {
+		for (const auto &site : pending->second) {
+			for (const auto &tile : this->get_tower_footprint(site)) {
+				auto reserved = this->reserved_tiles.find(tile);
+				if (reserved != this->reserved_tiles.end() and reserved->second == builder) {
+					this->reserved_tiles.erase(reserved);
+				}
+			}
+		}
+		this->queued_builds.erase(pending);
+	}
 	auto found = state->get_game_entities().find(builder);
 	if (found != state->get_game_entities().end()) {
 		auto entity = found->second;
@@ -655,6 +710,29 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 	}
 	this->build_orders.erase(it);
 	system::Idle::idle(entity, time);
+
+	// Start the next valid reserved site at precisely the completion
+	// timestamp. Inaccessible sites are skipped rather than blocking the
+	// remainder of the queue forever.
+	auto pending = this->queued_builds.find(builder);
+	while (pending != this->queued_builds.end() and not pending->second.empty()) {
+		auto next = pending->second.front();
+		pending->second.pop_front();
+		for (const auto &tile : this->get_tower_footprint(next)) {
+			auto reserved = this->reserved_tiles.find(tile);
+			if (reserved != this->reserved_tiles.end() and reserved->second == builder) {
+				this->reserved_tiles.erase(reserved);
+			}
+		}
+		if (pending->second.empty()) {
+			this->queued_builds.erase(pending);
+		}
+		if (this->request_build(state, order->get_owner(), {builder},
+		                        next.to_phys3_center(), time)) {
+			break;
+		}
+		pending = this->queued_builds.find(builder);
+	}
 }
 
 void FVD::refresh_paths(const std::shared_ptr<GameState> &state,

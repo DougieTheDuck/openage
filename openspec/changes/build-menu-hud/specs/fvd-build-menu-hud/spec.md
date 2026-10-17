@@ -23,6 +23,31 @@ eligible owned Builder selected, with placement preview and cancellation.
 - **WHEN** the user presses Escape or the cancel mouse action
 - **THEN** placement mode exits without placing a tower or moving the Builder
 
+### Requirement: Shift-click queues consecutive towers for one Builder
+
+While placing towers, Shift-left-click SHALL append sites to the selected
+Builder's FIFO queue without exiting placement mode. Each accepted site
+SHALL reserve its entire footprint. The Builder SHALL start the next
+valid queued site only after completing the current tower. Canceling or
+replacing the active order SHALL release future queued reservations.
+
+#### Scenario: Multiple Shift-click placements
+- **WHEN** a Builder Shift-clicks three distinct valid locations
+- **THEN** the first tower starts immediately and the other two are built
+  sequentially in the original click order
+
+#### Scenario: Unavailable queued footprint
+- **WHEN** the Builder tries to Shift-click an occupied or reserved site
+- **THEN** the queue remains unchanged and the preview is invalid
+
+#### Scenario: Construction is canceled
+- **WHEN** an active build order is canceled or replaced
+- **THEN** all future queued footprints belonging to that Builder are released
+
+#### Scenario: Next site becomes unreachable
+- **WHEN** a queued site cannot be built when it reaches the front
+- **THEN** the Builder skips that site and tries the next queued location
+
 ### Requirement: Hunter has no build action
 
 Player 1 SHALL have no enabled construction menu, even though that player
