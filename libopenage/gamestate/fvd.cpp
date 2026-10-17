@@ -153,6 +153,7 @@ public:
 		auto gstate = std::dynamic_pointer_cast<GameState>(state);
 		gstate->get_fvd()->arrow_hit(gstate, params.get<entity_id_t>("target"),
 		                           params.get<player_id_t>("owner"),
+		                           params.get<entity_id_t>("firing_tower"),
 		                           params.get<int64_t>("damage"), time);
 	}
 	time::time_t predict_invoke_time(
@@ -835,6 +836,14 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 		                             health, 0, max_health);
 		system::Idle::idle(tower_entity, time);
 		this->block_tower(state, tower_entity->get_id(), tile, true, time);
+		{
+			std::lock_guard lock{this->tower_kills_mutex};
+			const bool inserted = this->tower_kills.emplace(
+				tower_entity->get_id(), TowerKillCount{order->get_owner(), 0}).second;
+			if (not inserted) [[unlikely]] {
+				throw Error{ERR << "Duplicate FVD tower kill record"};
+			}
+		}
 		it->second.tower_id = tower_entity->get_id();
 		system::Idle::idle(entity, time);
 		loop->create_event(

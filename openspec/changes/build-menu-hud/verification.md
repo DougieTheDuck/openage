@@ -26,9 +26,15 @@ outside the HUD after pressing inside it.
   Build Tower action. Press B and verify no placement mode starts.
 - [ ] Switch to Hunter player 1; only human Hunter actions appear, with no
   construction control.
-- [ ] Check that the HUD shows the current player's kill count starting at
-  zero; when one Builder's tower kills a horse, only that Builder's displayed
-  total increments. No other player's total or leaderboard is shown.
+- [ ] Select an owned Tower: "Tower kills" starts at zero and increases only
+  when that particular tower scores the lethal hit, not another Tower.
+- [ ] Select the Builder: "Total kills" starts at zero and includes the kills
+  from all that player's towers, even destroyed towers.
+- [ ] Destroy a Tower with kills, then select its Builder: the total stays.
+  A killing arrow that was in flight when the Tower died must still be credited.
+- [ ] In a guest match, verify the assigned player's Builder lifetime total
+  and selected Tower count match the host after snapshots and deltas.
+  Another player's tower kill totals must not be sent or displayed.
 - [ ] Verify that ending or canceling construction clears the progress display.
 
 ## Headless/automated checks

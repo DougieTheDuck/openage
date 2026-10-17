@@ -41,7 +41,10 @@ Completed towers automatically target nearby horses and fire scheduled arrows.
 Only authoritative impacts damage health; killing blows credit the tower's Builder.
 Tower arrows now appear as brief camera-projected golden streaks with a small ballistic arc, drawn in the QML overlay from the authoritative launch time and flight duration. Visual shots are bounded for large battles, but all damage events still resolve normally.
 Network replication of those shot visuals remains outstanding; this overlay currently follows only the local authoritative simulation.
-Combat tuning is in scenario.nyan and the local player's tower kill count appears in the HUD.
+Combat tuning is in scenario.nyan.
+Selecting an owned Tower shows its individual kills; selecting the Builder
+shows the lifetime total of all their towers, including ones now destroyed.
+Scores are authoritative and per-tower kills replicate only to their owner.
 
 The local view initially controls player 2.
 Press keys 1 through 8 to switch the controlled player and return the camera to the common start location.

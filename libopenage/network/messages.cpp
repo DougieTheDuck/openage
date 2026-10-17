@@ -15,6 +15,7 @@ namespace {
 constexpr size_t COMMAND_PREFIX_SIZE = 16;
 constexpr uint16_t PLAYER_CONNECTED = 1 << 0;
 constexpr uint16_t ENTITY_HAS_HEALTH = 1 << 0;
+constexpr uint16_t ENTITY_HAS_TOWER_KILLS = 1 << 1;
 constexpr uint16_t ATTACK_HAS_TARGET = 1 << 0;
 constexpr uint16_t ATTACK_REACHED_DESTINATION = 1 << 1;
 constexpr uint16_t ATTACK_FOCUS_TARGET = 1 << 2;
@@ -377,14 +378,21 @@ std::vector<uint8_t> encode_world_state(const WorldState &state) {
 		             or *entity.health > *entity.maximum_health))) {
 			throw Error{MSG(err) << "FVD state contains invalid entity health"};
 		}
+		if (entity.tower_kills
+		    and (entity.owner_id != state.local_player_id
+		         or entity.definition != "fvd.data.entities.Tower")) {
+			throw Error{MSG(err) << "FVD tower kills may only be sent to their owner"};
+		}
 		append_u64(output, entity.entity_id);
 		append_u64(output, entity.owner_id);
 		append_string(output, entity.definition, MAX_ENTITY_DEFINITION_SIZE);
 		append_position(output, entity.position);
-		append_u16(output, entity.health ? ENTITY_HAS_HEALTH : 0);
+		append_u16(output, (entity.health ? ENTITY_HAS_HEALTH : 0)
+		                   | (entity.tower_kills ? ENTITY_HAS_TOWER_KILLS : 0));
 		append_u16(output, 0);
 		append_i64(output, entity.health.value_or(0));
 		append_i64(output, entity.maximum_health.value_or(0));
+		append_u64(output, entity.tower_kills.value_or(0));
 	}
 	for (const auto &reservation : state.reservations) {
 		append_tile(output, reservation.tile);
@@ -494,12 +502,24 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 		}
 		auto position = read_position(reader);
 		auto flags = reader.u16();
-		if ((flags & ~ENTITY_HAS_HEALTH) != 0 or reader.u16() != 0) {
+		if ((flags & ~(ENTITY_HAS_HEALTH | ENTITY_HAS_TOWER_KILLS)) != 0
+		    or reader.u16() != 0) {
 			throw Error{MSG(err) << "Unsupported FVD entity state flags"};
 		}
 		auto health = reader.i64();
 		auto maximum_health = reader.i64();
+		auto tower_kills = reader.u64();
 		EntityState entity{entity_id, owner_id, std::move(definition), position};
+		if ((flags & ENTITY_HAS_TOWER_KILLS) != 0) {
+			if (owner_id != state.local_player_id
+			    or entity.definition != "fvd.data.entities.Tower") {
+				throw Error{MSG(err) << "FVD tower kills belong only to the recipient"};
+			}
+			entity.tower_kills = tower_kills;
+		}
+		else if (tower_kills != 0) {
+			throw Error{MSG(err) << "FVD entity tower kills present without flag"};
+		}
 		if ((flags & ENTITY_HAS_HEALTH) != 0) {
 			if (maximum_health <= 0 or health < 0 or health > maximum_health) {
 				throw Error{MSG(err) << "FVD state contains invalid entity health"};

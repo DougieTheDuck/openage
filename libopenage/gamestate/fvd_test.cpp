@@ -782,6 +782,18 @@ void fvd_hunter_combat() {
 	if (melee_move->get_active_target()) {
 		TESTEQUALS(*melee_move->get_active_target(), coord::phys3(80, 80, 0));
 	}
+
+	// Destroying the tower does not erase its kills. The last arrow still
+	// awards its owner if it lands after the tower was destroyed.
+	auto last_victim = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {90, 90, 0}, at(34));
+	TESTEQUALS(fvd->destroy_tower(state, tower, at(34)), true);
+	TESTEQUALS(state->get_game_entities().contains(tower), false);
+	fvd->arrow_hit(state, last_victim->get_id(), 5, tower, 100, at(34.1));
+	TESTEQUALS(state->get_game_entities().contains(last_victim->get_id()), false);
+	TESTEQUALS(fvd->get_tower_kills(tower, 5).value(), kills + 1);
+	TESTEQUALS(fvd->get_kills(5), kills + 1);
+	TESTEQUALS(fvd->get_tower_kills(tower, 4).has_value(), false);
 }
 
 void fvd_hunter_attack_move_regressions() {

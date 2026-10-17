@@ -211,9 +211,10 @@ Item {
 				text: "Armour: " + (root.hud === null ? "Not defined" : root.hud.armor)
 			}
 			Text {
+				visible: root.hud !== null && root.hud.killsLabel.length > 0
 				color: "#d6e6db"
 				font.pixelSize: 13
-				text: "Tower kills: " + (root.hud === null || !root.hud.killsAvailable ? "—" : root.hud.kills)
+				text: root.hud.killsLabel + (!root.hud.killsAvailable ? "—" : root.hud.kills)
 			}
 			Text {
 				visible: root.constructionStatus.length > 0

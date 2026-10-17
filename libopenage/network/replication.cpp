@@ -24,6 +24,38 @@ std::optional<uint64_t> ReplicationTracker::get_local_kills() const {
 	return this->displayed_kills.load();
 }
 
+std::optional<uint64_t> ReplicationTracker::get_tower_kills(
+	gamestate::entity_id_t tower) const {
+	std::lock_guard lock{this->tower_kills_mutex};
+	if (not this->displayed_kills_valid.load()) {
+		return std::nullopt;
+	}
+	auto it = this->displayed_tower_kills.find(tower);
+	if (it == this->displayed_tower_kills.end()) {
+		return std::nullopt;
+	}
+	return it->second;
+}
+
+namespace {
+
+std::unordered_map<gamestate::entity_id_t, uint64_t> local_tower_kills(
+	const WorldState &state) {
+	std::unordered_map<gamestate::entity_id_t, uint64_t> result;
+	for (const auto &entity : state.entities) {
+		if (entity.tower_kills) {
+			if (entity.owner_id != state.local_player_id
+			    or entity.definition != "fvd.data.entities.Tower"
+			    or not result.emplace(entity.entity_id, *entity.tower_kills).second) {
+				throw Error{MSG(err) << "FVD replicated tower kills are not owner-private"};
+			}
+		}
+	}
+	return result;
+}
+
+} // namespace
+
 void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 	if (not this->host_connected) {
 		throw Error{MSG(err) << "FVD replication cannot resume after host disconnect"};
@@ -40,11 +72,16 @@ void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 		                     << " is older than applied revision " << this->revision};
 	}
 
+	auto towers = local_tower_kills(snapshot);
+	{
+		std::lock_guard lock{this->tower_kills_mutex};
+		this->displayed_tower_kills = std::move(towers);
+		this->displayed_kills.store(snapshot.local_kill_count);
+		this->displayed_kills_valid.store(true);
+	}
 	this->revision = snapshot.world_revision;
 	this->initialized = true;
 	this->awaiting_snapshot = false;
-	this->displayed_kills.store(snapshot.local_kill_count);
-	this->displayed_kills_valid.store(true);
 }
 
 DeltaDisposition ReplicationTracker::accept_delta(const WorldState &delta) {
@@ -65,9 +102,14 @@ DeltaDisposition ReplicationTracker::accept_delta(const WorldState &delta) {
 		return DeltaDisposition::REQUEST_SNAPSHOT;
 	}
 
+	auto towers = local_tower_kills(delta);
+	{
+		std::lock_guard lock{this->tower_kills_mutex};
+		this->displayed_tower_kills = std::move(towers);
+		this->displayed_kills.store(delta.local_kill_count);
+		this->displayed_kills_valid.store(true);
+	}
 	this->revision = delta.world_revision;
-	this->displayed_kills.store(delta.local_kill_count);
-	this->displayed_kills_valid.store(true);
 	return DeltaDisposition::APPLY;
 }
 
@@ -75,7 +117,11 @@ void ReplicationTracker::host_disconnected() {
 	this->host_connected = false;
 	this->initialized = false;
 	this->awaiting_snapshot = false;
-	this->displayed_kills_valid.store(false);
+	{
+		std::lock_guard lock{this->tower_kills_mutex};
+		this->displayed_kills_valid.store(false);
+		this->displayed_tower_kills.clear();
+	}
 }
 
 bool ReplicationTracker::is_host_connected() const {

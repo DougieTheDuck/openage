@@ -166,8 +166,9 @@ A client replaces its replicated world after accepting either message, while the
 
 A player record contains an 8-byte player ID, a 2-byte Hunter or Builder role and 2 flag bytes.
 Player flag bit 0 is set while that participant remains connected to the running match.
-An entity record contains an 8-byte entity ID, 8-byte owner ID, a length-prefixed nyan definition of at most 256 UTF-8 bytes, three signed Q16.16 position coordinates, 2 flag bytes, 2 reserved zero bytes and signed 8-byte current and maximum health values.
+An entity record contains an 8-byte entity ID, 8-byte owner ID, a length-prefixed nyan definition of at most 256 UTF-8 bytes, three signed Q16.16 position coordinates, 2 flag bytes, 2 reserved zero bytes, signed 8-byte current and maximum health values and an unsigned 8-byte individual tower-kill count.
 Health flag bit 0 is set when both health values apply; entities without a `Live` ability carry zero values and clear the flag.
+Tower-kills flag bit 1 is set only for a Tower owned by the recipient; otherwise the kill-count field is zero and the flag is clear.
 A reservation record contains two signed 8-byte tile coordinates and the 8-byte ID of the Builder holding the tile.
 A construction record contains its 8-byte order, owner and Builder IDs, two signed 8-byte target tile coordinates, a 2-byte planned or under-construction phase, 2 zero flag bytes, an 8-byte phase deadline and the 8-byte foundation or tower entity ID.
 An attack-order record contains an 8-byte horse ID, three signed Q16.16 destination coordinates, 2 flag bytes, 2 reserved zero bytes and an 8-byte target entity ID.
@@ -175,7 +176,8 @@ Attack-order flag bits 0, 1 and 2 indicate a target ID, arrival at the requested
 An arrow record contains 8-byte arrow, owner and target IDs, three signed Q16.16 launch coordinates, three signed Q16.16 destination coordinates and signed 8-byte launch and impact times.
 Completed towers remain in the entity list and have no active construction record or reserved tiles.
 Killed entities disappear from the next complete state, while arrows disappear at their impact time and the resulting health or death is present in that same state.
-The host builds state separately for each connection, so the payload contains only its recipient's kill total and cannot expose a public leaderboard.
+The host builds state separately for each connection, so the payload contains only its recipient's lifetime Builder kill total and its own Towers' individual kills, never an opponent's score.
+The Builder total includes historical kills from destroyed towers; individual Tower counts are displayed only when selecting that Tower.
 On a guest, construct `ReplicationTracker` with the immutable player ID from the accepted session.
 It rejects snapshots or deltas addressed to another player and publishes only the local count from accepted, contiguous authoritative updates.
 Rejected or gapped updates leave the displayed score unchanged; host loss makes it unavailable.
@@ -183,7 +185,8 @@ Bind this tracker with `Presenter::set_fvd_replication` before the presenter sta
 Before the initial snapshot or after host loss, the HUD shows an unavailable score rather than a guessed zero.
 Protocol major version 2 introduced the complete state layout because it is incompatible with the earlier position-only payload.
 Protocol major version 3 added persistent participant connection status to player records.
-Protocol minor version 1 added optional relay admission and remains compatible with direct protocol 3.0 peers.
+Protocol major version 4 adds the individual Tower kill-count field to every entity record and must not connect to version 3 peers.
+Protocol minor version 1 supports optional relay admission within the same protocol major version.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
 
 ### Snapshot request payload

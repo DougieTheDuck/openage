@@ -117,6 +117,8 @@ struct EntityState {
 	coord::phys3 position{0, 0, 0};
 	std::optional<int64_t> health{};
 	std::optional<int64_t> maximum_health{};
+	/** The receiving player's own Tower kills; omitted for other entities. */
+	std::optional<uint64_t> tower_kills{};
 };
 
 /** FVD role assigned to one playable player. */

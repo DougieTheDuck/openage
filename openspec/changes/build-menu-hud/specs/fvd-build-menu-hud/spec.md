@@ -93,8 +93,12 @@ is a human participant in a multiplayer match.
 
 ### Requirement: Local HUD shows only local kill count
 
-The HUD SHALL display the current player's own authoritative tower kill
-count and SHALL NOT expose other players' kill totals.
+Selecting the local Builder SHALL show their lifetime total of kills
+credited to all their towers, including towers that have since been destroyed.
+Selecting an owned Tower SHALL show only that individual tower's kill count.
+No kill total is displayed without a relevant selected Builder or Tower.
+The authoritative host SHALL replicate per-tower kill counts only to their
+owning player, alongside that player's lifetime total, without a public leaderboard.
 
 #### Scenario: Match begins
 - **WHEN** a local player's match UI appears
@@ -106,7 +110,20 @@ count and SHALL NOT expose other players' kill totals.
 
 #### Scenario: Other player's tower scores
 - **WHEN** the simulation credits another player's tower
-- **THEN** the local HUD kill count remains unchanged and the other total is not shown
+- **THEN** the local Builder's lifetime total remains unchanged and the other total is not shown
+
+#### Scenario: Individual tower selected
+- **WHEN** the player selects one owned Tower
+- **THEN** the HUD displays only that tower's kills, starting at zero
+
+#### Scenario: Destroyed Tower or outstanding arrow
+- **WHEN** a Tower is destroyed, or its last arrow lands after its destruction
+- **THEN** its previously earned and subsequent lethal kills remain in the Builder's lifetime total
+
+#### Scenario: Authoritative guest replication
+- **WHEN** a guest receives a snapshot or delta for their assigned player
+- **THEN** the guest receives each of their living towers' kill totals
+- **AND** the world state does not disclose other players' tower kills
 
 ### Requirement: HUD interactions do not leak into world input
 

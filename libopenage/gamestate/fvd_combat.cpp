@@ -212,6 +212,16 @@ uint64_t FVD::get_kills(player_id_t owner) const {
 	         ? this->player_kills[owner].load() : 0;
 }
 
+std::optional<uint64_t> FVD::get_tower_kills(
+	entity_id_t tower, player_id_t owner) const {
+	std::lock_guard lock{this->tower_kills_mutex};
+	auto it = this->tower_kills.find(tower);
+	if (it == this->tower_kills.end() or it->second.owner != owner) {
+		return std::nullopt;
+	}
+	return it->second.kills;
+}
+
 int64_t FVD::get_tower_damage() const {
 	return this->tower_damage;
 }
@@ -254,9 +264,6 @@ bool FVD::apply_damage(const std::shared_ptr<GameState> &state,
 		return false;
 	}
 
-	if (tower_shot) {
-		this->player_kills.at(owner).fetch_add(1);
-	}
 	if (definition == this->tower) {
 		this->tower_next_shot.erase(target);
 		this->destroy_tower(state, target, time);
@@ -276,10 +283,25 @@ bool FVD::apply_damage(const std::shared_ptr<GameState> &state,
 
 void FVD::arrow_hit(const std::shared_ptr<GameState> &state,
                     entity_id_t target, player_id_t owner,
-                    int64_t damage, const time::time_t &time) {
-	// Flight survives destruction of the firing tower, but an already
-	// deceased target cannot grant another kill.
-	this->apply_damage(state, target, damage, owner, true, time);
+                    entity_id_t firing_tower, int64_t damage,
+                    const time::time_t &time) {
+	// An already deceased target cannot award a second kill. Retired tower
+	// records survive so the last arrow still belongs to its firing tower.
+	if (firing_tower != 0) {
+		std::lock_guard lock{this->tower_kills_mutex};
+		auto it = this->tower_kills.find(firing_tower);
+		if (it == this->tower_kills.end() or it->second.owner != owner) {
+			return;
+		}
+	}
+	if (not this->apply_damage(state, target, damage, owner, true, time)) {
+		return;
+	}
+	this->player_kills.at(owner).fetch_add(1);
+	if (firing_tower != 0) {
+		std::lock_guard lock{this->tower_kills_mutex};
+		this->tower_kills.at(firing_tower).kills += 1;
+	}
 }
 
 bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
@@ -603,7 +625,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		}
 		loop->create_event("game.fvd_arrow_hit", this->horse_spawn_target, state,
 		                   time + this->arrow_travel,
-		                   {{"target", nearest}, {"owner", owner}, {"damage", this->tower_damage}});
+		                   {{"target", nearest}, {"owner", owner}, {"firing_tower", tower_id},
+		                    {"damage", this->tower_damage}});
 		this->tower_next_shot.insert_or_assign(tower_id, time + this->tower_cooldown);
 	}
 }

@@ -10,6 +10,7 @@ void replication() {
 	ReplicationTracker tracker{2};
 	TESTEQUALS(tracker.get_local_player_id(), gamestate::player_id_t{2});
 	not tracker.get_local_kills().has_value() or TESTFAIL;
+	TESTEQUALS(tracker.get_tower_kills(100).has_value(), false);
 	TESTTHROWS(ReplicationTracker{0});
 	TESTTHROWS(ReplicationTracker{9});
 	tracker.is_host_connected() or TESTFAIL;
@@ -35,12 +36,18 @@ void replication() {
 	initial_snapshot.world_revision = 4;
 	initial_snapshot.local_player_id = 2;
 	initial_snapshot.local_kill_count = 1;
+	initial_snapshot.entities = {
+		{100, 2, "fvd.data.entities.Tower", {1, 1, 0}, 100, 100, 1},
+		{200, 3, "fvd.data.entities.Tower", {2, 2, 0}, 100, 100},
+	};
 	auto foreign_snapshot = initial_snapshot;
 	foreign_snapshot.local_player_id = 3;
 	TESTTHROWS(tracker.accept_snapshot(foreign_snapshot));
 	not tracker.get_local_kills().has_value() or TESTFAIL;
 	tracker.accept_snapshot(initial_snapshot);
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{1});
+	TESTEQUALS(tracker.get_tower_kills(100).value(), uint64_t{1});
+	TESTEQUALS(tracker.get_tower_kills(200).has_value(), false);
 	tracker.has_state() or TESTFAIL;
 	not tracker.is_awaiting_snapshot() or TESTFAIL;
 	TESTEQUALS(tracker.get_revision(), uint64_t{4});
@@ -50,6 +57,10 @@ void replication() {
 	contiguous.world_revision = 6;
 	contiguous.local_player_id = 2;
 	contiguous.local_kill_count = 3;
+	contiguous.entities = {
+		{100, 2, "fvd.data.entities.Tower", {1, 1, 0}, 100, 100, 2},
+		{101, 2, "fvd.data.entities.Tower", {3, 3, 0}, 100, 100, 1},
+	};
 	auto foreign_delta = contiguous;
 	foreign_delta.local_player_id = 3;
 	TESTTHROWS(tracker.accept_delta(foreign_delta));
@@ -58,6 +69,8 @@ void replication() {
 	tracker.accept_delta(contiguous) == DeltaDisposition::APPLY or TESTFAIL;
 	TESTEQUALS(tracker.get_revision(), uint64_t{6});
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{3});
+	TESTEQUALS(tracker.get_tower_kills(100).value(), uint64_t{2});
+	TESTEQUALS(tracker.get_tower_kills(101).value(), uint64_t{1});
 
 	WorldState invalid{};
 	invalid.base_revision = 6;
@@ -75,6 +88,7 @@ void replication() {
 	tracker.accept_delta(gap) == DeltaDisposition::REQUEST_SNAPSHOT or TESTFAIL;
 	tracker.is_awaiting_snapshot() or TESTFAIL;
 	TESTEQUALS(tracker.make_snapshot_request().last_applied_revision, uint64_t{6});
+	TESTEQUALS(tracker.get_tower_kills(100).value(), uint64_t{2});
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{3});
 
 	WorldState stale_snapshot{};
@@ -86,10 +100,15 @@ void replication() {
 	recovery_snapshot.world_revision = 9;
 	recovery_snapshot.local_player_id = 2;
 	recovery_snapshot.local_kill_count = 7;
+	recovery_snapshot.entities = {
+		{101, 2, "fvd.data.entities.Tower", {3, 3, 0}, 100, 100, 4},
+	};
 	tracker.accept_snapshot(recovery_snapshot);
 	not tracker.is_awaiting_snapshot() or TESTFAIL;
 	TESTEQUALS(tracker.get_revision(), uint64_t{9});
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{7});
+	TESTEQUALS(tracker.get_tower_kills(100).has_value(), false);
+	TESTEQUALS(tracker.get_tower_kills(101).value(), uint64_t{4});
 
 	auto invalid_snapshot = recovery_snapshot;
 	invalid_snapshot.base_revision = 1;
@@ -103,6 +122,7 @@ void replication() {
 	TESTEQUALS(tracker.is_awaiting_snapshot(), false);
 	not tracker.get_local_kills().has_value() or TESTFAIL;
 	TESTEQUALS(tracker.get_revision(), uint64_t{9});
+	TESTEQUALS(tracker.get_tower_kills(101).has_value(), false);
 	TESTTHROWS(tracker.accept_snapshot(recovery_snapshot));
 	TESTTHROWS(tracker.accept_delta(contiguous));
 	TESTTHROWS(tracker.make_snapshot_request());
@@ -112,8 +132,13 @@ void replication() {
 	auto other_snapshot = recovery_snapshot;
 	other_snapshot.local_player_id = 3;
 	other_snapshot.local_kill_count = 12;
+	other_snapshot.entities = {
+		{200, 3, "fvd.data.entities.Tower", {2, 2, 0}, 100, 100, 12},
+	};
 	other_player.accept_snapshot(other_snapshot);
 	TESTEQUALS(other_player.get_local_kills().value(), uint64_t{12});
+	TESTEQUALS(other_player.get_tower_kills(200).value(), uint64_t{12});
+	TESTEQUALS(other_player.get_tower_kills(100).has_value(), false);
 	not tracker.get_local_kills().has_value() or TESTFAIL;
 }
 

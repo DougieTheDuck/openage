@@ -153,6 +153,8 @@ void messages() {
 	state.entities = {
 		{100, 1, "fvd.data.entities.Horse", {10.5, 20.25, 0}, 17, 25},
 		{200, 2, "fvd.data.entities.Foundation", {-1.0, 2.0, 3.0}},
+		{201, 2, "fvd.data.entities.Tower", {12.0, 20.0, 0}, 100, 100, 2},
+		{202, 1, "fvd.data.entities.Tower", {13.0, 20.0, 0}, 100, 100},
 	};
 	state.reservations = {{{10, 20}, 300}};
 	state.constructions = {{
@@ -185,6 +187,12 @@ void messages() {
 		TESTEQUALS(decoded_state.entities[i].position, state.entities[i].position);
 		TESTEQUALS(decoded_state.entities[i].health.has_value(),
 		           state.entities[i].health.has_value());
+		TESTEQUALS(decoded_state.entities[i].tower_kills.has_value(),
+		           state.entities[i].tower_kills.has_value());
+		if (state.entities[i].tower_kills) {
+			TESTEQUALS(decoded_state.entities[i].tower_kills.value(),
+			           state.entities[i].tower_kills.value());
+		}
 		if (state.entities[i].health) {
 			TESTEQUALS(*decoded_state.entities[i].health, *state.entities[i].health);
 			TESTEQUALS(*decoded_state.entities[i].maximum_health,
@@ -236,6 +244,12 @@ void messages() {
 	auto invalid_arrow = state;
 	invalid_arrow.arrows.front().impact_time = invalid_arrow.arrows.front().launch_time;
 	TESTTHROWS(encode_world_state(invalid_arrow));
+	auto score_leak = state;
+	score_leak.entities.back().tower_kills = 7;
+	TESTTHROWS(encode_world_state(score_leak));
+	auto nonscore_entity = state;
+	nonscore_entity.entities.front().tower_kills = 1;
+	TESTTHROWS(encode_world_state(nonscore_entity));
 
 	WorldState maximum_state{};
 	maximum_state.map_size = 1;

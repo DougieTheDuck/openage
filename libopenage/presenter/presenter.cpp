@@ -425,6 +425,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("placing", false);
 			this->fvd_hud_state->insert("kills", 0);
 			this->fvd_hud_state->insert("killsAvailable", !this->fvd_replication);
+			this->fvd_hud_state->insert("killsLabel", QString{});
 			this->fvd_hud_state->insert("arrowStreaks", QVariantList{});
 			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
@@ -659,17 +660,31 @@ void Presenter::render() {
 					this->time_loop->get_clock()->get_time());
 				this->fvd_hud_state->insert("hunterCountdown",
 					countdown.value_or(0));
-				if (this->fvd_replication) {
-					auto local_kills = this->fvd_replication->get_local_kills();
-					this->fvd_hud_state->insert("killsAvailable", local_kills.has_value());
-					this->fvd_hud_state->insert("kills",
-						static_cast<qulonglong>(local_kills.value_or(0)));
+				QString kills_label{};
+				std::optional<uint64_t> visible_kills{};
+				if (builder and selected.ids.size() == 1 and controlled >= 2) {
+					kills_label = QString{"Total kills: "};
+					if (this->fvd_replication) {
+						visible_kills = this->fvd_replication->get_local_kills();
+					}
+					else {
+						visible_kills = fvd->get_kills(controlled);
+					}
 				}
-				else {
-					this->fvd_hud_state->insert("killsAvailable", true);
-					this->fvd_hud_state->insert("kills",
-						static_cast<qulonglong>(fvd->get_kills(controlled)));
+				else if (tower and selected.ids.size() == 1 and controlled >= 2) {
+					kills_label = QString{"Tower kills: "};
+					if (this->fvd_replication) {
+						visible_kills = this->fvd_replication->get_tower_kills(
+							selected.ids.front());
+					}
+					else {
+						visible_kills = fvd->get_tower_kills(selected.ids.front(), controlled);
+					}
 				}
+				this->fvd_hud_state->insert("killsLabel", kills_label);
+				this->fvd_hud_state->insert("killsAvailable", visible_kills.has_value());
+				this->fvd_hud_state->insert("kills",
+					static_cast<qulonglong>(visible_kills.value_or(0)));
 				this->fvd_hud_state->insert("damage",
 					static_cast<qlonglong>(fvd->get_tower_damage()));
 				this->fvd_hud_state->insert("armor",

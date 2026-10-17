@@ -5,6 +5,8 @@
 #include <atomic>
 #include <cstdint>
 #include <optional>
+#include <mutex>
+#include <unordered_map>
 
 #include "network/messages.h"
 
@@ -33,6 +35,9 @@ public:
 
 	/** Displayable authoritative kills, unavailable until sync or after host loss. */
 	std::optional<uint64_t> get_local_kills() const;
+
+	/** Displayable kills for one of the assigned player's owned Towers. */
+	std::optional<uint64_t> get_tower_kills(gamestate::entity_id_t tower) const;
 
 	/** Record a complete initial or recovery snapshot. */
 	void accept_snapshot(const WorldState &snapshot);
@@ -69,6 +74,8 @@ private:
 	// The presenter may read these while the connection thread applies updates.
 	std::atomic<uint64_t> displayed_kills{0};
 	std::atomic<bool> displayed_kills_valid{false};
+	mutable std::mutex tower_kills_mutex;
+	std::unordered_map<gamestate::entity_id_t, uint64_t> displayed_tower_kills{};
 	bool host_connected{true};
 	bool initialized{false};
 	bool awaiting_snapshot{false};

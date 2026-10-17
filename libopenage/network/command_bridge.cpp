@@ -186,6 +186,10 @@ WorldState capture_fvd_state(
 			entity_state.health = health->first;
 			entity_state.maximum_health = health->second;
 		}
+		if (entity_state.definition == "fvd.data.entities.Tower"
+		    and entity_state.owner_id == recipient) {
+			entity_state.tower_kills = fvd->get_tower_kills(entity_id, recipient);
+		}
 		result.entities.push_back(std::move(entity_state));
 	}
 	for (const auto &reservation : fvd->get_reserved_tiles()) {

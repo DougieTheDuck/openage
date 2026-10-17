@@ -369,6 +369,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 
 		const auto &tower = find_defined_entity(
 			completed, "fvd.data.entities.Tower");
+		TESTEQUALS(tower.tower_kills.value(), uint64_t{0});
 		auto victim_position = tower.position;
 		victim_position.ne += coord::phys_t::from_double(0.5);
 		auto victim = entities->spawn_game_entity(
@@ -436,6 +437,14 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			[&](const auto &entity) { return entity.entity_id == victim->get_id(); }),
 		           true);
 		TESTEQUALS(killed.local_kill_count, uint64_t{1});
+		TESTEQUALS(find_entity(killed, tower.entity_id).tower_kills.value(),
+		           uint64_t{1});
+		auto other_recipient = capture_fvd_state(
+			state, connections, next_launch - time::time_t::from_double(0.6),
+			0, 8, 3);
+		TESTEQUALS(other_recipient.local_kill_count, uint64_t{0});
+		TESTEQUALS(find_entity(other_recipient, tower.entity_id).tower_kills.has_value(),
+		           false);
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
 			encode_world_state(killed)));
@@ -795,6 +804,10 @@ void run_guest(uint16_t port) {
 	auto killed = decode_world_state(killed_frame->payload);
 	replication.accept_delta(killed) == DeltaDisposition::APPLY or TESTFAIL;
 	TESTEQUALS(replication.get_local_kills().value(), uint64_t{1});
+	const auto &local_tower = find_defined_entity(killed, "fvd.data.entities.Tower");
+	TESTEQUALS(local_tower.tower_kills.value(), uint64_t{1});
+	TESTEQUALS(replication.get_tower_kills(local_tower.entity_id).value(),
+	           uint64_t{1});
 	TESTEQUALS(killed.base_revision, uint64_t{7});
 	TESTEQUALS(killed.world_revision, uint64_t{8});
 	TESTEQUALS(std::none_of(

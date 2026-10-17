@@ -214,9 +214,10 @@ public:
 	/** Authoritative combat simulation; called on a fixed simulation-time tick. */
 	void combat_tick(const std::shared_ptr<GameState> &state, const time::time_t &time);
 
-	/** Apply a scheduled tower arrow hit. */
+	/** Resolve one arrow with the firing tower's identity, even after its death. */
 	void arrow_hit(const std::shared_ptr<GameState> &state, entity_id_t target,
-	               player_id_t owner, int64_t damage, const time::time_t &time);
+	               player_id_t owner, entity_id_t firing_tower,
+	               int64_t damage, const time::time_t &time);
 
 	/**
 	 * Thread-safe snapshot of visible arrow trails at simulation time.
@@ -224,8 +225,11 @@ public:
 	 */
 	std::vector<ArrowTrail> get_visible_arrows(const time::time_t &now) const;
 
-	/** Local HUD-facing read-only state. */
+	/** Lifetime kills by all towers of this player, including destroyed towers. */
 	uint64_t get_kills(player_id_t owner) const;
+
+	/** Individual tower kills; only this tower's owning player may read them. */
+	std::optional<uint64_t> get_tower_kills(entity_id_t tower, player_id_t owner) const;
 	int64_t get_tower_damage() const;
 	int64_t get_tower_armor() const;
 
@@ -385,6 +389,13 @@ private:
 	std::unordered_set<entity_id_t> dead_horses;
 	std::unordered_map<entity_id_t, time::time_t> tower_next_shot;
 	std::array<std::atomic<uint64_t>, 9> player_kills{};
+	struct TowerKillCount {
+		player_id_t owner;
+		uint64_t kills;
+	};
+	/** Keep retired tower records so shots in flight can still score. */
+	mutable std::mutex tower_kills_mutex;
+	std::unordered_map<entity_id_t, TowerKillCount> tower_kills{};
 	std::unordered_map<entity_id_t, PendingBuild> build_orders;
 	std::unordered_map<entity_id_t, std::deque<QueuedBuildSite>> queued_builds;
 	std::unordered_map<coord::tile, entity_id_t> reserved_tiles;
