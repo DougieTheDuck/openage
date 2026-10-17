@@ -2,6 +2,7 @@
 
 #include <array>
 #include <functional>
+#include <optional>
 #include <vector>
 #include <memory>
 #include <unordered_map>
@@ -217,7 +218,7 @@ void fvd_scenario() {
 			continue;
 		}
 		first_foundation = id;
-		TESTEQUALS(entity->has_component(component::component_t::SELECTABLE), false);
+		TESTEQUALS(entity->has_component(component::component_t::SELECTABLE), true);
 		auto position = std::dynamic_pointer_cast<component::Position>(
 			entity->get_component(component::component_t::POSITION));
 		TESTEQUALS(position->get_positions().get(time::TIME_ZERO).to_tile(), (coord::tile{10, 10}));
@@ -1100,7 +1101,7 @@ void fvd_build_queue() {
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
 	auto at = [](double sec) { return time::time_t::from_double(sec); };
-	entity_id_t builder = 0;
+	std::optional<entity_id_t> builder{};
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
@@ -1109,8 +1110,8 @@ void fvd_build_queue() {
 			break;
 		}
 	}
-	TESTEQUALS(builder != 0, true);
-	const std::vector<entity_id_t> selected{builder};
+	builder.has_value() or TESTFAIL;
+	const std::vector<entity_id_t> selected{*builder};
 	TESTEQUALS(fvd->can_place_tower(state, 2, selected, {61, 66, 0}, at(0)), true);
 	TESTEQUALS(fvd->can_place_tower(state, 1, selected, {61, 66, 0}, at(0)), false);
 	auto queue = [&](const coord::phys3 &site, double when) {
@@ -1128,16 +1129,16 @@ void fvd_build_queue() {
 	TESTEQUALS(queue({61, 66, 0}, 0), true);
 	TESTEQUALS(queue({57, 66, 0}, 0), true);
 	TESTEQUALS(queue({54, 66, 0}, 0), true);
-	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{2});
+	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{2});
 	TESTEQUALS(fvd->is_tile_reserved({54, 66}), true);
 	TESTEQUALS(queue({57, 66, 0}, 0), false);
 	TESTEQUALS(fvd->can_place_tower(state, 2, selected, {57, 66, 0}, at(0)), false);
 	loop->reach_time(at(0.1), state);
-	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{1});
-	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{57, 66}));
+	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{1});
+	TESTEQUALS(fvd->get_build_order(*builder)->get_target(), (coord::tile{57, 66}));
 	loop->reach_time(at(40), state);
-	TESTEQUALS(fvd->get_build_order(builder) == nullptr, true);
-	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	TESTEQUALS(fvd->get_build_order(*builder) == nullptr, true);
+	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{0});
 	size_t towers = 0;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() == "fvd.data.entities.Tower") {
@@ -1149,10 +1150,10 @@ void fvd_build_queue() {
 	TESTEQUALS(fvd->is_tile_reserved({54, 66}), false);
 	TESTEQUALS(queue({45, 66, 0}, 41), true);
 	TESTEQUALS(queue({42, 66, 0}, 41), true);
-	TESTEQUALS(fvd->cancel_build(state, builder, at(41.1)), true);
+	TESTEQUALS(fvd->cancel_build(state, *builder, at(41.1)), true);
 	TESTEQUALS(fvd->is_tile_reserved({45, 66}), false);
 	TESTEQUALS(fvd->is_tile_reserved({42, 66}), false);
-	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{0});
 }
 
 void fvd_retask_foundation() {

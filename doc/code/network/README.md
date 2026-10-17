@@ -209,6 +209,8 @@ The command carries no player ID or client simulation timestamp.
 The host uses the connection's assigned player, checks entity ownership and ability, and stamps accepted work with authoritative simulation time and a monotonic world revision.
 
 The host returns `CommandResult` for every intent so rejected input remains visible to the client.
+Receiving a rejected result clears that pending input but does not advance `ReplicationTracker` or mutate the replicated world.
+Its world revision identifies the host state that made the decision; only an accepted snapshot or contiguous delta advances client state.
 Accepted mutations appear in ordered `WorldDelta` messages.
 `WorldSnapshot` contains the initial state and is also the recovery boundary if a client misses a revision.
 Both replication messages carry the authoritative simulation time, world revision and the base revision needed to apply a delta.

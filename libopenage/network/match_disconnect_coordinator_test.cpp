@@ -50,8 +50,8 @@ void match_disconnect_coordinator() {
 	auto state = game.get_state();
 	auto commander = std::make_shared<gamestate::event::Commander>(loop);
 
-	gamestate::entity_id_t builder_two = 0;
-	gamestate::entity_id_t builder_three = 0;
+	std::optional<gamestate::entity_id_t> builder_two{};
+	std::optional<gamestate::entity_id_t> builder_three{};
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		auto ownership = std::dynamic_pointer_cast<gamestate::component::Ownership>(
 			entity->get_component(gamestate::component::component_t::OWNERSHIP));
@@ -63,8 +63,8 @@ void match_disconnect_coordinator() {
 			builder_three = id;
 		}
 	}
-	TESTEQUALS(builder_two != 0, true);
-	TESTEQUALS(builder_three != 0, true);
+	builder_two.has_value() or TESTFAIL;
+	builder_three.has_value() or TESTFAIL;
 
 	MatchConnectionState match{state->get_fvd()->get_player_count()};
 	MatchDisconnectCoordinator coordinator{match};
@@ -89,7 +89,7 @@ void match_disconnect_coordinator() {
 	CommandIntent stale{};
 	stale.command_id = 11;
 	stale.kind = CommandKind::MOVE;
-	stale.entity_ids = {builder_two};
+	stale.entity_ids = {*builder_two};
 	stale.target = {75, 75, 0};
 	incoming.try_push({two, stale}) or TESTFAIL;
 
@@ -155,7 +155,7 @@ void match_disconnect_coordinator() {
 	surviving.identity = three;
 	surviving.intent.command_id = 12;
 	surviving.intent.kind = CommandKind::MOVE;
-	surviving.intent.entity_ids = {builder_three};
+	surviving.intent.entity_ids = {*builder_three};
 	surviving.intent.target = {70, 70, 0};
 	TESTEQUALS(coordinator.accepts_command(surviving), true);
 	std::optional<bool> accepted;
