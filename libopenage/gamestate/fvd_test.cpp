@@ -675,4 +675,197 @@ void fvd_hunter_combat() {
 	fvd->combat_tick(state, at(33));
 	TESTEQUALS(tower_health->get_attribute(at(33), "fvd.data.entities.Health")->get(at(33)) < 100, true);
 }
+
+void fvd_hunter_attack_move_regressions() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+
+	entity_id_t builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (ownership->get_owners().get(time::TIME_ZERO) == player_id_t{5}) {
+			builder = id;
+			break;
+		}
+	}
+	TESTEQUALS(builder != 0, true);
+	TESTEQUALS(fvd->request_build(state, 5, {builder}, {68, 69, 0}, at(0)), true);
+	loop->reach_time(at(15), state);
+	entity_id_t tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			tower = id;
+			break;
+		}
+	}
+	TESTEQUALS(tower != 0, true);
+	auto tower_entity = state->get_game_entity(tower);
+	auto health = std::dynamic_pointer_cast<component::Live>(
+		tower_entity->get_component(component::component_t::LIVE));
+
+	// Tower priority must beat even a closer Builder at melee range.
+	auto protected_builder = entities->spawn_game_entity(
+		loop, state, 2, "fvd.data.entities.Builder", {72, 69, 0}, at(15));
+	auto protected_health = std::dynamic_pointer_cast<component::Live>(
+		protected_builder->get_component(component::component_t::LIVE));
+	auto protected_hp = protected_health->get_attribute(
+		at(15), "fvd.data.entities.Health")->get(at(15));
+
+	// Notice a tower within three tiles and approach it instead of
+	// following an attack-move path that leads away from the tower.
+	auto approaching = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {71, 69, 0}, at(15));
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {approaching->get_id()},
+	                                  {78, 69, 0}, at(15)), true);
+	auto approach_position = std::dynamic_pointer_cast<component::Position>(
+		approaching->get_component(component::component_t::POSITION));
+	auto tower_position = std::dynamic_pointer_cast<component::Position>(
+		tower_entity->get_component(component::component_t::POSITION));
+	auto tower_at = tower_position->get_positions().get(at(15));
+	auto before = approach_position->get_positions().get(at(15)) - tower_at;
+	fvd->combat_tick(state, at(15));
+	TESTEQUALS(protected_health->get_attribute(
+		at(15), "fvd.data.entities.Health")->get(at(15)), protected_hp);
+	auto after = approach_position->get_positions().get(at(15.2)) - tower_at;
+	TESTEQUALS(after.length() < before.length(), true);
+	fvd->combat_tick(state, at(16));
+	TESTEQUALS(health->get_attribute(at(16), "fvd.data.entities.Health")->get(at(16)) < 100, true);
+
+	// Reaching the destination doesn't remove tower awareness.
+	auto finished = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {74, 69, 0}, at(20));
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {finished->get_id()},
+	                                  {71, 69, 0}, at(20)), true);
+	fvd->combat_tick(state, at(20));
+	auto finished_position = std::dynamic_pointer_cast<component::Position>(
+		finished->get_component(component::component_t::POSITION));
+	auto at_destination = finished_position->get_positions().get(at(21.2)) - tower_at;
+	fvd->combat_tick(state, at(21.2));
+	auto after_destination = finished_position->get_positions().get(at(21.5)) - tower_at;
+	TESTEQUALS(after_destination.length() < at_destination.length(), true);
+
+	// A horse killed between selection and command is pruned, rather
+	// than invalidating all surviving Hunter horses in that selection.
+	auto dead = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {95, 95, 0}, at(30));
+	auto survivor = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {96, 95, 0}, at(30));
+	fvd->arrow_hit(state, dead->get_id(), 5, 100, at(30));
+	TESTEQUALS(state->get_game_entities().contains(dead->get_id()), false);
+	TESTEQUALS(fvd->can_command_units(
+		state, 1, {dead->get_id(), survivor->get_id()}, at(30)), true);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {dead->get_id(), survivor->get_id()},
+	                                  {97, 95, 0}, at(30)), true);
+	auto surviving_move = std::dynamic_pointer_cast<component::Move>(
+		survivor->get_component(component::component_t::MOVE));
+	TESTEQUALS(surviving_move->get_active_target().has_value(), true);
+	TESTEQUALS(fvd->can_command_units(state, 1, {dead->get_id()}, at(30)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {dead->get_id()},
+	                                  {98, 95, 0}, at(30)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {survivor->get_id(), builder},
+	                                  {98, 95, 0}, at(30)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {survivor->get_id(), entity_id_t{999999}},
+	                                  {98, 95, 0}, at(30)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {survivor->get_id(), survivor->get_id()},
+	                                  {98, 95, 0}, at(30)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 2, {survivor->get_id()},
+	                                  {98, 95, 0}, at(30)), false);
+
+	// Both Hunter movement orders go through the same stale-selection
+	// validation at the authoritative command handler.
+	event::SendCommandHandler commander;
+	bool accepted = false;
+	commander.invoke(*loop, nullptr, state, at(30),
+	                 {{"type", component::command::command_t::MOVE},
+	                  {"owner", player_id_t{1}},
+	                  {"entity_ids", std::vector<entity_id_t>{dead->get_id(), survivor->get_id()}},
+	                  {"target", coord::phys3{98, 95, 0}},
+	                  {"result_cb", std::function<void(bool)>{[&accepted](bool result) {
+		                  accepted = result;
+	                  }}}});
+	TESTEQUALS(accepted, true);
+}
+
+void fvd_hunter_builder_aggro() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+
+	// A Builder in the three-tile alert radius must be pursued even
+	// when the Hunter clicked a destination in the opposite direction.
+	auto builder = entities->spawn_game_entity(
+		loop, state, 2, "fvd.data.entities.Builder", {105, 105, 0}, at(0));
+	auto horse = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {102.5, 105, 0}, at(0));
+	auto builder_health = std::dynamic_pointer_cast<component::Live>(
+		builder->get_component(component::component_t::LIVE));
+	auto hp = builder_health->get_attribute(
+		at(0), "fvd.data.entities.Health")->get(at(0));
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {horse->get_id()},
+	                                  {99, 105, 0}, at(0)), true);
+	auto builder_position = std::dynamic_pointer_cast<component::Position>(
+		builder->get_component(component::component_t::POSITION));
+	auto horse_position = std::dynamic_pointer_cast<component::Position>(
+		horse->get_component(component::component_t::POSITION));
+	auto builder_at = builder_position->get_positions().get(at(0));
+	auto before = horse_position->get_positions().get(at(0)) - builder_at;
+	fvd->combat_tick(state, at(0));
+	auto after = horse_position->get_positions().get(at(0.25)) - builder_at;
+	TESTEQUALS(after.length() < before.length(), true);
+	fvd->combat_tick(state, at(1.2));
+	TESTEQUALS(builder_health->get_attribute(
+		at(1.2), "fvd.data.entities.Health")->get(at(1.2)) < hp, true);
+
+	// Detection continues after arrival when a Builder enters the
+	// three-tile radius; it is not limited to passing enemies en route.
+	auto finished = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {110, 110, 0}, at(3));
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {finished->get_id()},
+	                                  {111, 110, 0}, at(3)), true);
+	fvd->combat_tick(state, at(4));
+	auto finished_position = std::dynamic_pointer_cast<component::Position>(
+		finished->get_component(component::component_t::POSITION));
+	auto destination = finished_position->get_positions().get(at(4));
+	TESTEQUALS(destination.ne == coord::phys_t::from_int(111), true);
+	auto late_builder = entities->spawn_game_entity(
+		loop, state, 3, "fvd.data.entities.Builder", {113, 110, 0}, at(4.1));
+	auto late_position = std::dynamic_pointer_cast<component::Position>(
+		late_builder->get_component(component::component_t::POSITION));
+	auto late_at = late_position->get_positions().get(at(4.1));
+	fvd->combat_tick(state, at(4.1));
+	auto late_before = finished_position->get_positions().get(at(4.1)) - late_at;
+	auto late_after = finished_position->get_positions().get(at(4.35)) - late_at;
+	TESTEQUALS(late_after.length() < late_before.length(), true);
+	auto late_health = std::dynamic_pointer_cast<component::Live>(
+		late_builder->get_component(component::component_t::LIVE));
+	auto late_hp = late_health->get_attribute(
+		at(4.1), "fvd.data.entities.Health")->get(at(4.1));
+	fvd->combat_tick(state, at(5.1));
+	TESTEQUALS(late_health->get_attribute(
+		at(5.1), "fvd.data.entities.Health")->get(at(5.1)) < late_hp, true);
+}
 }

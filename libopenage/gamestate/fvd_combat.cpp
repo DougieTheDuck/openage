@@ -3,6 +3,8 @@
 #include "fvd.h"
 
 #include <algorithm>
+#include <array>
+#include <optional>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -16,9 +18,11 @@
 #include "gamestate/entity_factory.h"
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
+#include "gamestate/map.h"
 #include "gamestate/manager.h"
 #include "gamestate/system/idle.h"
 #include "gamestate/system/move.h"
+#include "pathfinding/pathfinder.h"
 #include "renderer/stages/world/render_entity.h"
 
 namespace openage::gamestate {
@@ -60,6 +64,68 @@ double distance_squared(const std::shared_ptr<GameEntity> &first,
 	double x = delta.ne.to_double();
 	double y = delta.se.to_double();
 	return x * x + y * y;
+}
+
+
+/** Stop a previous route at the authoritative time of an engagement. */
+void halt_for_engagement(const std::shared_ptr<GameEntity> &horse,
+                         const time::time_t &time) {
+	auto position = std::dynamic_pointer_cast<component::Position>(
+		horse->get_component(component::component_t::POSITION));
+	position->set_position(time, position->get_positions().get(time));
+	auto activity = std::dynamic_pointer_cast<component::Activity>(
+		horse->get_component(component::component_t::ACTIVITY));
+	activity->cancel_events(time);
+	system::Idle::idle(horse, time);
+}
+
+/**
+ * Find an accessible tile in melee range of a target unit or tower.
+ * Destinations are ranked deterministically by travel proximity.
+ */
+std::optional<coord::phys3> melee_approach(
+	const std::shared_ptr<GameState> &state,
+	const std::shared_ptr<GameEntity> &horse,
+	const std::shared_ptr<GameEntity> &target,
+	const time::time_t &time, size_t map_size) {
+	const auto target_position = std::dynamic_pointer_cast<component::Position>(
+		target->get_component(component::component_t::POSITION))->get_positions().get(time);
+	const auto horse_position = std::dynamic_pointer_cast<component::Position>(
+		horse->get_component(component::component_t::POSITION))->get_positions().get(time);
+	const auto site = target_position.to_tile();
+	const std::array<coord::tile_delta, 8> offsets{{
+		{-1, 0}, {1, 0}, {0, -1}, {0, 1},
+		{-1, -1}, {-1, 1}, {1, -1}, {1, 1},
+	}};
+	const auto map = state->get_map();
+	const auto grid = map->get_grid_id("fvd.data.terrain.Land");
+	const auto pathfinder = map->get_pathfinder();
+	std::optional<coord::phys3> best;
+	double shortest = std::numeric_limits<double>::infinity();
+	for (const auto &offset : offsets) {
+		coord::tile tile{site.ne + offset.ne, site.se + offset.se};
+		if (tile.ne < 0 or tile.se < 0
+		    or tile.ne >= static_cast<coord::tile_t>(map_size)
+		    or tile.se >= static_cast<coord::tile_t>(map_size)) {
+			continue;
+		}
+		auto destination = tile.to_phys3_center();
+		auto to_target = destination - target_position;
+		if (to_target.length() > 1.45) {
+			continue;
+		}
+		auto to_horse = destination - horse_position;
+		auto proximity = to_horse.length();
+		if (proximity >= shortest) {
+			continue;
+		}
+		if (system::find_path(pathfinder, grid, horse_position, destination, time).empty()) {
+			continue;
+		}
+		best = destination;
+		shortest = proximity;
+	}
+	return best;
 }
 
 } // namespace
@@ -120,6 +186,9 @@ bool FVD::apply_damage(const std::shared_ptr<GameState> &state,
 	}
 	else {
 		this->attack_orders.erase(target);
+		if (definition == this->horse) {
+			this->dead_horses.insert(target);
+		}
 		if (definition == this->builder) {
 			this->cancel_build(state, target, time);
 		}
@@ -142,10 +211,9 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 	const auto builders = entities_by_definition(state, this->builder);
 	const auto towers = entities_by_definition(state, this->tower);
 
-	// AttackMove is human issued, but target acquisition and attacking are
-	// simulation-owned. A horse only acquires nearby units along its route.
-	auto ordered_horses = horses;
-	for (auto id : ordered_horses) {
+	// AttackMove searches three tiles for towers and Builders, even after
+	// arrival. Towers take priority; horses approach before striking.
+	for (auto id : horses) {
 		auto order_it = this->attack_orders.find(id);
 		if (order_it == this->attack_orders.end()) {
 			continue;
@@ -157,61 +225,129 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		}
 		auto horse = found->second;
 		auto &order = order_it->second;
+		auto move = std::dynamic_pointer_cast<component::Move>(
+			horse->get_component(component::component_t::MOVE));
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			horse->get_component(component::component_t::POSITION));
+		auto current = position->get_positions().get(time);
+		auto remaining = current - order.destination;
+		if (remaining.length() < 0.15 and not order.target) {
+			order.reached_destination = true;
+		}
+
 		auto eligible = [&](entity_id_t candidate) {
 			auto other = state->get_game_entities().find(candidate);
 			if (other == state->get_game_entities().end() or not alive(other->second, time)) {
 				return false;
 			}
-			return other->second->get_definition() == this->builder
-			    or other->second->get_definition() == this->tower;
+			if (other->second->get_definition() == this->tower) {
+				auto footprint = this->tower_footprints.find(candidate);
+				return footprint != this->tower_footprints.end()
+				    and not footprint->second.under_construction;
+			}
+			return other->second->get_definition() == this->builder;
 		};
-		if (order.target and
-		    (not eligible(*order.target)
-		     or distance_squared(horse, state->get_game_entity(*order.target), time) > 1.6 * 1.6)) {
+		// A tower entering the three-tile alert area takes precedence over
+		// a Builder already targeted by the same AttackMove.
+		if (order.target and eligible(*order.target)
+		    and state->get_game_entity(*order.target)->get_definition() == this->builder) {
+			for (auto tower_id : towers) {
+				if (not eligible(tower_id)) {
+					continue;
+				}
+				auto tower_entity = state->get_game_entity(tower_id);
+				auto distance = distance_squared(horse, tower_entity, time);
+				if (distance <= 3.0 * 3.0
+				    and (distance <= 1.45 * 1.45
+				         or melee_approach(state, horse, tower_entity,
+				                           time, this->map_size).has_value())) {
+					order.target.reset();
+					break;
+				}
+			}
+		}
+		if (order.target and not eligible(*order.target)) {
+			// A destroyed target must not leave an orphaned approach route.
+			if (move->get_active_target() and move->get_active_arrival() > time) {
+				halt_for_engagement(horse, time);
+			}
 			order.target.reset();
 		}
 		if (not order.target) {
+			// A tower within three tiles takes priority over a nearby
+			// Builder, even if the original move destination was reached.
 			entity_id_t nearest = 0;
-			double closest = 1.45 * 1.45;
-			for (auto enemy : builders) {
-				if (not eligible(enemy)) {
+			double closest = 3.0 * 3.0;
+			for (auto tower_id : towers) {
+				if (not eligible(tower_id)) {
 					continue;
 				}
-				double d = distance_squared(horse, state->get_game_entity(enemy), time);
-				if (d < closest) {
-					closest = d;
-					nearest = enemy;
+				auto tower_entity = state->get_game_entity(tower_id);
+				auto distance = distance_squared(horse, tower_entity, time);
+				if (distance <= closest) {
+					if (distance <= 1.45 * 1.45
+					    or melee_approach(state, horse, tower_entity,
+					                      time, this->map_size).has_value()) {
+						nearest = tower_id;
+						closest = distance;
+					}
 				}
 			}
-			for (auto enemy : towers) {
-				if (not eligible(enemy)) {
-					continue;
-				}
-				double d = distance_squared(horse, state->get_game_entity(enemy), time);
-				if (d < closest) {
-					closest = d;
-					nearest = enemy;
+			if (nearest == 0) {
+				// Builders have the same three-tile alert radius, but only
+				// become automatic targets when no tower takes precedence.
+				closest = 3.0 * 3.0;
+				for (auto enemy : builders) {
+					if (not eligible(enemy)) {
+						continue;
+					}
+					auto builder_entity = state->get_game_entity(enemy);
+					auto distance = distance_squared(horse, builder_entity, time);
+					if (distance <= closest
+					    and (distance <= 1.45 * 1.45
+					         or melee_approach(state, horse, builder_entity,
+					                           time, this->map_size).has_value())) {
+						closest = distance;
+						nearest = enemy;
+					}
 				}
 			}
 			if (nearest != 0) {
 				order.target = nearest;
-				// Prevent the future movement curve from carrying the horse
-				// straight through its new melee target.
-				auto position = std::dynamic_pointer_cast<component::Position>(
-					horse->get_component(component::component_t::POSITION));
-				position->set_position(time, position->get_positions().get(time));
-				auto activity = std::dynamic_pointer_cast<component::Activity>(
-					horse->get_component(component::component_t::ACTIVITY));
-				activity->cancel_events(time);
-				system::Idle::idle(horse, time);
+				halt_for_engagement(horse, time);
 			}
 		}
 		if (order.target) {
-			auto enemy = state->get_game_entities().find(*order.target);
-			if (enemy != state->get_game_entities().end()
-			    and distance_squared(horse, enemy->second, time) <= 1.45 * 1.45
-			    and time >= order.next_attack) {
-				auto target = *order.target;
+			const auto target = *order.target;
+			auto enemy = state->get_game_entities().find(target);
+			if (enemy == state->get_game_entities().end()) {
+				order.target.reset();
+				continue;
+			}
+			auto distance = distance_squared(horse, enemy->second, time);
+			if (distance > 1.45 * 1.45) {
+				// Both Builders and towers are pursued to melee range.
+				// A moving Builder may require another approach after
+				// the current route reaches its last-known position.
+				if (not move->get_active_target()
+				    or move->get_active_arrival() <= time) {
+					auto approach = melee_approach(
+						state, horse, enemy->second, time, this->map_size);
+					if (approach) {
+						system::Move::move_default(horse, state, *approach, time);
+					}
+					else {
+						order.target.reset();
+					}
+				}
+				continue;
+			}
+
+			// A horse may enter melee range before its approach curve ends.
+			if (move->get_active_target() and move->get_active_arrival() > time) {
+				halt_for_engagement(horse, time);
+			}
+			if (time >= order.next_attack) {
 				this->apply_damage(state, target, this->horse_damage, 1, false, time);
 				order.next_attack = time + this->horse_cooldown;
 				if (not state->get_game_entities().contains(target)) {
@@ -221,24 +357,21 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			continue;
 		}
 
-		// Resume the original human target after defeating an opponent.
-		auto move = std::dynamic_pointer_cast<component::Move>(
-			horse->get_component(component::component_t::MOVE));
-		auto position = std::dynamic_pointer_cast<component::Position>(
-			horse->get_component(component::component_t::POSITION));
-		if (not move->get_active_target()) {
-			auto difference = position->get_positions().get(time) - order.destination;
-			if (difference.length() < 0.15) {
+		// After reaching the destination, remain alert to enemies within
+		// three tiles until a human issues another command.
+		if (order.reached_destination) {
+			if (move->get_active_target()) {
 				system::Idle::idle(horse, time);
-				this->attack_orders.erase(order_it);
 			}
-			else {
-				system::Move::move_default(horse, state, order.destination, time);
-			}
+			continue;
 		}
-		else if (move->get_active_arrival() <= time) {
+		if (remaining.length() < 0.15) {
+			order.reached_destination = true;
 			system::Idle::idle(horse, time);
-			this->attack_orders.erase(order_it);
+		}
+		else if (not move->get_active_target()
+		         or move->get_active_arrival() <= time) {
+			system::Move::move_default(horse, state, order.destination, time);
 		}
 	}
 

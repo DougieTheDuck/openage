@@ -141,6 +141,7 @@ private:
 		coord::phys3 destination;
 		std::optional<entity_id_t> target;
 		time::time_t next_attack;
+		bool reached_destination = false;
 	};
 
 	struct PendingBuild {
@@ -162,6 +163,14 @@ private:
 		std::vector<FootprintCell> cells;
 		bool under_construction;
 	};
+
+	/**
+	 * Validate a Hunter selection while ignoring horses confirmed dead by
+	 * this simulation. Unknown IDs or foreign entities still invalidate it.
+	 */
+	std::optional<std::vector<entity_id_t>> resolve_command_units(
+		const std::shared_ptr<GameState> &state, player_id_t owner,
+		const std::vector<entity_id_t> &ids, const time::time_t &time) const;
 
 	/** Apply damage once and remove dead units. */
 	bool apply_damage(const std::shared_ptr<GameState> &state, entity_id_t target,
@@ -223,6 +232,7 @@ private:
 	bool hunter_wave_started = false;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
+	std::unordered_set<entity_id_t> dead_horses;
 	std::unordered_map<entity_id_t, time::time_t> tower_next_shot;
 	std::array<std::atomic<uint64_t>, 9> player_kills{};
 	std::unordered_map<entity_id_t, PendingBuild> build_orders;
