@@ -25,6 +25,29 @@ then one additional horse at each whole second t=21s, t=22s, and so on.
 - **WHEN** the game is in the lobby or stopped
 - **THEN** no timed Hunter horses spawn and lobby waiting does not consume the grace period
 
+### Requirement: HUD displays the Hunter's initial spawn countdown
+
+The top-centre HUD SHALL display a countdown using the same simulation-time
+deadline as the first scheduled Hunter horse. The number of whole seconds
+remaining SHALL be rounded up, and the countdown SHALL disappear when the
+first spawn deadline is reached. No countdown SHALL run before match start.
+
+#### Scenario: Countdown after match start
+- **WHEN** the match starts with a 20-second Hunter spawn delay
+- **THEN** the HUD displays 00:20 and counts down in simulation seconds
+
+#### Scenario: Between whole seconds
+- **WHEN** fewer than two seconds but more than one second remain
+- **THEN** the HUD displays 00:02 until the remaining time reaches one second
+
+#### Scenario: Grace period ends
+- **WHEN** simulation time reaches the scheduled first horse spawn time
+- **THEN** the countdown disappears
+
+#### Scenario: Match waiting to start
+- **WHEN** the simulation has not scheduled the first Hunter spawn
+- **THEN** the HUD does not display a running countdown
+
 ### Requirement: Newly spawned Hunter horses await human orders
 
 The simulation SHALL initially spawn each Hunter-owned horse at the center;

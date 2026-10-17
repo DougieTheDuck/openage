@@ -974,10 +974,27 @@ void FVD::start_hunter_wave(const std::shared_ptr<GameState> &state,
 	if (not loop or not this->horse_spawn_target) {
 		throw Error{ERR << "Cannot start the Hunter wave before FVD initialization"};
 	}
+	auto spawn_time = match_start + this->horse_spawn_delay;
+	{
+		std::lock_guard lock{this->hunter_spawn_time_mutex};
+		this->first_hunter_spawn_time = spawn_time;
+	}
 	this->hunter_wave_started = true;
 	loop->create_event("game.fvd_spawn_horse", this->horse_spawn_target, state,
-	                   match_start + this->horse_spawn_delay);
+	                   spawn_time);
 	loop->create_event("game.fvd_combat_tick", this->horse_spawn_target, state, match_start);
+}
+
+std::optional<int> FVD::get_hunter_spawn_countdown(const time::time_t &now) const {
+	std::lock_guard lock{this->hunter_spawn_time_mutex};
+	if (not this->first_hunter_spawn_time or now >= *this->first_hunter_spawn_time) {
+		return std::nullopt;
+	}
+	const auto remaining = *this->first_hunter_spawn_time - now;
+	const auto whole_seconds = remaining.to_int();
+	// Round up so 00:01 remains visible until the first spawn deadline.
+	return static_cast<int>(whole_seconds
+	                        + (remaining > time::time_t::from_int(whole_seconds) ? 1 : 0));
 }
 
 void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,

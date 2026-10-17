@@ -12,9 +12,45 @@ Item {
 	readonly property bool isTower: hud !== null && hud.isTower
 	readonly property bool canAttack: hud !== null && hud.canAttack
 	readonly property bool attacking: hud !== null && hud.attacking
+	readonly property int hunterCountdown: hud === null ? 0 : hud.hunterCountdown
 
 	Rectangle {
+		id: countdownBanner
 		anchors.top: parent.top
+		anchors.horizontalCenter: parent.horizontalCenter
+		visible: root.hunterCountdown > 0
+		width: 250
+		height: visible ? 74 : 0
+		color: "#ed182824"
+		border.width: 1
+		border.color: root.hunterCountdown <= 5 ? "#f4a861" : "#72918b"
+		radius: 7
+
+		Column {
+			anchors.centerIn: parent
+			spacing: 1
+
+			Text {
+				anchors.horizontalCenter: parent.horizontalCenter
+				text: "HUNTER ARRIVES IN"
+				color: "#e1e9e4"
+				font.pixelSize: 12
+				font.bold: true
+			}
+
+			Text {
+				anchors.horizontalCenter: parent.horizontalCenter
+				text: "00:" + ("0" + root.hunterCountdown).slice(-2)
+				color: root.hunterCountdown <= 5 ? "#ffb877" : "#ffffff"
+				font.pixelSize: 33
+				font.bold: true
+			}
+		}
+	}
+
+	Rectangle {
+		anchors.top: countdownBanner.bottom
+		anchors.topMargin: root.hunterCountdown > 0 ? 6 : 0
 		anchors.horizontalCenter: parent.horizontalCenter
 		width: help.width + 32
 		height: help.height + 20

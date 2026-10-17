@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -100,6 +101,13 @@ public:
 	 */
 	void start_hunter_wave(const std::shared_ptr<GameState> &state,
 	                       const time::time_t &match_start);
+
+	/**
+	 * Seconds remaining until the first Hunter spawn, rounded up.
+	 * The deadline is shared read-only with the presenter; no countdown
+	 * exists before match start or after the first spawn deadline.
+	 */
+	std::optional<int> get_hunter_spawn_countdown(const time::time_t &now) const;
 
 	/** Spawn an idle Hunter horse and schedule the next one. */
 	void spawn_hunter_horse(const std::shared_ptr<GameState> &state,
@@ -230,6 +238,9 @@ private:
 	std::weak_ptr<EntityFactory> entity_factory;
 	std::shared_ptr<openage::event::EventEntity> horse_spawn_target;
 	bool hunter_wave_started = false;
+	/** Protect the match-relative first-spawn deadline read by the presenter. */
+	mutable std::mutex hunter_spawn_time_mutex;
+	std::optional<time::time_t> first_hunter_spawn_time;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
 	std::unordered_set<entity_id_t> dead_horses;

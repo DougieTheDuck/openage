@@ -12,3 +12,4 @@
 - [ ] 1.10 Keep automatic gather/rally points outside the initial playable scope; run relevant simulation and UI checks.
 
 - [ ] Add a Hunter focus-attack command for deliberately targeting a Builder despite a nearby tower, with ownership validation and cancellation on target death.
+- [x] 1.11 Show the shared simulation-time countdown to the first Hunter horse in the top-centre HUD.

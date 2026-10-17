@@ -20,6 +20,8 @@ The FVD renderer draws the exact tile boundaries over the plains for placement r
 All eight players start with their camera centred at (64, 64).
 Player 1 has the Hunter civilisation, starts without units and cannot place buildings.
 Players 2 through 8 have the Builders civilisation and each receive exactly one Builder near the centre, with distinct starting positions.
+A top-centre countdown shows the seconds remaining until the first Hunter horse, starting at 00:20 when the match begins and disappearing at the first spawn.
+It uses the same simulation-time deadline as spawning, so changing the clock speed or pausing the match does not desynchronize the display.
 After 20 seconds of match time, the first Hunter horse spawns at the centre of the map; one more spawns every second thereafter.
 Horses belong to Hunter player 1 and receive no automatic movement commands.
 As each new horse spawns, nearby idle horses ease outwards using deterministic two-dimensional contact separation rather than piling up inside each other.

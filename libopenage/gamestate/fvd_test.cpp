@@ -488,11 +488,20 @@ void fvd_hunter_spawning() {
 		return horses;
 	};
 
+	// The HUD countdown uses the match's actual first-spawn deadline.
+	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(0)).has_value(), false);
 	// Preparing the map does not start the Hunter wave.
 	loop->reach_time(at(0), state);
 	TESTEQUALS(count_horses(), size_t{0});
 	fvd->start_hunter_wave(state, at(0));
 	fvd->start_hunter_wave(state, at(0));
+	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(0)).value(), 20);
+	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(0.01)).value(), 20);
+	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(1)).value(), 19);
+	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(19)).value(), 1);
+	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(19.999)).value(), 1);
+	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(20)).has_value(), false);
+	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(21)).has_value(), false);
 
 	loop->reach_time(at(19.999), state);
 	TESTEQUALS(count_horses(), size_t{0});
