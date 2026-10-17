@@ -34,10 +34,31 @@ Simulation output is placed into one bounded `OutboundMailbox` per accepted conn
 Its values are typed command results, snapshots, deltas or disconnect notifications; only the owning connection thread converts them to sequenced frames and writes the socket.
 An outbound mailbox that remains full identifies a client that cannot keep up, so the host disconnects that client instead of silently dropping authoritative state.
 Connection threads publish closed sessions through `ConnectionEventMailbox` for authoritative processing.
+`MatchDisconnectCoordinator` binds each remote session to its own
+`OutboundMailbox` and processes those closures on the simulation thread
+**before** draining the next batch of authenticated commands. It checks outbound
+capacity for both messages before changing any authoritative connection state.
+For each unique closure, it permanently invalidates the session, advances
+the world revision once, queues one `ParticipantDisconnected` notification to
+each surviving remote, then queues a complete `WorldDelta` with that
+participant's `connected = false` flag. Identical repeat close events do not
+advance the revision twice. An unknown or mismatched session closure, or
+insufficient outbound capacity, is fatal to the host match rather than silently
+dropping replication. Outbound mailboxes remain owned by connection handlers
+and must outlive their registration with the coordinator.
 
 Gameplay payloads never contain a claimed player ID.
 The network boundary passes the `AuthenticatedCommand` drained from the mailbox to `submit_authenticated_command`.
 The bridge schedules work on the authoritative event loop and returns a `CommandResult` decision.
+When draining commands from `CommandMailbox`, use the overload of
+`submit_authenticated_command` taking `MatchConnectionState`:
+it re-checks the **current** session binding before scheduling the event.
+Previously accepted commands already submitted to the simulation are not
+rolled back, but commands still in the inbound mailbox when a disconnect is
+applied are rejected with a negative callback and do not mutate gameplay.
+The connection handler reports rejection with the original command ID and
+the current authoritative revision; it must never optimistically apply
+the rejected command.
 Gameplay code can add command behavior and replicated records without reading sockets, framing bytes or maintaining connection counters.
 Network code can change connection management without changing horse, projectile, damage or building simulation.
 
@@ -206,4 +227,10 @@ Every remaining connection receives one `ParticipantDisconnected` notification.
 The host also marks the participant disconnected in the next authoritative world revision, so a recovery snapshot cannot lose this status.
 `network::MatchConnectionState` owns the fixed participant-to-session bindings and rejects a second binding after a participant disconnects.
 If the authoritative host disconnects, clients end the match because no peer may silently replace its simulation.
+On TCP EOF or a fatal socket/protocol failure from the host, the client calls
+`ReplicationTracker::host_disconnected()`, stops issuing gameplay commands,
+and displays a match-ended/disconnected state. The tracker will then reject
+snapshots, deltas and recovery requests; restarting a match requires a new
+connection, fresh session and a new tracker. TCP EOF is not evidence of a
+successful host migration.
 Failure to enqueue a connection lifecycle event is fatal to the host session because continuing would conceal a disconnect from authoritative state.

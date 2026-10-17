@@ -35,6 +35,12 @@ public:
 	 */
 	DeltaDisposition accept_delta(const WorldState &delta);
 
+	/** Stop accepting replication after the authoritative host disconnects. */
+	void host_disconnected();
+
+	/** Whether the authoritative host is still connected. */
+	bool is_host_connected() const;
+
 	/** Whether a snapshot has established authoritative state. */
 	bool has_state() const;
 
@@ -48,6 +54,7 @@ public:
 	SnapshotRequest make_snapshot_request() const;
 
 private:
+	bool host_connected{true};
 	bool initialized{false};
 	bool awaiting_snapshot{false};
 	uint64_t revision{0};

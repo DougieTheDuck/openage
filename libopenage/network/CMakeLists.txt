@@ -11,6 +11,8 @@ add_sources(libopenage
 	handshake.cpp
 	handshake_test.cpp
 	match_connection_state.cpp
+	match_disconnect_coordinator.cpp
+	match_disconnect_coordinator_test.cpp
 	messages.cpp
 	messages_test.cpp
 	protocol.cpp

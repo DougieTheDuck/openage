@@ -32,6 +32,7 @@
 #include "network/connection_mailbox.h"
 #include "network/handshake.h"
 #include "network/match_connection_state.h"
+#include "network/match_disconnect_coordinator.h"
 #include "network/messages.h"
 #include "network/protocol.h"
 #include "network/replication.h"
@@ -120,6 +121,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	auto state = game.get_state();
 	auto commander = std::make_shared<gamestate::event::Commander>(loop);
 	MatchConnectionState connections{state->get_fvd()->get_player_count()};
+	MatchDisconnectCoordinator lifecycle_coordinator{connections};
 
 	std::optional<gamestate::entity_id_t> builder_id{};
 	std::optional<gamestate::entity_id_t> other_builder_id{};
@@ -149,7 +151,8 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	auto accepted_session = host_handshake(connection, 2, test_asset_digest());
 	accepted_session.has_value() or TESTFAIL;
 	auto &session = *accepted_session;
-	connections.bind_remote(session.get_identity());
+	OutboundMailbox builder_outbound{4};
+	lifecycle_coordinator.register_remote(session.get_identity(), builder_outbound);
 	CommandMailbox command_mailbox{16};
 	auto snapshot_frame = session.make_frame(
 		MessageType::WORLD_SNAPSHOT,
@@ -171,7 +174,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 
 	std::optional<bool> accepted{};
 	submit_authenticated_command(
-		command,
+		command, connections,
 		loop,
 		commander,
 		state,
@@ -238,7 +241,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		auto before = capture_fvd_state(state, connections, sample_time, 0, 1, 2);
 		std::optional<bool> spoofed_accepted{};
 		submit_authenticated_command(
-			spoofed_command,
+			spoofed_command, connections,
 			loop,
 			commander,
 			state,
@@ -279,7 +282,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			auto horse_before = capture_fvd_state(state, connections, sample_time, 0, 1, 2);
 			std::optional<bool> forged_hunter_accepted{};
 			submit_authenticated_command(
-				forged_hunter,
+				forged_hunter, connections,
 				loop,
 				commander,
 				state,
@@ -319,7 +322,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		auto &build = build_commands.front();
 		std::optional<bool> build_accepted{};
 		submit_authenticated_command(
-			build, loop, commander, state, sample_time,
+			build, connections, loop, commander, state, sample_time,
 			[&](bool result) { build_accepted = result; });
 		loop->reach_time(sample_time, state);
 		build_accepted.has_value() or TESTFAIL;
@@ -451,11 +454,29 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		session.get_identity(),
 		DisconnectReason::CONNECTION_LOST})
 		or TESTFAIL;
-	auto closures = lifecycle.drain(1);
-	TESTEQUALS(closures.size(), size_t{1});
-	auto disconnected = connections.disconnect_remote(
-		closures.front().identity, closures.front().reason);
+	uint64_t disconnect_revision = 8;
+	TESTEQUALS(lifecycle_coordinator.process_closures(
+		lifecycle, state, time::time_t::from_int(40), disconnect_revision, 1),
+		size_t{1});
+	TESTEQUALS(disconnect_revision, uint64_t{9});
+	auto disconnected = ParticipantDisconnected{
+		session.get_identity().player_id, DisconnectReason::CONNECTION_LOST};
 	not connections.accepts_commands(session.get_identity()) or TESTFAIL;
+	TESTEQUALS(builder_outbound.size(), size_t{0});
+	// A command decoded before the socket closed but drained afterwards
+	// must fail without ever reaching movement or construction gameplay.
+	AuthenticatedCommand buffered{};
+	buffered.identity = session.get_identity();
+	buffered.intent.command_id = 999;
+	buffered.intent.kind = CommandKind::MOVE;
+	buffered.intent.entity_ids = {*builder_id};
+	buffered.intent.target = {64, 64, 0};
+	bool buffered_accepted = true;
+	submit_authenticated_command(
+		buffered, connections, loop, commander, state,
+		time::time_t::from_int(40),
+		[&](bool result) { buffered_accepted = result; });
+	TESTEQUALS(buffered_accepted, false);
 	TESTTHROWS(connections.bind_remote(session.get_identity()));
 	auto retained_after = capture_fvd_state(
 		state, connections, time::time_t::from_int(40), 8, 9, 1);
@@ -475,7 +496,9 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		hunter_connection, 1, test_asset_digest());
 	accepted_hunter_session.has_value() or TESTFAIL;
 	auto &hunter_session = *accepted_hunter_session;
-	connections.bind_remote(hunter_session.get_identity());
+	OutboundMailbox hunter_outbound{4};
+	lifecycle_coordinator.register_remote(
+		hunter_session.get_identity(), hunter_outbound);
 	auto hunter_time = time::time_t::from_int(40);
 	auto hunter_snapshot_frame = hunter_session.make_frame(
 		MessageType::WORLD_SNAPSHOT,
@@ -498,7 +521,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	auto &attack = attack_commands.front();
 	std::optional<bool> attack_accepted{};
 	submit_authenticated_command(
-		attack,
+		attack, connections,
 		loop,
 		commander,
 		state,
@@ -539,7 +562,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	auto entity_count = state->get_game_entities().size();
 	std::optional<bool> hunter_build_accepted{};
 	submit_authenticated_command(
-		hunter_build,
+		hunter_build, connections,
 		loop,
 		commander,
 		state,

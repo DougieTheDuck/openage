@@ -94,6 +94,26 @@ void submit_authenticated_command(
 		params);
 }
 
+void submit_authenticated_command(
+	const AuthenticatedCommand &command,
+	const MatchConnectionState &connections,
+	const std::shared_ptr<::openage::event::EventLoop> &event_loop,
+	const std::shared_ptr<gamestate::event::Commander> &commander,
+	const std::shared_ptr<gamestate::GameState> &state,
+	const time::time_t &time,
+	command_result_callback_t result_callback) {
+	if (not result_callback) {
+		throw Error{MSG(err) << "Network command intent requires a result callback"};
+	}
+	if (not connections.accepts_commands(command.identity)) {
+		result_callback(false);
+		return;
+	}
+	submit_authenticated_command(
+		command, event_loop, commander, state, time,
+		std::move(result_callback));
+}
+
 WorldState capture_fvd_state(
 	const std::shared_ptr<gamestate::GameState> &state,
 	const MatchConnectionState &connections,

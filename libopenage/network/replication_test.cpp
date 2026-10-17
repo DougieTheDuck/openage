@@ -8,6 +8,7 @@ namespace openage::network::tests {
 
 void replication() {
 	ReplicationTracker tracker{};
+	tracker.is_host_connected() or TESTFAIL;
 	not tracker.has_state() or TESTFAIL;
 	not tracker.is_awaiting_snapshot() or TESTFAIL;
 	TESTEQUALS(tracker.get_revision(), uint64_t{0});
@@ -64,6 +65,17 @@ void replication() {
 	auto invalid_snapshot = recovery_snapshot;
 	invalid_snapshot.base_revision = 1;
 	TESTTHROWS(tracker.accept_snapshot(invalid_snapshot));
+
+	// A lost authoritative host ends this match. No later frames or
+	// snapshot requests may revive an independent client simulation.
+	tracker.host_disconnected();
+	TESTEQUALS(tracker.is_host_connected(), false);
+	TESTEQUALS(tracker.has_state(), false);
+	TESTEQUALS(tracker.is_awaiting_snapshot(), false);
+	TESTEQUALS(tracker.get_revision(), uint64_t{9});
+	TESTTHROWS(tracker.accept_snapshot(recovery_snapshot));
+	TESTTHROWS(tracker.accept_delta(contiguous));
+	TESTTHROWS(tracker.make_snapshot_request());
 }
 
 } // namespace openage::network::tests

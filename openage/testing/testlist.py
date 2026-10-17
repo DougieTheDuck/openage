@@ -89,6 +89,11 @@ def tests_cpp():
     yield "openage::network::tests::session"
     yield "openage::network::tests::command_mailbox"
     yield "openage::network::tests::connection_mailbox"
+    yield (
+        "openage::network::tests::match_disconnect_coordinator",
+        "FVD mid-match disconnect, authoritative revision and stale-command rejection",
+        lambda env: env["has_assets"],
+    )
     yield "openage::network::tests::replication"
     yield "openage::network::tests::transport"
     yield (

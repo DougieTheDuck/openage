@@ -42,6 +42,22 @@ void submit_authenticated_command(
 	const time::time_t &time,
 	command_result_callback_t result_callback);
 
+/**
+ * Submit only if the original session still owns an active match slot.
+ *
+ * Call this variant when draining an authenticated command mailbox on the
+ * simulation thread. A stale/disconnected session is rejected immediately
+ * without ever scheduling a gameplay mutation.
+ */
+void submit_authenticated_command(
+	const AuthenticatedCommand &command,
+	const MatchConnectionState &connections,
+	const std::shared_ptr<::openage::event::EventLoop> &event_loop,
+	const std::shared_ptr<gamestate::event::Commander> &commander,
+	const std::shared_ptr<gamestate::GameState> &state,
+	const time::time_t &time,
+	command_result_callback_t result_callback);
+
 /** Capture complete authoritative FVD state at a simulation time. */
 WorldState capture_fvd_state(
 	const std::shared_ptr<gamestate::GameState> &state,

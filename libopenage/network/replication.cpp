@@ -7,6 +7,9 @@
 namespace openage::network {
 
 void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
+	if (not this->host_connected) {
+		throw Error{MSG(err) << "FVD replication cannot resume after host disconnect"};
+	}
 	if (snapshot.base_revision != 0) {
 		throw Error{MSG(err) << "FVD world snapshot must have base revision zero"};
 	}
@@ -22,6 +25,9 @@ void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 }
 
 DeltaDisposition ReplicationTracker::accept_delta(const WorldState &delta) {
+	if (not this->host_connected) {
+		throw Error{MSG(err) << "FVD replication cannot accept deltas after host disconnect"};
+	}
 	if (delta.world_revision <= delta.base_revision) {
 		throw Error{MSG(err) << "FVD world delta revision must advance beyond its base"};
 	}
@@ -37,6 +43,16 @@ DeltaDisposition ReplicationTracker::accept_delta(const WorldState &delta) {
 	return DeltaDisposition::APPLY;
 }
 
+void ReplicationTracker::host_disconnected() {
+	this->host_connected = false;
+	this->initialized = false;
+	this->awaiting_snapshot = false;
+}
+
+bool ReplicationTracker::is_host_connected() const {
+	return this->host_connected;
+}
+
 bool ReplicationTracker::has_state() const {
 	return this->initialized;
 }
@@ -50,6 +66,9 @@ uint64_t ReplicationTracker::get_revision() const {
 }
 
 SnapshotRequest ReplicationTracker::make_snapshot_request() const {
+	if (not this->host_connected) {
+		throw Error{MSG(err) << "FVD cannot request a snapshot after host disconnect"};
+	}
 	return {this->revision};
 }
 
