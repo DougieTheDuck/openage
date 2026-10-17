@@ -3,6 +3,7 @@
 #include "main.h"
 
 #include <memory>
+#include <algorithm>
 
 #include "cvar/cvar.h"
 #include "engine/engine.h"
@@ -53,7 +54,9 @@ int run_game(const main_arguments &args) {
 	win_settings.mode = wmode;
 	win_settings.debug = args.gl_debug;
 
-	openage::engine::Engine engine{run_mode, args.root_path, args.mods, win_settings};
+	openage::engine::Engine engine{run_mode, args.root_path, args.mods, win_settings,
+	                               not args.solo and not args.headless
+	                                   and std::find(args.mods.begin(), args.mods.end(), "fvd") != args.mods.end()};
 
 	engine.loop();
 

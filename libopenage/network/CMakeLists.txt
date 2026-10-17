@@ -12,6 +12,8 @@ add_sources(libopenage
 	handshake_test.cpp
 	lobby.cpp
 	lobby_test.cpp
+	lobby_relay_client.cpp
+	lobby_relay_client_test.cpp
 	match_connection_state.cpp
 	match_disconnect_coordinator.cpp
 	match_disconnect_coordinator_test.cpp

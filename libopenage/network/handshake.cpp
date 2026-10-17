@@ -37,7 +37,8 @@ void require_handshake_envelope(const Frame &frame) {
 
 std::string compatibility_rejection(const Frame &frame,
                                     const ClientHello &hello,
-                                    const AssetDigest &required_asset_digest) {
+                                    const AssetDigest &required_asset_digest,
+	std::string *accepted_participant_name) {
 	if (hello.minimum_protocol_minor > frame.protocol_minor) {
 		return "client protocol compatibility range is invalid";
 	}
@@ -126,6 +127,9 @@ std::optional<ConnectionSession> host_handshake(
 		return std::nullopt;
 	}
 
+	if (accepted_participant_name) {
+		*accepted_participant_name = hello.participant_name;
+	}
 	SessionIdentity identity{generate_session_id(), assigned_player};
 	ProtocolVersion negotiated_version{
 		PROTOCOL_MAJOR,

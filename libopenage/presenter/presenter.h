@@ -5,6 +5,7 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "coord/pixel.h"
 #include "presenter/hud_mouse_capture.h"
@@ -15,6 +16,7 @@
 
 
 class QQmlPropertyMap;
+class QPointF;
 
 namespace qtgui {
 class GuiApplication;
@@ -40,6 +42,7 @@ class TimeLoop;
 
 namespace network {
 class ReplicationTracker;
+class RelayLobbyClient;
 }
 
 namespace renderer {
@@ -99,7 +102,7 @@ public:
 	          const std::shared_ptr<gamestate::GameSimulation> &simulation = nullptr,
 	          const std::shared_ptr<time::TimeLoop> &time_loop = nullptr);
 
-	~Presenter() = default;
+	~Presenter();
 
 	/**
 	 * Start the presenter and initialize subsystems.
@@ -132,6 +135,9 @@ public:
 
 	/** Bind the recipient-specific network stream before starting the presenter. */
 	void set_fvd_replication(const std::shared_ptr<network::ReplicationTracker> &replication);
+
+	/** Present the relay lobby by default (solo CLI skips it). */
+	void set_fvd_lobby_enabled(bool enabled);
 
 	/**
 	 * Initialize the Qt application managing the graphical views. Required
@@ -173,6 +179,11 @@ protected:
 	 */
 	void render();
 
+	/** Qt offscreen input needs presenter-level click handling. */
+	std::string fvd_lobby_action_at(const QPointF &position) const;
+	void handle_fvd_lobby_action(const std::string &action);
+	void refresh_fvd_lobby_state();
+
 	// TODO: remove and move into our config/settings system
 	util::Path root_dir;
 
@@ -204,6 +215,11 @@ protected:
 
 	/** Qt bridge for FVD player HUD state and build-button actions. */
 	std::shared_ptr<QQmlPropertyMap> fvd_hud_state;
+	bool fvd_lobby_enabled{false};
+	std::shared_ptr<QQmlPropertyMap> fvd_lobby_state;
+	std::unique_ptr<network::RelayLobbyClient> fvd_lobby_client;
+	std::string fvd_lobby_pressed{};
+	std::string fvd_lobby_local_error{};
 	/** Guest HUD source; local-only matches continue to read their simulation. */
 	std::shared_ptr<network::ReplicationTracker> fvd_replication;
 	/** Most recent screen cursor coordinate, owned by the presenter thread. */

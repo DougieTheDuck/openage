@@ -3,6 +3,8 @@
 #include "time_loop.h"
 
 #include <mutex>
+#include <chrono>
+#include <thread>
 
 #include "log/log.h"
 #include "time/clock.h"
@@ -22,6 +24,9 @@ void TimeLoop::run() {
 	this->start();
 	while (this->running) {
 		this->clock->update_time();
+		if (this->clock->get_state() != ClockState::RUNNING) {
+			std::this_thread::sleep_for(std::chrono::milliseconds{10});
+		}
 	}
 	log::log(MSG(info) << "Time loop exited");
 }

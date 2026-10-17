@@ -12,6 +12,8 @@
 #include <QVariant>
 #include <cmath>
 #include <iostream>
+#include <stdexcept>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -30,6 +32,7 @@
 #include "input/input_manager.h"
 #include "log/log.h"
 #include "network/replication.h"
+#include "network/lobby_relay_client.h"
 #include "renderer/camera/camera.h"
 #include "renderer/gui/gui.h"
 #include "renderer/gui/guisys/public/gui_input.h"
@@ -63,6 +66,15 @@ Presenter::Presenter(const util::Path &root_dir,
 	simulation{simulation},
 	time_loop{time_loop},
 	game_controller{nullptr} {}
+
+Presenter::~Presenter() = default;
+
+void Presenter::set_fvd_lobby_enabled(bool enabled) {
+	this->fvd_lobby_enabled = enabled;
+	if (enabled) {
+		this->fvd_lobby_client = std::make_unique<network::RelayLobbyClient>();
+	}
+}
 
 
 void Presenter::run(const renderer::window_settings window_settings) {
@@ -272,15 +284,115 @@ void Presenter::init_gui() {
 	this->render_passes.push_back(gui_pass);
 }
 
+std::string Presenter::fvd_lobby_action_at(const QPointF &position) const {
+	if (not this->gui) return {};
+	for (const auto &[item, action] : {
+		std::pair{"fvdLobbyHostButton", "host"},
+		std::pair{"fvdLobbyJoinButton", "join"},
+		std::pair{"fvdLobbyStartButton", "start"},
+		std::pair{"fvdLobbyBackButton", "disconnect"},
+	}) {
+		if (this->gui->contains_item(QString::fromUtf8(item), position)) {
+			return action;
+		}
+	}
+	return {};
+}
+
+void Presenter::handle_fvd_lobby_action(const std::string &action) {
+	if (not this->fvd_lobby_state or not this->fvd_lobby_client) return;
+	if (action == "disconnect") {
+		this->fvd_lobby_local_error.clear();
+		this->fvd_lobby_client->close();
+		return;
+	}
+	if (action == "start") {
+		this->fvd_lobby_client->request_start();
+		return;
+	}
+	if (action != "host" and action != "join") return;
+	this->fvd_lobby_local_error.clear();
+	try {
+		auto val = [&](const char *name) {
+			return this->fvd_lobby_state->value(name).toString().trimmed();
+		};
+		bool ok_port = false;
+		bool ok_match = false;
+		bool ok_pair = false;
+		const auto port = val("port").toUInt(&ok_port);
+		const auto match = val("matchId").toULongLong(&ok_match);
+		const auto pair = val("pairId").toULongLong(&ok_pair);
+		if (not ok_port or port == 0 or port > 65535
+		    or not ok_match or match == 0 or not ok_pair or pair == 0) {
+			throw std::invalid_argument{"Relay port, match ID and pair ID must be valid positive numbers"};
+		}
+		network::RelayLobbyConfig config{};
+		config.address = val("address").toStdString();
+		config.port = static_cast<uint16_t>(port);
+		config.match_id = match;
+		config.pair_id = pair;
+		config.token_hex = val("token").toStdString();
+		config.name = val("name").toStdString();
+		config.hosting = action == "host";
+		this->fvd_lobby_client->connect(std::move(config));
+	}
+	catch (const std::exception &error) {
+		this->fvd_lobby_local_error = error.what();
+	}
+}
+
+void Presenter::refresh_fvd_lobby_state() {
+	if (not this->fvd_lobby_enabled or not this->fvd_lobby_state
+	    or not this->fvd_lobby_client) return;
+	const auto state = this->fvd_lobby_client->status();
+	auto update = [&](const char *key, const QVariant &value) {
+		if (this->fvd_lobby_state->value(key) != value) {
+			this->fvd_lobby_state->insert(key, value);
+		}
+	};
+	update("phase", QString::fromStdString(
+		this->fvd_lobby_local_error.empty() ? state.phase : "error"));
+	update("status", QString::fromStdString(
+		this->fvd_lobby_local_error.empty() ? state.message : this->fvd_lobby_local_error));
+	update("participants", QString::fromStdString(state.participants));
+	update("canStart", state.can_start);
+}
+
 void Presenter::init_input() {
 	log::log(INFO << "Presenter: Initializing input subsystem...");
 
 	this->input_manager = std::make_shared<input::InputManager>();
 
 	this->window->add_key_callback([&](const QKeyEvent &ev) {
+		if (this->fvd_lobby_enabled) {
+			if (this->gui) {
+				this->gui->get_input_handler()->process(
+					std::shared_ptr<QEvent>{ev.clone()});
+			}
+			return;
+		}
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_button_callback([&](const QMouseEvent &ev) {
+		if (this->fvd_lobby_enabled) {
+			if (this->gui) {
+				this->gui->get_input_handler()->process(
+					std::shared_ptr<QEvent>{ev.clone()});
+			}
+			if (ev.button() == Qt::LeftButton) {
+				const auto action = this->fvd_lobby_action_at(ev.position());
+				if (ev.type() == QEvent::MouseButtonPress) {
+					this->fvd_lobby_pressed = action;
+				}
+				else if (ev.type() == QEvent::MouseButtonRelease) {
+					if (not action.empty() and action == this->fvd_lobby_pressed) {
+						this->handle_fvd_lobby_action(action);
+					}
+					this->fvd_lobby_pressed.clear();
+				}
+			}
+			return;
+		}
 		const bool over_hud = this->fvd_hud_state and this->gui
 		                      and this->gui->contains_item("fvdBuildPanel", ev.position());
 		const bool over_action = over_hud and this->gui->contains_item(
@@ -316,6 +428,13 @@ void Presenter::init_input() {
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_move_callback([&](const QMouseEvent &ev) {
+		if (this->fvd_lobby_enabled) {
+			if (this->gui) {
+				this->gui->get_input_handler()->process(
+					std::shared_ptr<QEvent>{ev.clone()});
+			}
+			return;
+		}
 		this->placement_cursor = coord::input{
 			static_cast<coord::pixel_t>(ev.position().x()),
 			static_cast<coord::pixel_t>(ev.position().y())};
@@ -331,6 +450,13 @@ void Presenter::init_input() {
 		}
 	});
 	this->window->add_mouse_wheel_callback([&](const QWheelEvent &ev) {
+		if (this->fvd_lobby_enabled) {
+			if (this->gui) {
+				this->gui->get_input_handler()->process(
+					std::shared_ptr<QEvent>{ev.clone()});
+			}
+			return;
+		}
 		if (this->gui) {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
@@ -429,6 +555,25 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("arrowStreaks", QVariantList{});
 			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
+			if (this->fvd_lobby_enabled) {
+				this->fvd_lobby_state = std::make_shared<QQmlPropertyMap>();
+				for (const auto &[key, value] : {
+					std::pair{"address", "127.0.0.1"},
+					std::pair{"port", "32456"},
+					std::pair{"matchId", ""},
+					std::pair{"pairId", ""},
+					std::pair{"name", "Player"},
+					std::pair{"token", ""},
+					std::pair{"phase", "menu"},
+					std::pair{"status", "Enter the relay pair details supplied by the relay administrator."},
+					std::pair{"participants", ""},
+				}) {
+					this->fvd_lobby_state->insert(key, QString::fromUtf8(value));
+				}
+				this->fvd_lobby_state->insert("canStart", false);
+				this->fvd_lobby_state->insert("enabled", true);
+				this->gui->set_context_property("fvdLobby", this->fvd_lobby_state.get());
+			}
 		}
 	}
 
@@ -488,6 +633,7 @@ void Presenter::init_final_render_pass() {
 }
 
 void Presenter::render() {
+	this->refresh_fvd_lobby_state();
 	// TODO: Pass current time to update() instead of fetching it in renderer
 	{
 		util::StallProfiler profile{"render.camera_update"};

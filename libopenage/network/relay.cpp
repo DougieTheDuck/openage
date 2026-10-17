@@ -214,11 +214,8 @@ RelayConnect decode_relay_connect(const std::vector<uint8_t> &payload) {
 	return connect;
 }
 
-TcpConnection connect_relay(const std::string &address,
-                            uint16_t port,
-                            const RelayConnect &connect) {
+void authenticate_relay(TcpConnection &connection, const RelayConnect &connect) {
 	auto payload = encode_relay_connect(connect);
-	auto connection = TcpConnection::connect(address, port);
 	connection.send_frame(relay_frame(
 		MessageType::RELAY_CONNECT,
 		std::move(payload)));
@@ -237,6 +234,13 @@ TcpConnection connect_relay(const std::string &address,
 		                     << static_cast<uint16_t>(response->message_type)};
 	}
 	require_relay_ready(response->payload, connect);
+}
+
+TcpConnection connect_relay(const std::string &address,
+                            uint16_t port,
+                            const RelayConnect &connect) {
+	auto connection = TcpConnection::connect(address, port);
+	authenticate_relay(connection, connect);
 	return connection;
 }
 

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <optional>
+#include <string>
 
 #include "gamestate/types.h"
 #include "network/messages.h"
@@ -37,7 +38,8 @@ uint64_t generate_session_id();
 std::optional<ConnectionSession> host_handshake(
 	TcpConnection &connection,
 	gamestate::player_id_t assigned_player,
-	const AssetDigest &required_asset_digest);
+	const AssetDigest &required_asset_digest,
+	std::string *accepted_participant_name = nullptr);
 
 /**
  * Send a client handshake and receive the host-assigned identity.

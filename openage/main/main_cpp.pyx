@@ -30,6 +30,7 @@ def run_game(args, root_path):
 
         # headless mode
         args_cpp.headless = args.headless
+        args_cpp.solo = args.solo
 
         # mods
         if args.modpacks is not None:

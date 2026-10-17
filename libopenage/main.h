@@ -43,6 +43,7 @@ struct window_arguments {
  *     Path root_path
  *     bool gl_debug
  *     bool headless
+ *     bool solo
  *     vector[string] mods
  *     window_arguments window_args
  */
@@ -50,6 +51,7 @@ struct main_arguments {
 	util::Path root_path;
 	bool gl_debug;
 	bool headless;
+	bool solo;
 	std::vector<std::string> mods;
 	window_arguments window_args;
 };

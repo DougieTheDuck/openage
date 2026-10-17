@@ -6,6 +6,33 @@ The host participant submits commands through the same validation boundary but d
 
 See [the engine architecture](../architecture.md) for the subsystem boundaries and [the synchronized-match design](../../../openspec/changes/synchronized-match/design.md) for the gameplay authority model.
 
+## Startup relay lobby
+
+Launching the FVD game normally opens a Qt Quick multiplayer menu, leaving the
+simulation clock paused at zero. `run game --solo` retains the existing
+local gameplay and `run test` uses the existing test runner.
+
+The menu asks for a relay DNS/address, port, match ID, pair ID, user name and
+one role-specific 32-byte bearer token encoded as 64 hex characters.
+It uses `connect_relay` and the existing session handshake, then sends
+`PARTICIPANT_SNAPSHOT` from the host and `START_MATCH` after the host clicks
+Draw Roles. The roster and assignments shown come from validated network
+messages, not local placeholder role calculations. Failed admission and
+handshakes report their errors in the menu; socket work is on a separate thread.
+Gameplay inputs are suppressed behind the overlay.
+
+**Current limitations:** The existing relay requires an administrator to
+pre-provision one pair with `run relay --pair ...`. The screen currently
+supports **one guest per host**, not an automatic searchable room or dynamic
+provisioning. There is no embedded relay server or hardcoded public relay.
+The host/game-player handshake identity still needs to be separated from
+pre-match participant identity and the authoritative simulation network loop
+wired into StartMatch. Consequently, role assignment intentionally stays
+on the lobby screen with the simulation paused. It does not launch two
+independent local worlds or misrepresent them as synchronized multiplayer.
+The provisional asset handshake digest must be replaced by a manifest digest
+before Internet deployment; the existing TCP relay has no encryption.
+
 ## Pre-match lobby core
 
 `network::HostLobby` now owns the pre-start participant roster independently

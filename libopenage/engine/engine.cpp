@@ -9,6 +9,7 @@
 #include "gamestate/simulation.h"
 #include "presenter/presenter.h"
 #include "time/time_loop.h"
+#include "time/clock.h"
 
 
 namespace openage::engine {
@@ -16,7 +17,8 @@ namespace openage::engine {
 Engine::Engine(mode mode,
                const util::Path &root_dir,
                const std::vector<std::string> &mods,
-               const renderer::window_settings &window_settings) :
+               const renderer::window_settings &window_settings,
+               bool fvd_lobby_enabled) :
 	running{true},
 	run_mode{mode},
 	root_dir{root_dir},
@@ -31,6 +33,9 @@ Engine::Engine(mode mode,
 
 	// time loop
 	this->time_loop = std::make_shared<time::TimeLoop>();
+	if (fvd_lobby_enabled and mode == mode::FULL) {
+		this->time_loop->get_clock()->pause();
+	}
 
 	// game simulation
 	// this is run in the main thread
@@ -44,6 +49,7 @@ Engine::Engine(mode mode,
 		this->presenter = std::make_shared<presenter::Presenter>(this->root_dir,
 		                                                         this->simulation,
 		                                                         this->time_loop);
+		this->presenter->set_fvd_lobby_enabled(fvd_lobby_enabled);
 	}
 
 	// spawn thread to run time loop

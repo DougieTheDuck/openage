@@ -2,6 +2,9 @@
 
 #include "simulation.h"
 
+#include <chrono>
+#include <thread>
+
 #include "assets/mod_manager.h"
 #include "event/event_loop.h"
 #include "gamestate/entity_factory.h"
@@ -51,6 +54,9 @@ void GameSimulation::run() {
 	while (this->running) {
 		time::time_t current_time = this->time_loop->get_clock()->get_time();
 		this->event_loop->reach_time(current_time, this->game->get_state());
+		if (this->time_loop->get_clock()->get_state() != time::ClockState::RUNNING) {
+			std::this_thread::sleep_for(std::chrono::milliseconds{10});
+		}
 	}
 	log::log(MSG(info) << "Game simulation loop exited");
 }

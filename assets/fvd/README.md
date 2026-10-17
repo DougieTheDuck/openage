@@ -9,7 +9,19 @@ The prompts used for the initial set are recorded in [prompts.md](prompts.md).
 
 ## Playing
 
-Start the engine with `run game --modpacks fvd`.
+Start the engine with `run game` (or simply `run`) to open the relay lobby menu.
+Use `run game --solo` for the existing local no-network mode; `run test ...`
+continues to run headless and network regression tests.
+The relay menu requires pre-provisioned relay credentials; the current relay
+server cannot discover a room or mint credentials in the menu. See
+[pre-match networking](../../doc/code/network/README.md#startup-relay-lobby).
+
+The Host and Join buttons connect to the existing relay transport. Once both
+clients are connected, Host can draw the Hunter and Builder roles. **The menu
+is a pre-match transport and role-assignment preview, not a playable online
+match yet**: the simulation is paused at time zero and synchronized gameplay
+handoff is still to be implemented.
+
 In a Windows development build, run `.\RelWithDebInfo\run.exe game --modpacks fvd` from the build directory with the runtime dependency paths configured.
 Selected Builders display their current health above the unit.
 The mode uses only these original graphics and the engine API; original game assets are not needed.

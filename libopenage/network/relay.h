@@ -127,6 +127,9 @@ RelayConnect decode_relay_connect(const std::vector<uint8_t> &payload);
  * The returned connection is ready for the ordinary FVD host/client
  * handshake. Relay admission frames are consumed by this function.
  */
+/** Authenticate an already-open relay socket (allows a caller to cancel the wait). */
+void authenticate_relay(TcpConnection &connection, const RelayConnect &connect);
+
 TcpConnection connect_relay(const std::string &address,
                             uint16_t port,
                             const RelayConnect &connect);

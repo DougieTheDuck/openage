@@ -78,7 +78,8 @@ public:
 	Engine(mode mode,
 	       const util::Path &root_dir,
 	       const std::vector<std::string> &mods,
-	       const renderer::window_settings &window_settings = {});
+	       const renderer::window_settings &window_settings = {},
+	       bool fvd_lobby_enabled = false);
 
 	// engine should not be copied or moved
 	Engine(const Engine &) = delete;

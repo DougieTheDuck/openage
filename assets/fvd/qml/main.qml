@@ -268,4 +268,9 @@ Item {
 			}
 		}
 	}
+
+	// The startup menu takes over input until the relay pre-match flow is ready.
+	LobbyOverlay {
+		anchors.fill: parent
+	}
 }
