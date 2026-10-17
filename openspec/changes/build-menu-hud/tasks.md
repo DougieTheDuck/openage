@@ -4,8 +4,8 @@
 - [x] 1.2 Implement Builder Build Tower action and placement preview with invalid-site feedback (pending visual verification).
 - [x] 1.3 Connect confirm/cancel UI actions to the existing simulation order path; preserve Ctrl-click for solo testing.
 - [x] 1.4 Suppress world input when interacting with HUD and when canceling placement (hit-test the actual QML panel and capture button gestures; GUI verification remains under 1.6).
-- [ ] 1.5 Display the local player's kill count starting at zero; keep other totals out of the local HUD.
-- [ ] 1.6 Test QML interactions manually plus any testable controller state; run available checks.
+- [x] 1.5 Display the local player's kill count starting at zero; keep other totals out of the local HUD (existing solo HUD binding and recipient-specific authoritative multiplayer replication; no leaderboard).
+- [ ] 1.6 Run the manual Qt Quick interaction checks in a graphical FVD build and execute build/tests/checkmerge (controller and HUD mouse capture regressions added; automated execution and manual GUI verification pending). See `verification.md`.
 
 - [x] 1.7 Add local Shift-click FIFO queued construction, tile reservations, cancellation and regression tests. Network queue forwarding remains a separate integration.
 - [x] 1.8 Render every queued site as a persistent pickable foundation; right-click to retask the owning Builder while canceling other jobs.
