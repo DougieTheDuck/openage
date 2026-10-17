@@ -49,7 +49,7 @@ Drag with the left mouse button to select your Builder and right-click to move i
 The lower-left HUD displays the controlled player and selected entity.
 Selecting a tower shows its live HP and its damage and armour fields instead of a build action.
 Tower damage and armour read the configured gameplay values, currently 8 arrow damage and 1 armour.
-Only a selected Builder can enter tower placement mode, including when using the B key or Ctrl-left-click shortcut.
+Only a selected Builder can enter tower placement mode, using the B key or Build Tower HUD button.
 Select a Builder, click **Build Tower** (or press **B**) and move the cursor to see a footprint preview (green for available, red for occupied, reserved or out of bounds).
 Click once to replace the active construction order, or **hold Shift while clicking** to queue multiple sites for the same Builder. Shift-click keeps placement mode active until Esc or right-click.
 Queued sites reserve their entire footprints immediately; after finishing one tower, the Builder starts the next. Inaccessible queued sites are skipped and the HUD shows the number waiting.

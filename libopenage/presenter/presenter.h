@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "coord/pixel.h"
+#include "presenter/hud_mouse_capture.h"
 #include <vector>
 
 #include "renderer/window.h"
@@ -207,8 +208,8 @@ protected:
 	std::shared_ptr<network::ReplicationTracker> fvd_replication;
 	/** Most recent screen cursor coordinate, owned by the presenter thread. */
 	std::optional<coord::input> placement_cursor;
-	/** Mouse presses begun over the HUD must not release orders in the world. */
-	unsigned int fvd_hud_captured_buttons{0};
+	/** Prevent HUD gestures from leaking game orders through the panel. */
+	HudMouseCapture fvd_hud_capture{};
 
 	/**
 	 * Camera manager for camera controls.

@@ -281,24 +281,17 @@ void Presenter::init_input() {
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_button_callback([&](const QMouseEvent &ev) {
-		const auto button = static_cast<unsigned int>(ev.button());
-		const bool captured = (this->fvd_hud_captured_buttons & button) != 0;
 		const bool over_hud = this->fvd_hud_state and this->gui
 		                      and this->gui->contains_item("fvdBuildPanel", ev.position());
+		const bool consume = this->fvd_hud_capture.consume(
+			ev.type(), ev.button(), over_hud);
 		// Qt Quick receives mouse input first, but HUD gestures must never
 		// reach the game controller, even when a release leaves the panel.
 		if (this->gui) {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
 		}
-		if ((ev.type() == QEvent::MouseButtonPress
-		     or ev.type() == QEvent::MouseButtonDblClick) and over_hud) {
-			this->fvd_hud_captured_buttons |= button;
-		}
-		if (ev.type() == QEvent::MouseButtonRelease) {
-			this->fvd_hud_captured_buttons &= ~button;
-		}
-		if (over_hud or captured) {
+		if (consume) {
 			if (this->game_controller) {
 				this->game_controller->reset_drag_select();
 			}
@@ -315,9 +308,21 @@ void Presenter::init_input() {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
 		}
-		this->input_manager->process(ev);
+		const bool over_hud = this->fvd_hud_state and this->gui
+		                      and this->gui->contains_item("fvdBuildPanel", ev.position());
+		if (not over_hud and not this->fvd_hud_capture.is_capturing()) {
+			this->input_manager->process(ev);
+		}
 	});
 	this->window->add_mouse_wheel_callback([&](const QWheelEvent &ev) {
+		if (this->gui) {
+			this->gui->get_input_handler()->process(
+				std::shared_ptr<QEvent>{ev.clone()});
+		}
+		if (this->fvd_hud_state and this->gui
+		    and this->gui->contains_item("fvdBuildPanel", ev.position())) {
+			return;
+		}
 		this->input_manager->process(ev);
 	});
 

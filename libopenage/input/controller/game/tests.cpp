@@ -20,8 +20,15 @@ void tower_placement_mode() {
 	controller.set_selected({42}, SelectionKind::BUILDER);
 	TESTEQUALS(controller.begin_tower_placement(), true);
 	TESTEQUALS(controller.is_tower_placement_active(), true);
+	TESTEQUALS(controller.get_selected() == (std::vector<gamestate::entity_id_t>{42}), true);
 	controller.cancel_tower_placement();
 	TESTEQUALS(controller.is_tower_placement_active(), false);
+	TESTEQUALS(controller.get_selected() == (std::vector<gamestate::entity_id_t>{42}), true);
+	TESTEQUALS(controller.get_selection_details().kind == SelectionKind::BUILDER, true);
+	TESTEQUALS(controller.begin_tower_placement(), true);
+	TESTEQUALS(controller.is_tower_placement_active(), true);
+	controller.cancel_tower_placement();
+	TESTEQUALS(controller.get_selection_details().kind == SelectionKind::BUILDER, true);
 
 	controller.begin_tower_placement();
 	controller.set_selected({55}, SelectionKind::TOWER);
@@ -46,6 +53,8 @@ void tower_placement_mode() {
 	TESTEQUALS(controller.get_selection_details().kind == SelectionKind::NONE, true);
 	controller.set_selected({43}, SelectionKind::TOWER);
 	TESTEQUALS(controller.begin_tower_placement(), false);
+	TESTEQUALS(controller.is_tower_placement_active(), false);
+	TESTEQUALS(controller.get_selected() == (std::vector<gamestate::entity_id_t>{43}), true);
 
 	controller.set_control(1);
 	controller.set_selected({101}, SelectionKind::HORSE);
