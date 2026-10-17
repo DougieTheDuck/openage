@@ -62,11 +62,11 @@ void connection_mailbox() {
 	result.world_revision = 1;
 	outbound.try_push(result) or TESTFAIL;
 	WorldDeltaMessage delta{};
-	delta.state.base_revision = 0;
-	delta.state.world_revision = 1;
-	delta.state.map_size = 128;
-	delta.state.local_player_id = 2;
-	delta.state.players = {{2, PlayerRole::BUILDER}};
+	delta.state.changed.base_revision = 0;
+	delta.state.changed.world_revision = 1;
+	delta.state.changed.map_size = 128;
+	delta.state.changed.local_player_id = 2;
+	delta.state.changed.players = {{2, PlayerRole::BUILDER}};
 	outbound.try_push(delta) or TESTFAIL;
 	outbound.try_push(ParticipantDisconnected{
 		3, DisconnectReason::CONNECTION_LOST})
@@ -84,7 +84,7 @@ void connection_mailbox() {
 	auto delta_frame = make_outbound_frame(frame_session, messages[1]);
 	delta_frame.message_type == MessageType::WORLD_DELTA or TESTFAIL;
 	TESTEQUALS(delta_frame.sequence, uint64_t{2});
-	TESTEQUALS(decode_world_state(delta_frame.payload).world_revision, uint64_t{1});
+	TESTEQUALS(decode_world_delta(delta_frame.payload).changed.world_revision, uint64_t{1});
 	WorldSnapshotMessage snapshot{};
 	snapshot.state.world_revision = 1;
 	snapshot.state.map_size = 128;

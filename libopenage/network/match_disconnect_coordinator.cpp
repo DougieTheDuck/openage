@@ -20,7 +20,23 @@ void MatchDisconnectCoordinator::register_remote(
 		throw Error{MSG(err) << "FVD participant already registered with an outbound mailbox"};
 	}
 	this->connections.bind_remote(identity);
-	this->remotes.emplace(identity.player_id, Remote{identity, &outbound});
+	this->remotes.emplace(identity.player_id, Remote{identity, &outbound, {}});
+}
+
+void MatchDisconnectCoordinator::record_snapshot(WorldState snapshot) {
+	auto remote = this->remotes.find(snapshot.local_player_id);
+	if (remote == this->remotes.end()) {
+		throw Error{MSG(err) << "FVD snapshot has no registered remote recipient"};
+	}
+	remote->second.baseline.accept_snapshot(std::move(snapshot));
+}
+
+WorldDelta MatchDisconnectCoordinator::make_delta(WorldState complete) {
+	auto remote = this->remotes.find(complete.local_player_id);
+	if (remote == this->remotes.end()) {
+		throw Error{MSG(err) << "FVD delta has no registered remote recipient"};
+	}
+	return remote->second.baseline.advance(std::move(complete));
 }
 
 bool MatchDisconnectCoordinator::accepts_command(
@@ -64,19 +80,23 @@ size_t MatchDisconnectCoordinator::process_closures(
 				throw Error{MSG(err) << "FVD remote outbound mailbox cannot carry "
 				                     "disconnect notification and world delta"};
 			}
+			if (not recipient.baseline.initialized()) {
+				throw Error{MSG(err) << "FVD remote has no initial snapshot baseline"};
+			}
 		}
 
 		auto notification = this->connections.disconnect_remote(
 			closed.identity, closed.reason);
 		const auto base_revision = world_revision;
 		++world_revision;
-		for (const auto &[player_id, recipient] : this->remotes) {
+		for (auto &[player_id, recipient] : this->remotes) {
 			if (not this->connections.accepts_commands(recipient.identity)) {
 				continue;
 			}
-			auto delta = capture_fvd_state(
+			auto complete = capture_fvd_state(
 				state, this->connections, simulation_time,
 				base_revision, world_revision, player_id);
+			auto delta = recipient.baseline.advance(std::move(complete));
 			if (not recipient.outbound->try_push(notification)
 			    or not recipient.outbound->try_push(WorldDeltaMessage{std::move(delta)})) {
 				throw Error{MSG(err) << "FVD outbound mailbox overflow during disconnect"};

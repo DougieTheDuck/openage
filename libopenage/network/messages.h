@@ -235,10 +235,10 @@ std::vector<uint8_t> encode_command_result(const CommandResult &result);
 CommandResult decode_command_result(const std::vector<uint8_t> &payload);
 
 /** Encode a WorldSnapshot or WorldDelta payload. */
-std::vector<uint8_t> encode_world_state(const WorldState &state);
+std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial = false);
 
 /** Decode and validate a WorldSnapshot or WorldDelta payload. */
-WorldState decode_world_state(const std::vector<uint8_t> &payload);
+WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial = false);
 
 /** Encode a SnapshotRequest payload. */
 std::vector<uint8_t> encode_snapshot_request(const SnapshotRequest &request);

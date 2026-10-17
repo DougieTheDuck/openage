@@ -80,6 +80,7 @@ void match_disconnect_coordinator() {
 	ReplicationTracker guest_three{three.player_id};
 	auto initial = capture_fvd_state(state, match, time::TIME_ZERO, 0, 4, 3);
 	guest_three.accept_snapshot(initial);
+	coordinator.record_snapshot(initial);
 	TESTEQUALS(initial.players.at(1).connected, true);
 	auto before = initial.entities;
 
@@ -120,18 +121,22 @@ void match_disconnect_coordinator() {
 	auto notice = decode_participant_disconnected(notice_frame.payload);
 	TESTEQUALS(notice.player_id, gamestate::player_id_t{2});
 	notice.reason == DisconnectReason::CONNECTION_LOST or TESTFAIL;
-	auto delta = decode_world_state(delta_frame.payload);
+	auto delta = decode_world_delta(delta_frame.payload);
+	TESTEQUALS(delta.changed.base_revision, uint64_t{4});
+	TESTEQUALS(delta.changed.world_revision, uint64_t{5});
+	TESTEQUALS(delta.changed.local_player_id, gamestate::player_id_t{3});
+	TESTEQUALS(delta.changed.players.size(), size_t{1});
+	TESTEQUALS(delta.changed.entities.empty(), true);
+	TESTEQUALS(delta.removed_entities.empty(), true);
 	guest_three.accept_delta(delta) == DeltaDisposition::APPLY or TESTFAIL;
-	TESTEQUALS(delta.base_revision, uint64_t{4});
-	TESTEQUALS(delta.world_revision, uint64_t{5});
-	TESTEQUALS(delta.local_player_id, gamestate::player_id_t{3});
-	TESTEQUALS(delta.players.at(1).connected, false);
-	TESTEQUALS(delta.players.at(2).connected, true);
-	TESTEQUALS(delta.entities.size(), before.size());
+	auto rebuilt = guest_three.get_world_state().value();
+	TESTEQUALS(rebuilt.players.at(1).connected, false);
+	TESTEQUALS(rebuilt.players.at(2).connected, true);
+	TESTEQUALS(rebuilt.entities.size(), before.size());
 	for (size_t i = 0; i < before.size(); ++i) {
-		TESTEQUALS(delta.entities.at(i).entity_id, before.at(i).entity_id);
-		TESTEQUALS(delta.entities.at(i).owner_id, before.at(i).owner_id);
-		TESTEQUALS(delta.entities.at(i).position, before.at(i).position);
+		TESTEQUALS(rebuilt.entities.at(i).entity_id, before.at(i).entity_id);
+		TESTEQUALS(rebuilt.entities.at(i).owner_id, before.at(i).owner_id);
+		TESTEQUALS(rebuilt.entities.at(i).position, before.at(i).position);
 	}
 	// Recovery snapshots carry the same permanent disconnection status.
 	auto recovery = capture_fvd_state(state, match, time::TIME_ZERO, 0, revision, 3);

@@ -8,6 +8,7 @@
 
 #include "network/bounded_mailbox.h"
 #include "network/messages.h"
+#include "network/world_delta.h"
 #include "network/session.h"
 
 namespace openage::network {
@@ -19,7 +20,7 @@ struct WorldSnapshotMessage {
 
 /** Incremental state sent to one connection. */
 struct WorldDeltaMessage {
-	WorldState state{};
+	WorldDelta state{};
 };
 
 /** Typed simulation output waiting for one connection thread. */

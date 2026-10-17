@@ -145,8 +145,13 @@ Coordinates are signed Q16.16 fixed-point values serialized from their raw 64-bi
 
 ### World state payload
 
-`WorldSnapshot` and `WorldDelta` carry complete authoritative FVD state at one simulation time.
-A client replaces its replicated world after accepting either message, while the base and world revisions still enforce ordered application.
+`WorldSnapshot` carries one complete authoritative FVD state at a simulation time.
+`WorldDelta` uses a **separate incremental payload**: only records changed since
+the recipient's previous accepted revision, plus explicit IDs of removed records.
+A recipient reconstructs its world by applying an uninterrupted sequence of
+deltas to its initial snapshot, or requests a complete recovery snapshot after a gap.
+The host maintains an independent baseline for every recipient, so private kill
+scores and revision continuity remain recipient-specific.
 
 | Offset | Size | Field |
 |---:|---:|---|
@@ -179,15 +184,55 @@ Killed entities disappear from the next complete state, while arrows disappear a
 The host builds state separately for each connection, so the payload contains only its recipient's lifetime Builder kill total and its own Towers' individual kills, never an opponent's score.
 The Builder total includes historical kills from destroyed towers; individual Tower counts are displayed only when selecting that Tower.
 On a guest, construct `ReplicationTracker` with the immutable player ID from the accepted session.
-It rejects snapshots or deltas addressed to another player and publishes only the local count from accepted, contiguous authoritative updates.
-Rejected or gapped updates leave the displayed score unchanged; host loss makes it unavailable.
+It rejects snapshots or deltas addressed to another player, validates every delta's
+base revision and reconstructs the complete local world before publishing score
+changes. Rejected, malformed or gapped deltas cannot partially modify the world.
+A revision gap requests a replacement snapshot; host loss makes scores and the
+reconstructed state unavailable.
 Bind this tracker with `Presenter::set_fvd_replication` before the presenter starts to restrict role switching and use the replicated score in the HUD instead of the local simulation's count.
 Before the initial snapshot or after host loss, the HUD shows an unavailable score rather than a guessed zero.
 Protocol major version 2 introduced the complete state layout because it is incompatible with the earlier position-only payload.
 Protocol major version 3 added persistent participant connection status to player records.
 Protocol major version 4 adds the individual Tower kill-count field to every entity record and must not connect to version 3 peers.
+Protocol major version 5 adds the distinct incremental WorldDelta payload and is
+incompatible with version 4 clients.
 Protocol minor version 1 supports optional relay admission within the same protocol major version.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
+
+### Incremental WorldDelta payload (protocol 5)
+
+A delta has a 32-byte header, a length-delimited partial WorldState section
+(encoded using the same individual record representation as a snapshot) and
+six lists of removal identifiers. Its header contains:
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 2 | Delta flags: bit 0 means the recipient lifetime kill count changed |
+| 2 | 2 | Reserved, zero |
+| 4 | 4 | Partial WorldState section length |
+| 8 | 24 | Six 4-byte removal counts, in the order below |
+| 32 | variable | Partial WorldState, then removal IDs |
+
+The partial section carries base/world revisions, simulation time, map size and
+recipient identity, followed by **upserts only**. Player, entity, reservation,
+construction, attack order and arrow records use their existing snapshot shapes.
+The header always contains a local kill field, but clients apply it only when
+delta flag bit 0 is present; otherwise the field is zero and the previous total
+is retained. An empty player list is valid in a delta but not a snapshot.
+
+Removal lists follow in this order: player IDs (u64), entity IDs (u64),
+reservation coordinates (two signed i64), construction order IDs (u64),
+Hunter attack-order horse IDs (u64), and arrow IDs (u64).
+The decoder bounds every count, requires exact payload length, and rejects
+unsupported flags and malformed records. Applying a delta rejects unknown or
+duplicate removals, conflicting updates/removals, noncontiguous revisions,
+map or recipient mismatches and unauthorized tower score disclosures.
+
+Snapshots remain complete and use the unchanged version-4 snapshot body format;
+they replace every record and reset the host and guest delta baselines. A
+WorldDelta with no changes still advances the authoritative world revision
+without copying every entity. Re-sending the entire world as a delta is no
+longer supported.
 
 ### Snapshot request payload
 
@@ -255,7 +300,11 @@ Clients apply only contiguous revisions and request a snapshot after a gap.
 `network::ReplicationTracker` owns this client-side revision state and prevents repeated recovery requests while a snapshot is in flight.
 
 The initial implementation has no client prediction.
-Clients render authoritative state and may interpolate presentation positions without changing simulation state.
+Clients render the reconstructed authoritative world and may interpolate presentation positions without changing simulation state.
+Individual projectile launch records are sent when they appear, not repeated
+while an arrow remains in flight. They are removed by ID after impact.
+Unit positions are sampled and transmitted only when they change; curve or
+movement-path replication remains a separate future optimization.
 
 ## Disconnect policy
 

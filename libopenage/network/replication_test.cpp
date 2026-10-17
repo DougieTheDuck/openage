@@ -9,137 +9,139 @@ namespace openage::network::tests {
 void replication() {
 	ReplicationTracker tracker{2};
 	TESTEQUALS(tracker.get_local_player_id(), gamestate::player_id_t{2});
-	not tracker.get_local_kills().has_value() or TESTFAIL;
+	TESTEQUALS(tracker.get_local_kills().has_value(), false);
 	TESTEQUALS(tracker.get_tower_kills(100).has_value(), false);
+	TESTEQUALS(tracker.get_world_state().has_value(), false);
 	TESTTHROWS(ReplicationTracker{0});
 	TESTTHROWS(ReplicationTracker{9});
-	tracker.is_host_connected() or TESTFAIL;
-	not tracker.has_state() or TESTFAIL;
-	not tracker.is_awaiting_snapshot() or TESTFAIL;
+	TESTEQUALS(tracker.is_host_connected(), true);
+	TESTEQUALS(tracker.has_state(), false);
 	TESTEQUALS(tracker.get_revision(), uint64_t{0});
 
-	WorldState delta_before_snapshot{};
-	delta_before_snapshot.base_revision = 0;
-	delta_before_snapshot.world_revision = 1;
-	delta_before_snapshot.local_player_id = 2;
-	delta_before_snapshot.local_kill_count = 99;
-	tracker.accept_delta(delta_before_snapshot)
-		== DeltaDisposition::REQUEST_SNAPSHOT
-		or TESTFAIL;
-	tracker.is_awaiting_snapshot() or TESTFAIL;
-	TESTEQUALS(tracker.make_snapshot_request().last_applied_revision, uint64_t{0});
-	tracker.accept_delta(delta_before_snapshot)
-		== DeltaDisposition::AWAIT_SNAPSHOT
-		or TESTFAIL;
-
-	WorldState initial_snapshot{};
-	initial_snapshot.world_revision = 4;
-	initial_snapshot.local_player_id = 2;
-	initial_snapshot.local_kill_count = 1;
-	initial_snapshot.entities = {
+	WorldState initial{};
+	initial.map_size = 128;
+	initial.local_player_id = 2;
+	initial.world_revision = 4;
+	initial.local_kill_count = 1;
+	initial.players = {{1, PlayerRole::HUNTER}, {2, PlayerRole::BUILDER},
+	                   {3, PlayerRole::BUILDER}};
+	initial.entities = {
 		{100, 2, "fvd.data.entities.Tower", {1, 1, 0}, 100, 100, 1},
 		{200, 3, "fvd.data.entities.Tower", {2, 2, 0}, 100, 100},
 	};
-	auto foreign_snapshot = initial_snapshot;
+	auto foreign_snapshot = initial;
 	foreign_snapshot.local_player_id = 3;
 	TESTTHROWS(tracker.accept_snapshot(foreign_snapshot));
-	not tracker.get_local_kills().has_value() or TESTFAIL;
-	tracker.accept_snapshot(initial_snapshot);
+	TESTEQUALS(tracker.get_local_kills().has_value(), false);
+	tracker.accept_snapshot(initial);
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{1});
 	TESTEQUALS(tracker.get_tower_kills(100).value(), uint64_t{1});
 	TESTEQUALS(tracker.get_tower_kills(200).has_value(), false);
-	tracker.has_state() or TESTFAIL;
-	not tracker.is_awaiting_snapshot() or TESTFAIL;
+	TESTEQUALS(tracker.has_state(), true);
+	TESTEQUALS(tracker.is_awaiting_snapshot(), false);
 	TESTEQUALS(tracker.get_revision(), uint64_t{4});
 
-	WorldState contiguous{};
-	contiguous.base_revision = 4;
+	WorldState contiguous = initial;
 	contiguous.world_revision = 6;
-	contiguous.local_player_id = 2;
 	contiguous.local_kill_count = 3;
 	contiguous.entities = {
 		{100, 2, "fvd.data.entities.Tower", {1, 1, 0}, 100, 100, 2},
 		{101, 2, "fvd.data.entities.Tower", {3, 3, 0}, 100, 100, 1},
 	};
-	auto foreign_delta = contiguous;
-	foreign_delta.local_player_id = 3;
-	TESTTHROWS(tracker.accept_delta(foreign_delta));
+	auto delta = make_world_delta(initial, contiguous);
+	auto foreign = delta;
+	foreign.changed.local_player_id = 3;
+	TESTTHROWS(tracker.accept_delta(foreign));
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{1});
 	TESTEQUALS(tracker.get_revision(), uint64_t{4});
-	tracker.accept_delta(contiguous) == DeltaDisposition::APPLY or TESTFAIL;
+	TESTEQUALS(tracker.accept_delta(delta) == DeltaDisposition::APPLY, true);
 	TESTEQUALS(tracker.get_revision(), uint64_t{6});
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{3});
 	TESTEQUALS(tracker.get_tower_kills(100).value(), uint64_t{2});
 	TESTEQUALS(tracker.get_tower_kills(101).value(), uint64_t{1});
+	TESTEQUALS(tracker.get_tower_kills(200).has_value(), false);
+	TESTEQUALS(tracker.get_world_state()->entities.size(), size_t{2});
 
-	WorldState invalid{};
-	invalid.base_revision = 6;
-	invalid.world_revision = 6;
-	invalid.local_player_id = 2;
-	invalid.local_kill_count = 9;
+	auto invalid = delta;
+	invalid.changed.base_revision = 6;
+	invalid.changed.world_revision = 6;
 	TESTTHROWS(tracker.accept_delta(invalid));
 	TESTEQUALS(tracker.get_revision(), uint64_t{6});
 
-	WorldState gap{};
-	gap.base_revision = 7;
-	gap.world_revision = 8;
-	gap.local_player_id = 2;
-	gap.local_kill_count = 11;
-	tracker.accept_delta(gap) == DeltaDisposition::REQUEST_SNAPSHOT or TESTFAIL;
-	tracker.is_awaiting_snapshot() or TESTFAIL;
+	WorldState future = contiguous;
+	future.world_revision = 8;
+	future.local_kill_count = 11;
+	auto gap = make_world_delta(contiguous, future);
+	gap.changed.base_revision = 7;
+	TESTEQUALS(tracker.accept_delta(gap) == DeltaDisposition::REQUEST_SNAPSHOT, true);
+	TESTEQUALS(tracker.is_awaiting_snapshot(), true);
 	TESTEQUALS(tracker.make_snapshot_request().last_applied_revision, uint64_t{6});
-	TESTEQUALS(tracker.get_tower_kills(100).value(), uint64_t{2});
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{3});
+	TESTEQUALS(tracker.get_tower_kills(100).value(), uint64_t{2});
+	TESTEQUALS(tracker.accept_delta(gap) == DeltaDisposition::AWAIT_SNAPSHOT, true);
 
-	WorldState stale_snapshot{};
-	stale_snapshot.world_revision = 5;
-	TESTTHROWS(tracker.accept_snapshot(stale_snapshot));
-	tracker.is_awaiting_snapshot() or TESTFAIL;
+	auto stale = initial;
+	stale.world_revision = 5;
+	TESTTHROWS(tracker.accept_snapshot(stale));
+	TESTEQUALS(tracker.is_awaiting_snapshot(), true);
 
-	WorldState recovery_snapshot{};
-	recovery_snapshot.world_revision = 9;
-	recovery_snapshot.local_player_id = 2;
-	recovery_snapshot.local_kill_count = 7;
-	recovery_snapshot.entities = {
+	WorldState recovered = future;
+	recovered.world_revision = 9;
+	recovered.local_kill_count = 7;
+	recovered.entities = {
 		{101, 2, "fvd.data.entities.Tower", {3, 3, 0}, 100, 100, 4},
 	};
-	tracker.accept_snapshot(recovery_snapshot);
-	not tracker.is_awaiting_snapshot() or TESTFAIL;
+	tracker.accept_snapshot(recovered);
+	TESTEQUALS(tracker.is_awaiting_snapshot(), false);
 	TESTEQUALS(tracker.get_revision(), uint64_t{9});
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{7});
 	TESTEQUALS(tracker.get_tower_kills(100).has_value(), false);
 	TESTEQUALS(tracker.get_tower_kills(101).value(), uint64_t{4});
+	TESTEQUALS(tracker.get_world_state()->entities.size(), size_t{1});
 
-	auto invalid_snapshot = recovery_snapshot;
-	invalid_snapshot.base_revision = 1;
-	TESTTHROWS(tracker.accept_snapshot(invalid_snapshot));
+	// Bad removal must not partly mutate the client's reconstructed world.
+	auto no_change = recovered;
+	no_change.world_revision = 10;
+	auto corrupt = make_world_delta(recovered, no_change);
+	corrupt.removed_entities = {9999};
+	TESTTHROWS(tracker.accept_delta(corrupt));
+	TESTEQUALS(tracker.get_revision(), uint64_t{9});
+	TESTEQUALS(tracker.get_tower_kills(101).value(), uint64_t{4});
 
-	// A lost authoritative host ends this match. No later frames or
-	// snapshot requests may revive an independent client simulation.
+	// No score update means the previously accepted total is retained.
+	auto heartbeat = make_world_delta(recovered, no_change);
+	TESTEQUALS(heartbeat.local_kills_changed, false);
+	TESTEQUALS(tracker.accept_delta(heartbeat) == DeltaDisposition::APPLY, true);
+	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{7});
+
+	auto bad_snapshot = recovered;
+	bad_snapshot.base_revision = 1;
+	TESTTHROWS(tracker.accept_snapshot(bad_snapshot));
+
+	// Host loss invalidates both the total and individual tower scores.
 	tracker.host_disconnected();
 	TESTEQUALS(tracker.is_host_connected(), false);
 	TESTEQUALS(tracker.has_state(), false);
 	TESTEQUALS(tracker.is_awaiting_snapshot(), false);
-	not tracker.get_local_kills().has_value() or TESTFAIL;
-	TESTEQUALS(tracker.get_revision(), uint64_t{9});
+	TESTEQUALS(tracker.get_local_kills().has_value(), false);
 	TESTEQUALS(tracker.get_tower_kills(101).has_value(), false);
-	TESTTHROWS(tracker.accept_snapshot(recovery_snapshot));
-	TESTTHROWS(tracker.accept_delta(contiguous));
+	TESTEQUALS(tracker.get_world_state().has_value(), false);
+	TESTEQUALS(tracker.get_revision(), uint64_t{10});
+	TESTTHROWS(tracker.accept_snapshot(recovered));
+	TESTTHROWS(tracker.accept_delta(heartbeat));
 	TESTTHROWS(tracker.make_snapshot_request());
 
-	// Different recipients receive independent authoritative totals.
+	// Recipients receive only their own private tower scores.
 	ReplicationTracker other_player{3};
-	auto other_snapshot = recovery_snapshot;
+	auto other_snapshot = recovered;
 	other_snapshot.local_player_id = 3;
 	other_snapshot.local_kill_count = 12;
-	other_snapshot.entities = {
-		{200, 3, "fvd.data.entities.Tower", {2, 2, 0}, 100, 100, 12},
-	};
+	other_snapshot.entities = {{
+		200, 3, "fvd.data.entities.Tower", {2, 2, 0}, 100, 100, 12}};
 	other_player.accept_snapshot(other_snapshot);
 	TESTEQUALS(other_player.get_local_kills().value(), uint64_t{12});
 	TESTEQUALS(other_player.get_tower_kills(200).value(), uint64_t{12});
 	TESTEQUALS(other_player.get_tower_kills(100).has_value(), false);
-	not tracker.get_local_kills().has_value() or TESTFAIL;
 }
 
 } // namespace openage::network::tests

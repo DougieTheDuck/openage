@@ -8,7 +8,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "network/messages.h"
+#include "network/world_delta.h"
 
 namespace openage::network {
 
@@ -22,8 +22,9 @@ enum class DeltaDisposition {
 /**
  * Client-side revision state for authoritative world replication.
  *
- * This class tracks revision continuity only. The client simulation or
- * presentation state remains responsible for applying accepted records.
+ * Stores a complete reconstructed client world and validates contiguous
+ * authoritative patches. The renderer can consume accepted state without
+ * running a second independent simulation.
  */
 class ReplicationTracker {
 public:
@@ -49,7 +50,10 @@ public:
 	 * revision equals the last applied revision. The first gap requests one
 	 * snapshot; later deltas are ignored until that snapshot arrives.
 	 */
-	DeltaDisposition accept_delta(const WorldState &delta);
+	DeltaDisposition accept_delta(const WorldDelta &delta);
+
+	/** Complete reconstructed world (copied under the replication lock). */
+	std::optional<WorldState> get_world_state() const;
 
 	/** Stop accepting replication after the authoritative host disconnects. */
 	void host_disconnected();
@@ -76,6 +80,7 @@ private:
 	std::atomic<bool> displayed_kills_valid{false};
 	mutable std::mutex tower_kills_mutex;
 	std::unordered_map<gamestate::entity_id_t, uint64_t> displayed_tower_kills{};
+	WorldState reconstructed_world{};
 	bool host_connected{true};
 	bool initialized{false};
 	bool awaiting_snapshot{false};

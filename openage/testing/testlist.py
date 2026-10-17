@@ -99,6 +99,7 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield "openage::network::tests::replication"
+    yield "openage::network::tests::world_delta"
     yield "openage::network::tests::transport"
     yield (
         "openage::network::tests::fvd_loopback",

@@ -10,6 +10,7 @@
 #include "network/connection_mailbox.h"
 #include "network/command_mailbox.h"
 #include "network/match_connection_state.h"
+#include "network/world_delta.h"
 #include "time/time.h"
 
 namespace openage::gamestate {
@@ -36,6 +37,12 @@ public:
 	/** Bind a remote session and its dedicated outbound mailbox. */
 	void register_remote(const SessionIdentity &identity, OutboundMailbox &outbound);
 
+	/** Seed a recipient's baseline when its full snapshot is transmitted. */
+	void record_snapshot(WorldState snapshot);
+
+	/** Diff the newest authoritative capture against that recipient's last sent state. */
+	WorldDelta make_delta(WorldState complete);
+
 	/** Check a command again when the simulation drains the command mailbox. */
 	bool accepts_command(const AuthenticatedCommand &command) const;
 
@@ -61,6 +68,7 @@ private:
 	struct Remote {
 		SessionIdentity identity;
 		OutboundMailbox *outbound;
+		WorldDeltaBaseline baseline{};
 	};
 
 	MatchConnectionState &connections;

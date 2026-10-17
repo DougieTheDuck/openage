@@ -75,6 +75,7 @@ void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 	auto towers = local_tower_kills(snapshot);
 	{
 		std::lock_guard lock{this->tower_kills_mutex};
+		this->reconstructed_world = snapshot;
 		this->displayed_tower_kills = std::move(towers);
 		this->displayed_kills.store(snapshot.local_kill_count);
 		this->displayed_kills_valid.store(true);
@@ -84,32 +85,40 @@ void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 	this->awaiting_snapshot = false;
 }
 
-DeltaDisposition ReplicationTracker::accept_delta(const WorldState &delta) {
+std::optional<WorldState> ReplicationTracker::get_world_state() const {
+	std::lock_guard lock{this->tower_kills_mutex};
+	if (not this->displayed_kills_valid.load()) {
+		return std::nullopt;
+	}
+	return this->reconstructed_world;
+}
+
+DeltaDisposition ReplicationTracker::accept_delta(const WorldDelta &delta) {
 	if (not this->host_connected) {
 		throw Error{MSG(err) << "FVD replication cannot accept deltas after host disconnect"};
 	}
-	if (delta.local_player_id != this->assigned_player) {
+	if (delta.changed.local_player_id != this->assigned_player) {
 		throw Error{MSG(err) << "FVD delta is for a different player"};
 	}
-	if (delta.world_revision <= delta.base_revision) {
+	if (delta.changed.world_revision <= delta.changed.base_revision) {
 		throw Error{MSG(err) << "FVD world delta revision must advance beyond its base"};
 	}
 	if (this->awaiting_snapshot) {
 		return DeltaDisposition::AWAIT_SNAPSHOT;
 	}
-	if (not this->initialized or delta.base_revision != this->revision) {
+	if (not this->initialized or delta.changed.base_revision != this->revision) {
 		this->awaiting_snapshot = true;
 		return DeltaDisposition::REQUEST_SNAPSHOT;
 	}
 
-	auto towers = local_tower_kills(delta);
-	{
-		std::lock_guard lock{this->tower_kills_mutex};
-		this->displayed_tower_kills = std::move(towers);
-		this->displayed_kills.store(delta.local_kill_count);
-		this->displayed_kills_valid.store(true);
-	}
-	this->revision = delta.world_revision;
+	std::lock_guard lock{this->tower_kills_mutex};
+	auto next = apply_world_delta(this->reconstructed_world, delta);
+	auto towers = local_tower_kills(next);
+	this->reconstructed_world = std::move(next);
+	this->displayed_tower_kills = std::move(towers);
+	this->displayed_kills.store(this->reconstructed_world.local_kill_count);
+	this->displayed_kills_valid.store(true);
+	this->revision = delta.changed.world_revision;
 	return DeltaDisposition::APPLY;
 }
 
@@ -121,6 +130,7 @@ void ReplicationTracker::host_disconnected() {
 		std::lock_guard lock{this->tower_kills_mutex};
 		this->displayed_kills_valid.store(false);
 		this->displayed_tower_kills.clear();
+		this->reconstructed_world = {};
 	}
 }
 

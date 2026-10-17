@@ -36,6 +36,7 @@
 #include "network/messages.h"
 #include "network/protocol.h"
 #include "network/replication.h"
+#include "network/world_delta.h"
 #include "network/session.h"
 #include "network/transport.h"
 #include "testing/testing.h"
@@ -154,9 +155,16 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	OutboundMailbox builder_outbound{4};
 	lifecycle_coordinator.register_remote(session.get_identity(), builder_outbound);
 	CommandMailbox command_mailbox{16};
+	auto initial_state = capture_fvd_state(state, connections, time::TIME_ZERO, 0, 0, 2);
+	WorldDeltaBaseline builder_baseline{};
+	builder_baseline.accept_snapshot(initial_state);
+	lifecycle_coordinator.record_snapshot(initial_state);
+	auto encode_builder_delta = [&](WorldState complete) {
+		return encode_world_delta(builder_baseline.advance(std::move(complete)));
+	};
 	auto snapshot_frame = session.make_frame(
 		MessageType::WORLD_SNAPSHOT,
-		encode_world_state(capture_fvd_state(state, connections, time::TIME_ZERO, 0, 0, 2)));
+		encode_world_state(initial_state));
 	connection.send_frame(snapshot_frame);
 
 	auto command_frame = connection.receive_frame();
@@ -223,7 +231,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		loop->reach_time(sample_time, state);
 		auto delta_frame = session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(capture_fvd_state(state, connections, sample_time, 0, 1, 2)));
+			encode_builder_delta(capture_fvd_state(state, connections, sample_time, 0, 1, 2)));
 		connection.send_frame(delta_frame);
 
 		auto spoofed_frame = connection.receive_frame();
@@ -344,7 +352,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		not planned.reservations.empty() or TESTFAIL;
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(planned)));
+			encode_builder_delta(planned)));
 
 		auto arrival = planned.constructions.front().phase_end_time;
 		loop->reach_time(arrival, state);
@@ -355,7 +363,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			or TESTFAIL;
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(constructing)));
+			encode_builder_delta(constructing)));
 
 		auto completion = constructing.constructions.front().phase_end_time;
 		loop->reach_time(completion, state);
@@ -365,7 +373,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		find_defined_entity(completed, "fvd.data.entities.Tower");
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(completed)));
+			encode_builder_delta(completed)));
 
 		const auto &tower = find_defined_entity(
 			completed, "fvd.data.entities.Tower");
@@ -386,7 +394,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		spawned.arrows.empty() or TESTFAIL;
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(spawned)));
+			encode_builder_delta(spawned)));
 
 		state->get_fvd()->combat_tick(state, completion);
 		auto fired = capture_fvd_state(state, connections, completion, 5, 6, 2);
@@ -397,7 +405,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		TESTEQUALS(first_arrow->owner_id, gamestate::player_id_t{2});
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(fired)));
+			encode_builder_delta(fired)));
 
 		loop->reach_time(first_arrow->impact_time, state);
 		auto impacted = capture_fvd_state(
@@ -409,7 +417,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		TESTEQUALS(impacted.local_kill_count, uint64_t{0});
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(impacted)));
+			encode_builder_delta(impacted)));
 
 		auto next_launch = first_arrow->launch_time
 		                 + time::time_t::from_double(0.8);
@@ -447,7 +455,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		           false);
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
-			encode_world_state(killed)));
+			encode_builder_delta(killed)));
 	}
 
 	auto retained_before = capture_fvd_state(
@@ -509,9 +517,14 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	lifecycle_coordinator.register_remote(
 		hunter_session.get_identity(), hunter_outbound);
 	auto hunter_time = time::time_t::from_int(40);
+	auto hunter_snapshot_state = capture_fvd_state(
+		state, connections, hunter_time, 0, 9, 1);
+	WorldDeltaBaseline hunter_baseline{};
+	hunter_baseline.accept_snapshot(hunter_snapshot_state);
+	lifecycle_coordinator.record_snapshot(hunter_snapshot_state);
 	auto hunter_snapshot_frame = hunter_session.make_frame(
 		MessageType::WORLD_SNAPSHOT,
-		encode_world_state(capture_fvd_state(state, connections, hunter_time, 0, 9, 1)));
+		encode_world_state(hunter_snapshot_state));
 	hunter_connection.send_frame(hunter_snapshot_frame);
 	hunter_connection.send_frame(hunter_session.make_frame(
 		MessageType::PARTICIPANT_DISCONNECTED,
@@ -554,7 +567,8 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	loop->reach_time(attack_sample_time, state);
 	auto attack_delta_frame = hunter_session.make_frame(
 		MessageType::WORLD_DELTA,
-		encode_world_state(capture_fvd_state(state, connections, attack_sample_time, 9, 10, 1)));
+		encode_world_delta(hunter_baseline.advance(capture_fvd_state(
+			state, connections, attack_sample_time, 9, 10, 1))));
 	hunter_connection.send_frame(attack_delta_frame);
 
 	auto hunter_build_frame = hunter_connection.receive_frame();
@@ -647,8 +661,9 @@ void run_guest(uint16_t port) {
 	delta_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*delta_frame);
 	delta_frame->message_type == MessageType::WORLD_DELTA or TESTFAIL;
-	auto delta = decode_world_state(delta_frame->payload);
-	replication.accept_delta(delta) == DeltaDisposition::APPLY or TESTFAIL;
+	auto delta_patch = decode_world_delta(delta_frame->payload);
+	replication.accept_delta(delta_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto delta = replication.get_world_state().value();
 	TESTEQUALS(delta.base_revision, uint64_t{0});
 	TESTEQUALS(delta.world_revision, uint64_t{1});
 	TESTEQUALS(delta.entities.size() >= size_t{8}, true);
@@ -730,8 +745,9 @@ void run_guest(uint16_t port) {
 	auto planned_frame = client.receive_frame();
 	planned_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*planned_frame);
-	auto planned = decode_world_state(planned_frame->payload);
-	replication.accept_delta(planned) == DeltaDisposition::APPLY or TESTFAIL;
+	auto planned_patch = decode_world_delta(planned_frame->payload);
+	replication.accept_delta(planned_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto planned = replication.get_world_state().value();
 	TESTEQUALS(planned.constructions.size(), size_t{1});
 	planned.constructions.front().phase == ConstructionPhase::PLANNED
 		or TESTFAIL;
@@ -743,8 +759,9 @@ void run_guest(uint16_t port) {
 	auto constructing_frame = client.receive_frame();
 	constructing_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*constructing_frame);
-	auto constructing = decode_world_state(constructing_frame->payload);
-	replication.accept_delta(constructing) == DeltaDisposition::APPLY or TESTFAIL;
+	auto constructing_patch = decode_world_delta(constructing_frame->payload);
+	replication.accept_delta(constructing_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto constructing = replication.get_world_state().value();
 	TESTEQUALS(constructing.constructions.size(), size_t{1});
 	constructing.constructions.front().phase
 		== ConstructionPhase::UNDER_CONSTRUCTION
@@ -757,8 +774,9 @@ void run_guest(uint16_t port) {
 	auto completed_frame = client.receive_frame();
 	completed_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*completed_frame);
-	auto completed = decode_world_state(completed_frame->payload);
-	replication.accept_delta(completed) == DeltaDisposition::APPLY or TESTFAIL;
+	auto completed_patch = decode_world_delta(completed_frame->payload);
+	replication.accept_delta(completed_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto completed = replication.get_world_state().value();
 	completed.constructions.empty() or TESTFAIL;
 	completed.reservations.empty() or TESTFAIL;
 	find_defined_entity(completed, "fvd.data.entities.Tower");
@@ -766,8 +784,9 @@ void run_guest(uint16_t port) {
 	auto spawned_frame = client.receive_frame();
 	spawned_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*spawned_frame);
-	auto spawned = decode_world_state(spawned_frame->payload);
-	replication.accept_delta(spawned) == DeltaDisposition::APPLY or TESTFAIL;
+	auto spawned_patch = decode_world_delta(spawned_frame->payload);
+	replication.accept_delta(spawned_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto spawned = replication.get_world_state().value();
 	TESTEQUALS(spawned.base_revision, uint64_t{4});
 	TESTEQUALS(spawned.world_revision, uint64_t{5});
 	TESTEQUALS(spawned.local_kill_count, uint64_t{0});
@@ -775,8 +794,9 @@ void run_guest(uint16_t port) {
 	auto fired_frame = client.receive_frame();
 	fired_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*fired_frame);
-	auto fired = decode_world_state(fired_frame->payload);
-	replication.accept_delta(fired) == DeltaDisposition::APPLY or TESTFAIL;
+	auto fired_patch = decode_world_delta(fired_frame->payload);
+	replication.accept_delta(fired_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto fired = replication.get_world_state().value();
 	TESTEQUALS(fired.base_revision, uint64_t{5});
 	TESTEQUALS(fired.world_revision, uint64_t{6});
 	TESTEQUALS(fired.arrows.size(), size_t{1});
@@ -789,8 +809,9 @@ void run_guest(uint16_t port) {
 	auto impacted_frame = client.receive_frame();
 	impacted_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*impacted_frame);
-	auto impacted = decode_world_state(impacted_frame->payload);
-	replication.accept_delta(impacted) == DeltaDisposition::APPLY or TESTFAIL;
+	auto impacted_patch = decode_world_delta(impacted_frame->payload);
+	replication.accept_delta(impacted_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto impacted = replication.get_world_state().value();
 	TESTEQUALS(impacted.base_revision, uint64_t{6});
 	TESTEQUALS(impacted.world_revision, uint64_t{7});
 	impacted.arrows.empty() or TESTFAIL;
@@ -801,8 +822,9 @@ void run_guest(uint16_t port) {
 	auto killed_frame = client.receive_frame();
 	killed_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*killed_frame);
-	auto killed = decode_world_state(killed_frame->payload);
-	replication.accept_delta(killed) == DeltaDisposition::APPLY or TESTFAIL;
+	auto killed_patch = decode_world_delta(killed_frame->payload);
+	replication.accept_delta(killed_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto killed = replication.get_world_state().value();
 	TESTEQUALS(replication.get_local_kills().value(), uint64_t{1});
 	const auto &local_tower = find_defined_entity(killed, "fvd.data.entities.Tower");
 	TESTEQUALS(local_tower.tower_kills.value(), uint64_t{1});
@@ -880,8 +902,9 @@ void run_hunter_guest(uint16_t port) {
 	delta_frame.has_value() or TESTFAIL;
 	session.validate_incoming(*delta_frame);
 	delta_frame->message_type == MessageType::WORLD_DELTA or TESTFAIL;
-	auto delta = decode_world_state(delta_frame->payload);
-	replication.accept_delta(delta) == DeltaDisposition::APPLY or TESTFAIL;
+	auto delta_patch = decode_world_delta(delta_frame->payload);
+	replication.accept_delta(delta_patch) == DeltaDisposition::APPLY or TESTFAIL;
+	auto delta = replication.get_world_state().value();
 	TESTEQUALS(delta.base_revision, uint64_t{9});
 	TESTEQUALS(delta.world_revision, uint64_t{10});
 	TESTEQUALS(delta.entities.size() >= size_t{8}, true);

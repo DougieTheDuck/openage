@@ -1,0 +1,328 @@
+// Copyright 2026 the openage authors. See copying.md for legal info.
+
+#include "world_delta.h"
+
+#include <algorithm>
+#include <array>
+#include <limits>
+#include <unordered_map>
+#include <unordered_set>
+#include <type_traits>
+#include <utility>
+
+#include "error/error.h"
+#include "network/serialization.h"
+
+namespace openage::network {
+
+namespace {
+
+using player_id = gamestate::player_id_t;
+using entity_id = gamestate::entity_id_t;
+
+auto player_key = [](const PlayerState &r) { return r.player_id; };
+auto entity_key = [](const EntityState &r) { return r.entity_id; };
+auto reservation_key = [](const TileReservation &r) { return r.tile; };
+auto construction_key = [](const ConstructionState &r) { return r.order_id; };
+auto attack_key = [](const AttackOrderState &r) { return r.horse_id; };
+auto arrow_key = [](const ArrowState &r) { return r.arrow_id; };
+
+bool same(const PlayerState &a, const PlayerState &b) {
+	return a.player_id == b.player_id and a.role == b.role and a.connected == b.connected;
+}
+bool same(const EntityState &a, const EntityState &b) {
+	return a.entity_id == b.entity_id and a.owner_id == b.owner_id
+	    and a.definition == b.definition and a.position == b.position
+	    and a.health == b.health and a.maximum_health == b.maximum_health
+	    and a.tower_kills == b.tower_kills;
+}
+bool same(const TileReservation &a, const TileReservation &b) {
+	return a.tile == b.tile and a.builder_id == b.builder_id;
+}
+bool same(const ConstructionState &a, const ConstructionState &b) {
+	return a.order_id == b.order_id and a.owner_id == b.owner_id
+	    and a.builder_id == b.builder_id and a.target == b.target
+	    and a.phase == b.phase and a.phase_end_time == b.phase_end_time
+	    and a.site_entity_id == b.site_entity_id;
+}
+bool same(const AttackOrderState &a, const AttackOrderState &b) {
+	return a.horse_id == b.horse_id and a.destination == b.destination
+	    and a.target_id == b.target_id and a.reached_destination == b.reached_destination
+	    and a.focus_target == b.focus_target;
+}
+bool same(const ArrowState &a, const ArrowState &b) {
+	return a.arrow_id == b.arrow_id and a.owner_id == b.owner_id
+	    and a.target_id == b.target_id and a.start == b.start
+	    and a.destination == b.destination and a.launch_time == b.launch_time
+	    and a.impact_time == b.impact_time;
+}
+
+template<typename Record, typename Key, typename GetKey>
+void difference(const std::vector<Record> &before, const std::vector<Record> &after,
+                std::vector<Record> &changed, std::vector<Key> &removed, GetKey key) {
+	std::unordered_map<Key, const Record *> old;
+	std::unordered_set<Key> next;
+	for (const auto &r : before) {
+		if (not old.emplace(key(r), &r).second) {
+			throw Error{MSG(err) << "Duplicate identity in FVD previous world state"};
+		}
+	}
+	for (const auto &r : after) {
+		const auto id = key(r);
+		if (not next.insert(id).second) {
+			throw Error{MSG(err) << "Duplicate identity in FVD next world state"};
+		}
+		auto it = old.find(id);
+		if (it == old.end() or not same(*it->second, r)) {
+			changed.push_back(r);
+		}
+	}
+	for (const auto &r : before) {
+		if (not next.contains(key(r))) {
+			removed.push_back(key(r));
+		}
+	}
+}
+
+template<typename Record, typename Key, typename GetKey>
+void patch(std::vector<Record> &records, const std::vector<Record> &changes,
+           const std::vector<Key> &removals, GetKey key) {
+	std::unordered_map<Key, size_t> existing;
+	for (size_t i = 0; i < records.size(); ++i) {
+		if (not existing.emplace(key(records[i]), i).second) {
+			throw Error{MSG(err) << "Duplicate identity in FVD world baseline"};
+		}
+	}
+	std::unordered_set<Key> removed;
+	for (const auto &id : removals) {
+		if (not removed.insert(id).second or not existing.contains(id)) {
+			throw Error{MSG(err) << "Unknown or duplicate FVD delta removal"};
+		}
+	}
+	std::unordered_set<Key> updated;
+	for (const auto &change : changes) {
+		auto id = key(change);
+		if (not updated.insert(id).second or removed.contains(id)) {
+			throw Error{MSG(err) << "Duplicate or contradictory FVD delta update"};
+		}
+		auto it = existing.find(id);
+		if (it == existing.end()) {
+			records.push_back(change);
+		}
+		else {
+			records[it->second] = change;
+		}
+	}
+	std::erase_if(records, [&](const auto &record) {
+		return removed.contains(key(record));
+	});
+	std::sort(records.begin(), records.end(), [&](const auto &a, const auto &b) {
+		// Stable order independent of hash iteration or update arrival order.
+		if constexpr (std::is_same_v<Key, coord::tile>) {
+			return std::pair{key(a).ne, key(a).se} < std::pair{key(b).ne, key(b).se};
+		}
+		else {
+			return key(a) < key(b);
+		}
+	});
+}
+
+void validate_header(const WorldState &previous, const WorldState &next) {
+	if (previous.local_player_id == 0
+	    or next.local_player_id != previous.local_player_id
+	    or next.map_size != previous.map_size
+	    or next.world_revision <= previous.world_revision) {
+		throw Error{MSG(err) << "FVD delta identity, map size or revision mismatch"};
+	}
+}
+
+constexpr uint32_t MAX_REMOVALS[] = {
+	MAX_STATE_PLAYERS, MAX_STATE_ENTITIES, MAX_STATE_RESERVATIONS,
+	MAX_STATE_CONSTRUCTIONS, MAX_STATE_ATTACK_ORDERS, MAX_STATE_ARROWS
+};
+constexpr size_t DELTA_HEADER_BYTES = 32;
+constexpr uint16_t LOCAL_KILLS_CHANGED = 1;
+
+void check_count(size_t count, uint32_t limit) {
+	if (count > limit) {
+		throw Error{MSG(err) << "FVD world delta removal limit exceeded"};
+	}
+}
+void check_room(const std::vector<uint8_t> &bytes, size_t offset, size_t length) {
+	if (offset > bytes.size() or length > bytes.size() - offset) {
+		throw Error{MSG(err) << "Truncated FVD world delta"};
+	}
+}
+
+} // namespace
+
+WorldDelta make_world_delta(const WorldState &previous, const WorldState &current) {
+	validate_header(previous, current);
+	WorldDelta delta{};
+	delta.changed.base_revision = previous.world_revision;
+	delta.changed.world_revision = current.world_revision;
+	delta.changed.simulation_time = current.simulation_time;
+	delta.changed.map_size = current.map_size;
+	delta.changed.local_player_id = current.local_player_id;
+	delta.local_kills_changed = previous.local_kill_count != current.local_kill_count;
+	if (delta.local_kills_changed) {
+		delta.changed.local_kill_count = current.local_kill_count;
+	}
+	difference(previous.players, current.players,
+	           delta.changed.players, delta.removed_players, player_key);
+	difference(previous.entities, current.entities,
+	           delta.changed.entities, delta.removed_entities, entity_key);
+	difference(previous.reservations, current.reservations,
+	           delta.changed.reservations, delta.removed_reservations, reservation_key);
+	difference(previous.constructions, current.constructions,
+	           delta.changed.constructions, delta.removed_constructions, construction_key);
+	difference(previous.attack_orders, current.attack_orders,
+	           delta.changed.attack_orders, delta.removed_attack_orders, attack_key);
+	difference(previous.arrows, current.arrows,
+	           delta.changed.arrows, delta.removed_arrows, arrow_key);
+	return delta;
+}
+
+WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta) {
+	const auto &changed = delta.changed;
+	validate_header(previous, changed);
+	if (changed.base_revision != previous.world_revision
+	    or (not delta.local_kills_changed and changed.local_kill_count != 0)) {
+		throw Error{MSG(err) << "FVD delta is not contiguous or its score flags are invalid"};
+	}
+	WorldState next = previous; // Apply to a copy; malformed patches never mutate the baseline.
+	next.base_revision = 0;
+	next.world_revision = changed.world_revision;
+	next.simulation_time = changed.simulation_time;
+	if (delta.local_kills_changed) {
+		next.local_kill_count = changed.local_kill_count;
+	}
+	patch(next.players, changed.players, delta.removed_players, player_key);
+	patch(next.entities, changed.entities, delta.removed_entities, entity_key);
+	patch(next.reservations, changed.reservations, delta.removed_reservations, reservation_key);
+	patch(next.constructions, changed.constructions, delta.removed_constructions, construction_key);
+	patch(next.attack_orders, changed.attack_orders, delta.removed_attack_orders, attack_key);
+	patch(next.arrows, changed.arrows, delta.removed_arrows, arrow_key);
+	if (std::none_of(next.players.begin(), next.players.end(), [&](const auto &player) {
+		return player.player_id == next.local_player_id;
+	})) {
+		throw Error{MSG(err) << "FVD delta removed the assigned player"};
+	}
+	for (const auto &entity : next.entities) {
+		if (entity.tower_kills and (entity.owner_id != next.local_player_id
+		    or entity.definition != "fvd.data.entities.Tower")) {
+			throw Error{MSG(err) << "FVD delta disclosed an opponent's tower kills"};
+		}
+	}
+	return next;
+}
+
+std::vector<uint8_t> encode_world_delta(const WorldDelta &delta) {
+	if (delta.changed.local_player_id == 0
+	    or delta.changed.world_revision <= delta.changed.base_revision
+	    or (not delta.local_kills_changed and delta.changed.local_kill_count != 0)) {
+		throw Error{MSG(err) << "Invalid FVD world delta header"};
+	}
+	auto body = encode_world_state(delta.changed, true);
+	if (body.size() > std::numeric_limits<uint32_t>::max()) {
+		throw Error{MSG(err) << "FVD world delta body too large"};
+	}
+	const std::array<size_t, 6> counts{
+		delta.removed_players.size(), delta.removed_entities.size(),
+		delta.removed_reservations.size(), delta.removed_constructions.size(),
+		delta.removed_attack_orders.size(), delta.removed_arrows.size()};
+	for (size_t i = 0; i < counts.size(); ++i) {
+		check_count(counts[i], MAX_REMOVALS[i]);
+	}
+	std::vector<uint8_t> bytes;
+	append_u16(bytes, delta.local_kills_changed ? LOCAL_KILLS_CHANGED : 0);
+	append_u16(bytes, 0);
+	append_u32(bytes, static_cast<uint32_t>(body.size()));
+	for (auto count : counts) {
+		append_u32(bytes, static_cast<uint32_t>(count));
+	}
+	bytes.insert(bytes.end(), body.begin(), body.end());
+	for (auto id : delta.removed_players) append_u64(bytes, id);
+	for (auto id : delta.removed_entities) append_u64(bytes, id);
+	for (auto tile : delta.removed_reservations) {
+		append_i64(bytes, tile.ne);
+		append_i64(bytes, tile.se);
+	}
+	for (auto id : delta.removed_constructions) append_u64(bytes, id);
+	for (auto id : delta.removed_attack_orders) append_u64(bytes, id);
+	for (auto id : delta.removed_arrows) append_u64(bytes, id);
+	if (bytes.size() > MAX_PAYLOAD_SIZE) {
+		throw Error{MSG(err) << "FVD world delta exceeds frame payload"};
+	}
+	return bytes;
+}
+
+WorldDelta decode_world_delta(const std::vector<uint8_t> &bytes) {
+	check_room(bytes, 0, DELTA_HEADER_BYTES);
+	const auto flags = read_u16(bytes.data());
+	if ((flags & ~LOCAL_KILLS_CHANGED) != 0 or read_u16(bytes.data() + 2) != 0) {
+		throw Error{MSG(err) << "Unsupported FVD world delta flags"};
+	}
+	const size_t body_size = read_u32(bytes.data() + 4);
+	std::array<uint32_t, 6> counts{};
+	size_t trailing_bytes = 0;
+	for (size_t i = 0; i < counts.size(); ++i) {
+		counts[i] = read_u32(bytes.data() + 8 + i * 4);
+		check_count(counts[i], MAX_REMOVALS[i]);
+		trailing_bytes += static_cast<size_t>(counts[i]) * (i == 2 ? 16 : 8);
+	}
+	if (body_size > MAX_PAYLOAD_SIZE or trailing_bytes > MAX_PAYLOAD_SIZE
+	    or body_size + trailing_bytes > MAX_PAYLOAD_SIZE
+	    or bytes.size() != DELTA_HEADER_BYTES + body_size + trailing_bytes) {
+		throw Error{MSG(err) << "Invalid FVD world delta length"};
+	}
+	std::vector<uint8_t> body(bytes.begin() + DELTA_HEADER_BYTES,
+	                         bytes.begin() + DELTA_HEADER_BYTES + body_size);
+	WorldDelta delta{};
+	delta.local_kills_changed = (flags & LOCAL_KILLS_CHANGED) != 0;
+	delta.changed = decode_world_state(body, true);
+	if (delta.changed.world_revision <= delta.changed.base_revision
+	    or (not delta.local_kills_changed and delta.changed.local_kill_count != 0)) {
+		throw Error{MSG(err) << "Invalid FVD world delta revision or score"};
+	}
+	size_t offset = DELTA_HEADER_BYTES + body_size;
+	auto next_u64 = [&]() {
+		const auto value = read_u64(bytes.data() + offset);
+		offset += 8;
+		return value;
+	};
+	for (uint32_t i = 0; i < counts[0]; ++i) delta.removed_players.push_back(next_u64());
+	for (uint32_t i = 0; i < counts[1]; ++i) delta.removed_entities.push_back(next_u64());
+	for (uint32_t i = 0; i < counts[2]; ++i) {
+		auto ne = read_i64(bytes.data() + offset);
+		auto se = read_i64(bytes.data() + offset + 8);
+		offset += 16;
+		delta.removed_reservations.push_back({ne, se});
+	}
+	for (uint32_t i = 0; i < counts[3]; ++i) delta.removed_constructions.push_back(next_u64());
+	for (uint32_t i = 0; i < counts[4]; ++i) delta.removed_attack_orders.push_back(next_u64());
+	for (uint32_t i = 0; i < counts[5]; ++i) delta.removed_arrows.push_back(next_u64());
+	return delta;
+}
+
+void WorldDeltaBaseline::accept_snapshot(WorldState snapshot) {
+	if (snapshot.base_revision != 0 or snapshot.local_player_id == 0) {
+		throw Error{MSG(err) << "FVD delta baseline requires a full recipient snapshot"};
+	}
+	this->previous = std::move(snapshot);
+}
+
+WorldDelta WorldDeltaBaseline::advance(WorldState complete) {
+	if (not this->previous) {
+		throw Error{MSG(err) << "FVD delta baseline must receive a snapshot first"};
+	}
+	auto result = make_world_delta(*this->previous, complete);
+	this->previous = std::move(complete);
+	return result;
+}
+
+bool WorldDeltaBaseline::initialized() const {
+	return this->previous.has_value();
+}
+
+} // namespace openage::network

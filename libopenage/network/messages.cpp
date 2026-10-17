@@ -324,7 +324,7 @@ CommandResult decode_command_result(const std::vector<uint8_t> &payload) {
 	return result;
 }
 
-std::vector<uint8_t> encode_world_state(const WorldState &state) {
+std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 	if (state.map_size == 0) {
 		throw Error{MSG(err) << "FVD state requires a nonzero map size"};
 	}
@@ -365,7 +365,7 @@ std::vector<uint8_t> encode_world_state(const WorldState &state) {
 		found_local_player = found_local_player
 		                  or player.player_id == state.local_player_id;
 	}
-	if (not found_local_player) {
+	if (not partial and not found_local_player) {
 		throw Error{MSG(err) << "FVD state local player is not playable"};
 	}
 	for (const auto &entity : state.entities) {
@@ -441,7 +441,7 @@ std::vector<uint8_t> encode_world_state(const WorldState &state) {
 	return output;
 }
 
-WorldState decode_world_state(const std::vector<uint8_t> &payload) {
+WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial) {
 	PayloadReader reader{payload};
 	WorldState state{};
 	state.base_revision = reader.u64();
@@ -487,7 +487,7 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload) {
 			(flags & PLAYER_CONNECTED) != 0,
 		});
 	}
-	if (std::none_of(state.players.begin(), state.players.end(), [&](const auto &player) {
+	if (not partial and std::none_of(state.players.begin(), state.players.end(), [&](const auto &player) {
 		return player.player_id == state.local_player_id;
 	})) {
 		throw Error{MSG(err) << "FVD state local player is not playable"};

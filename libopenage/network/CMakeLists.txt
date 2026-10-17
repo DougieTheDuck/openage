@@ -30,6 +30,8 @@ add_sources(libopenage
 	session_test.cpp
 	transport.cpp
 	transport_test.cpp
+	world_delta.cpp
+	world_delta_test.cpp
 )
 
 pxdgen(

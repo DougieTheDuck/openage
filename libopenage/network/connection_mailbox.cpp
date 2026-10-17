@@ -71,13 +71,13 @@ Frame make_outbound_frame(ConnectionSession &session,
 					encode_world_state(typed_message.state));
 			}
 			else if constexpr (std::is_same_v<message_t, WorldDeltaMessage>) {
-				if (typed_message.state.local_player_id
+				if (typed_message.state.changed.local_player_id
 				    != session.get_identity().player_id) {
 					throw Error{MSG(err) << "FVD delta recipient does not match its session"};
 				}
 				return session.make_frame(
 					MessageType::WORLD_DELTA,
-					encode_world_state(typed_message.state));
+					encode_world_delta(typed_message.state));
 			}
 			else {
 				return session.make_frame(
