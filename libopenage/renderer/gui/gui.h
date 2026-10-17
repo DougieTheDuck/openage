@@ -10,6 +10,7 @@
 
 class QObject;
 class QString;
+class QPointF;
 
 namespace qtgui {
 class GuiInput;
@@ -55,6 +56,9 @@ public:
 	 * @return Input handler of the GUI.
 	 */
 	std::shared_ptr<qtgui::GuiInput> get_input_handler() const;
+
+	/** Hit test a named QML control in current scene coordinates. */
+	bool contains_item(const QString &object_name, const QPointF &scene_position) const;
 
 	/**
 	 * Get the render pass of the GUI.

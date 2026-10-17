@@ -348,8 +348,23 @@ void fvd_construction() {
 		}
 	}
 	TESTEQUALS(planned, true);
+	auto construction_planned = fvd->get_construction_state();
+	TESTEQUALS(construction_planned.size(), size_t{1});
+	TESTEQUALS(construction_planned.front().builder_id, builders[2]);
+	TESTEQUALS(construction_planned.front().phase == FVDConstructionPhase::PLANNED, true);
+	TESTEQUALS(construction_planned.front().progress_percent(t(0)), 0);
 	loop->reach_time(t(0.05), state);
 	TESTEQUALS(state->get_game_entities().size(), 8);
+	auto constructing = fvd->get_construction_state();
+	TESTEQUALS(constructing.size(), size_t{1});
+	TESTEQUALS(constructing.front().phase == FVDConstructionPhase::UNDER_CONSTRUCTION, true);
+	const auto &progress = constructing.front();
+	TESTEQUALS(progress.progress_percent(progress.phase_start_time), 0);
+	TESTEQUALS(progress.progress_percent(progress.phase_end_time), 100);
+	TESTEQUALS(progress.progress_percent(progress.phase_end_time + t(1)), 100);
+	TESTEQUALS(progress.progress_percent(progress.phase_start_time - t(1)), 0);
+	TESTEQUALS(progress.progress_percent(t(0.05)) > 0, true);
+	TESTEQUALS(progress.progress_percent(t(0.05)) < 100, true);
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		TESTNOTEQUALS(entity->get_definition(), "fvd.data.entities.Foundation");
 	}
@@ -379,6 +394,7 @@ void fvd_construction() {
 	TESTEQUALS(state->get_game_entities().size(), 8);
 	TESTEQUALS(fvd->is_tile_reserved({61, 66}), false);
 	TESTEQUALS(fvd->get_build_order(builders[2]) == nullptr, true);
+	TESTEQUALS(fvd->get_construction_state().empty(), true);
 	bool completed = false;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() == "fvd.data.entities.Tower") {

@@ -11,6 +11,8 @@ Item {
 	readonly property bool placementValid: hud !== null && hud.placementValid
 	readonly property var placementFootprint: hud === null ? [] : hud.placementFootprint
 	readonly property int queuedTowers: hud === null ? 0 : hud.queuedTowers
+	readonly property string constructionStatus: hud === null ? "" : hud.constructionStatus
+	readonly property int constructionPercent: hud === null ? -1 : hud.constructionPercent
 	readonly property bool canBuild: hud !== null && hud.canBuild
 	readonly property bool isTower: hud !== null && hud.isTower
 	readonly property bool canAttack: hud !== null && hud.canAttack
@@ -159,17 +161,21 @@ Item {
 
 	Rectangle {
 		id: buildPanel
+		objectName: "fvdBuildPanel"
 		anchors.left: parent.left
 		anchors.bottom: parent.bottom
 		width: 284
-		height: 196
+		height: panelContent.implicitHeight + 24
 		radius: 6
 		color: "#ee182824"
 		border.width: 1
 		border.color: "#72918b"
 
 		Column {
-			anchors.fill: parent
+			id: panelContent
+			anchors.top: parent.top
+			anchors.left: parent.left
+			anchors.right: parent.right
 			anchors.margins: 12
 			spacing: 8
 
@@ -208,6 +214,25 @@ Item {
 				color: "#d6e6db"
 				font.pixelSize: 13
 				text: "Tower kills: " + (root.hud === null || !root.hud.killsAvailable ? "—" : root.hud.kills)
+			}
+			Text {
+				visible: root.constructionStatus.length > 0
+				color: "#b5d9c4"
+				font.pixelSize: 12
+				text: root.constructionStatus
+			}
+			Rectangle {
+				visible: root.constructionPercent >= 0
+				width: parent.width
+				height: visible ? 6 : 0
+				radius: 3
+				color: "#344b40"
+				Rectangle {
+					width: parent.width * Math.max(0, Math.min(100, root.constructionPercent)) / 100
+					height: parent.height
+					radius: parent.radius
+					color: "#84ddb2"
+				}
 			}
 			Text {
 				visible: !root.hunter && (root.placing || root.queuedTowers > 0)

@@ -46,6 +46,19 @@
 
 namespace openage::gamestate {
 
+int FVDConstructionState::progress_percent(const time::time_t &now) const {
+	if (this->phase != FVDConstructionPhase::UNDER_CONSTRUCTION) {
+		return 0;
+	}
+	const auto duration = this->phase_end_time - this->phase_start_time;
+	if (duration <= time::TIME_ZERO) {
+		return 100;
+	}
+	const auto elapsed = now - this->phase_start_time;
+	const double ratio = elapsed.to_double() / duration.to_double();
+	return std::clamp(static_cast<int>(std::clamp(ratio, 0.0, 1.0) * 100.0), 0, 100);
+}
+
 namespace {
 
 /** Arrive at a construction site, then complete it at a later simulation time. */
@@ -1358,6 +1371,7 @@ std::vector<FVDConstructionState> FVD::get_construction_state() const {
 				? build.arrival + this->construction_time
 				: build.arrival,
 			build.tower_id.value_or(build.foundation_id),
+			build.arrival,
 		});
 	}
 	std::sort(result.begin(), result.end(),

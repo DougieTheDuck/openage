@@ -59,7 +59,11 @@ Each queued site displays a persistent, pickable foundation as soon as the order
 With the Builder selected, right-click one of its own foundations to clear all other construction orders and immediately work on that foundation.
 Right-clicking the foundation already being built keeps its progress but cancels the rest of the queue.
 Moving the Builder to ordinary terrain cancels all outstanding foundations and reservations.
-Footprint preview and queued tower count are displayed in the HUD; detailed construction progress is not yet shown.
+Footprint preview and queued tower count are displayed in the HUD.
+Selecting a Builder with an active order also shows its construction phase.
+While walking, the HUD says "Walking to tower site"; while building, it shows a percent-complete progress bar computed from the simulation's own start and finish times.
+Canceled or finished jobs clear this progress display.
+The panel's height follows its contents, and the actual QML panel geometry blocks world mouse gestures so clicking or dragging its controls never issues a game order.
 The simulation validates ownership and reserves the target tile, so the Hunter and other Builders cannot claim the same site.
 The Builder walks to an available neighboring tile and constructs for the configured duration.
 A foundation marker appears as soon as the order reserves the intended tile, then the tower replaces it when construction starts.

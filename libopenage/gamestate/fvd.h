@@ -53,6 +53,11 @@ struct FVDConstructionState {
 	FVDConstructionPhase phase;
 	time::time_t phase_end_time;
 	entity_id_t site_entity_id;
+	/** Actual start of timed construction; planned orders have no progress. */
+	time::time_t phase_start_time;
+
+	/** Percentage of completed construction, clamped to 0..100. */
+	int progress_percent(const time::time_t &now) const;
 };
 
 /** One footprint tile reserved by an active construction order. */

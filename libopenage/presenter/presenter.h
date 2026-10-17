@@ -207,6 +207,8 @@ protected:
 	std::shared_ptr<network::ReplicationTracker> fvd_replication;
 	/** Most recent screen cursor coordinate, owned by the presenter thread. */
 	std::optional<coord::input> placement_cursor;
+	/** Mouse presses begun over the HUD must not release orders in the world. */
+	unsigned int fvd_hud_captured_buttons{0};
 
 	/**
 	 * Camera manager for camera controls.
