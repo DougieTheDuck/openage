@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <optional>
+#include <mutex>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -135,6 +136,41 @@ std::optional<coord::phys3> melee_approach(
 }
 
 } // namespace
+
+std::vector<FVD::ArrowTrail> FVD::get_visible_arrows(const time::time_t &now) const {
+	std::vector<ArrowTrail> result;
+	std::lock_guard lock{this->arrow_visuals_mutex};
+	result.reserve(this->arrow_visuals.size());
+	for (const auto &arrow : this->arrow_visuals) {
+		if (now < arrow.launch_time or now >= arrow.impact_time) {
+			continue;
+		}
+		const double duration = (arrow.impact_time - arrow.launch_time).to_double();
+		if (duration <= 0.0) {
+			continue;
+		}
+		const double progress = std::clamp(
+			(now - arrow.launch_time).to_double() / duration, 0.0, 1.0);
+		const double tail_progress = std::max(0.0, progress - 0.22);
+		auto position_at = [&](double fraction) {
+			auto lerp = [fraction](coord::phys_t first, coord::phys_t last) {
+				return coord::phys_t::from_double(
+					first.to_double() + (last.to_double() - first.to_double()) * fraction);
+			};
+			// A small ballistic arc reads as an arrow without spawning a
+			// rendered game entity or affecting the hit calculation.
+			const double lift = 4.0 * fraction * (1.0 - fraction) * 0.50;
+			return coord::phys3{
+				lerp(arrow.start.ne, arrow.destination.ne),
+				lerp(arrow.start.se, arrow.destination.se),
+				lerp(arrow.start.up, arrow.destination.up)
+				    + coord::phys_t::from_double(lift)};
+		};
+		result.push_back(ArrowTrail{
+			position_at(tail_progress), position_at(progress), progress});
+	}
+	return result;
+}
 
 uint64_t FVD::get_kills(player_id_t owner) const {
 	return owner > 0 and owner < this->player_kills.size()
@@ -504,6 +540,31 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			tower_it->second->get_component(component::component_t::OWNERSHIP));
 		const auto owner = ownership->get_owners().get(time);
 		auto loop = this->event_loop.lock();
+		// Add a visual trail for the existing authoritative arrow shot.
+		// Copy both endpoints at launch so the arrow stays visible even
+		// if its target moves or dies before the scheduled impact.
+		auto start = std::dynamic_pointer_cast<component::Position>(
+			tower_it->second->get_component(component::component_t::POSITION))
+			->get_positions().get(time);
+		auto destination = std::dynamic_pointer_cast<component::Position>(
+			state->get_game_entity(nearest)->get_component(component::component_t::POSITION))
+			->get_positions().get(time);
+		start.up += coord::phys_t::from_double(1.3);
+		destination.up += coord::phys_t::from_double(0.45);
+		{
+			std::lock_guard lock{this->arrow_visuals_mutex};
+			std::erase_if(this->arrow_visuals, [&](const ArrowVisual &shot) {
+				return shot.impact_time <= time;
+			});
+			// Bound visual work in very large tower fights. Every shot
+			// still schedules its authoritative damage below.
+			constexpr size_t max_visual_shots = 2048;
+			if (this->arrow_visuals.size() >= max_visual_shots) {
+				this->arrow_visuals.erase(this->arrow_visuals.begin());
+			}
+			this->arrow_visuals.push_back(
+				ArrowVisual{start, destination, time, time + this->arrow_travel});
+		}
 		loop->create_event("game.fvd_arrow_hit", this->horse_spawn_target, state,
 		                   time + this->arrow_travel,
 		                   {{"target", nearest}, {"owner", owner}, {"damage", this->tower_damage}});

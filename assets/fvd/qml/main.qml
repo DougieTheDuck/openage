@@ -13,6 +13,54 @@ Item {
 	readonly property bool canAttack: hud !== null && hud.canAttack
 	readonly property bool attacking: hud !== null && hud.attacking
 	readonly property int hunterCountdown: hud === null ? 0 : hud.hunterCountdown
+	readonly property var arrowStreaks: hud === null ? [] : hud.arrowStreaks
+
+	// Screen-space display only. Simulation shot events determine impact
+	// and damage; this Canvas never creates selectable world objects.
+	Canvas {
+		id: arrows
+		anchors.fill: parent
+		z: -1
+		visible: root.arrowStreaks.length > 0
+		onVisibleChanged: if (visible) requestPaint()
+		Connections {
+			target: root
+			function onArrowStreaksChanged() {
+				if (arrows.visible)
+					arrows.requestPaint()
+			}
+		}
+		onPaint: {
+			var ctx = getContext("2d")
+			ctx.clearRect(0, 0, width, height)
+			var list = root.arrowStreaks
+			for (var i = 0; i < list.length; ++i) {
+				var shot = list[i]
+				var dx = shot.x1 - shot.x0
+				var dy = shot.y1 - shot.y0
+				var len = Math.sqrt(dx * dx + dy * dy)
+				if (len < 0.5) continue
+				var nx = dx / len
+				var ny = dy / len
+				ctx.globalAlpha = shot.alpha
+				ctx.strokeStyle = "#f9d7a1"
+				ctx.lineWidth = 2
+				ctx.lineCap = "round"
+				ctx.beginPath()
+				ctx.moveTo(shot.x0, shot.y0)
+				ctx.lineTo(shot.x1, shot.y1)
+				ctx.stroke()
+				// Two tiny fletching strokes distinguish the arrow head.
+				ctx.lineWidth = 1
+				ctx.beginPath()
+				ctx.moveTo(shot.x1 - nx * 5 - ny * 2, shot.y1 - ny * 5 + nx * 2)
+				ctx.lineTo(shot.x1, shot.y1)
+				ctx.lineTo(shot.x1 - nx * 5 + ny * 2, shot.y1 - ny * 5 - nx * 2)
+				ctx.stroke()
+			}
+			ctx.globalAlpha = 1
+		}
+	}
 
 	Rectangle {
 		id: countdownBanner

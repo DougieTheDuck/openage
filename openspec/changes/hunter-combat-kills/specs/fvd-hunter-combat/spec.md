@@ -189,6 +189,29 @@ when the target dies or another Move or AttackMove order supersedes it.
 - **WHEN** the engaged tower is destroyed
 - **THEN** an attack-moving horse resumes its original destination if still en route, or remains at the destination otherwise
 
+### Requirement: Tower arrows have visual flight trails
+
+Each tower shot SHALL create a short-lived visual arrow at the time the
+simulation schedules its impact. The local presenter SHALL draw the
+projectile along the tower-to-target launch trajectory and remove it on
+impact. These visual trails SHALL NOT deal damage, participate in
+collision, or change target selection. The display SHALL be bounded
+to prevent unlimited rendering work during large volleys.
+
+#### Scenario: Tower launches an arrow
+- **WHEN** a completed tower schedules an arrow at time t
+- **THEN** the local client displays a projectile moving from the tower
+  toward the target during the configured flight interval
+
+#### Scenario: Shot reaches its impact time
+- **WHEN** the projectile's authoritative impact time is reached
+- **THEN** the visual trail disappears independently of damage resolution
+
+#### Scenario: Target dies while an arrow is flying
+- **WHEN** the target is removed before an earlier shot's impact
+- **THEN** the already-launched visual can complete its original trajectory
+  without interacting with the destroyed target
+
 ### Requirement: Completed towers fire arrows and can kill horses
 
 Completed Builder towers SHALL autonomously fire arrows at eligible Hunter

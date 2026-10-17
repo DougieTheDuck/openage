@@ -41,6 +41,12 @@ class BuildTowerCommand;
  */
 class FVD {
 public:
+	/** Purely visual render snapshot; authoritative damage is separate. */
+	struct ArrowTrail {
+		coord::phys3 tail;
+		coord::phys3 head;
+		double progress;
+	};
 	/** Read and validate the scenario's nyan settings. */
 	explicit FVD(const std::shared_ptr<GameState> &state);
 
@@ -137,6 +143,12 @@ public:
 	/** Apply a scheduled tower arrow hit. */
 	void arrow_hit(const std::shared_ptr<GameState> &state, entity_id_t target,
 	               player_id_t owner, int64_t damage, const time::time_t &time);
+
+	/**
+	 * Thread-safe snapshot of visible arrow trails at simulation time.
+	 * Projectiles are never selectable or independently simulated clients.
+	 */
+	std::vector<ArrowTrail> get_visible_arrows(const time::time_t &now) const;
 
 	/** Local HUD-facing read-only state. */
 	uint64_t get_kills(player_id_t owner) const;
@@ -247,6 +259,15 @@ private:
 	/** Protect the match-relative first-spawn deadline read by the presenter. */
 	mutable std::mutex hunter_spawn_time_mutex;
 	std::optional<time::time_t> first_hunter_spawn_time;
+	/** Visual history only; shot hit events remain authoritative. */
+	struct ArrowVisual {
+		coord::phys3 start;
+		coord::phys3 destination;
+		time::time_t launch_time;
+		time::time_t impact_time;
+	};
+	mutable std::mutex arrow_visuals_mutex;
+	std::vector<ArrowVisual> arrow_visuals;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
 	std::unordered_set<entity_id_t> dead_horses;
