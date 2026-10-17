@@ -22,6 +22,24 @@
 
 namespace openage::renderer::gui {
 
+namespace {
+
+// QML roots are attached through setParentItem(), which does not promise
+// QObject parentage. Walk the visual tree so the hit test sees QML controls.
+QQuickItem *find_visual_item(QQuickItem *item, const QString &object_name) {
+	if (item->objectName() == object_name) {
+		return item;
+	}
+	for (auto *child : item->childItems()) {
+		if (auto *match = find_visual_item(child, object_name)) {
+			return match;
+		}
+	}
+	return nullptr;
+}
+
+} // namespace
+
 GUI::GUI(std::shared_ptr<qtgui::GuiApplication> app,
          std::shared_ptr<Window> window,
          const util::Path &source,
@@ -63,7 +81,7 @@ std::shared_ptr<qtgui::GuiInput> GUI::get_input_handler() const {
 
 bool GUI::contains_item(const QString &object_name, const QPointF &scene_position) const {
 	auto window = this->gui_renderer->get_window();
-	auto item = window->contentItem()->findChild<QQuickItem *>(object_name);
+	auto item = find_visual_item(window->contentItem(), object_name);
 	return item and item->isVisible() and item->isEnabled()
 	       and item->contains(item->mapFromScene(scene_position));
 }
