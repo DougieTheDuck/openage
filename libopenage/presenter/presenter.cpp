@@ -632,10 +632,17 @@ void Presenter::refresh_fvd_guest_visuals() {
 		if (not visual) {
 			visual = std::make_shared<renderer::world::RenderEntity>();
 			this->world_renderer->add_render_entity(visual);
+			// Replicated proxies do not pass through the simulation's normal
+			// health-bar registration path.
+			if (this->hud_renderer) this->hud_renderer->add_health_entity(visual);
 		}
 		// Render on the paused guest clock using the same resolved animation
 		// as the host and positions from authenticated world replication.
 		visual->update(entity.entity_id, entity.position, path->second, time::TIME_ZERO);
+		if (entity.health and entity.maximum_health and *entity.maximum_health > 0) {
+			curve::Segmented<int64_t> health{nullptr, 0, "", nullptr, *entity.health};
+			visual->update_health(health, *entity.maximum_health, time::TIME_ZERO);
+		}
 	}
 	for (auto it = this->fvd_guest_entities.begin();
 	     it != this->fvd_guest_entities.end();) {
