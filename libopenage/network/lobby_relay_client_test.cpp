@@ -63,8 +63,15 @@ void lobby_relay_client() {
 	conf.name = "GuestPlayer";
 	guest.refresh(conf);
 	TESTEQUALS(wait_for(guest, "menu"), true);
-	TESTEQUALS(guest.status().rooms.find("Automated Test") != std::string::npos, true);
-	conf.room_id = guest.status().suggested_room_id;
+	// Public-room fields must not be displaced by the appended role fields.
+	// The old positional publish() construction silently coupled their order.
+	const auto room_listing = guest.status();
+	TESTEQUALS(room_listing.rooms.find("Automated Test") != std::string::npos, true);
+	TESTEQUALS(room_listing.suggested_room_id != 0, true);
+	TESTEQUALS(room_listing.roles.empty(), true);
+	TESTEQUALS(room_listing.local_role.empty(), true);
+	TESTEQUALS(room_listing.role_seconds_remaining, uint8_t{0});
+	conf.room_id = room_listing.suggested_room_id;
 	TESTEQUALS(conf.room_id != 0, true);
 	conf.name = "GuestPlayer";
 	conf.hosting = false;
@@ -74,6 +81,9 @@ void lobby_relay_client() {
 	TESTEQUALS(wait_for(guest, "lobby"), true);
 	TESTEQUALS(host.status().can_start, true);
 	TESTEQUALS(guest.status().can_start, false);
+	TESTEQUALS(host.status().rooms.empty(), true);
+	TESTEQUALS(guest.status().roles.empty(), true);
+	TESTEQUALS(host.status().roles.empty(), true);
 	TESTEQUALS(host.status().participants.find("GuestPlayer") != std::string::npos, true);
 	TESTEQUALS(guest.status().participants.find("HostPlayer") != std::string::npos, true);
 	// A guest cannot start the match by setting its own flag.
@@ -83,6 +93,10 @@ void lobby_relay_client() {
 	TESTEQUALS(wait_for(host, "assigned"), true);
 	TESTEQUALS(wait_for(guest, "assigned"), true);
 	TESTEQUALS(host.status().roles, guest.status().roles);
+	TESTEQUALS(host.status().rooms.empty(), true);
+	TESTEQUALS(host.status().suggested_room_id, uint64_t{0});
+	TESTEQUALS(guest.status().rooms.empty(), true);
+	TESTEQUALS(guest.status().suggested_room_id, uint64_t{0});
 	TESTEQUALS(host.status().roles.find("HostPlayer") != std::string::npos, true);
 	TESTEQUALS(host.status().roles.find("GuestPlayer") != std::string::npos, true);
 	TESTEQUALS(host.status().roles.find("HUNTER") != std::string::npos, true);

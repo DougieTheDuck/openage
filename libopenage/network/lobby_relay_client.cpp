@@ -121,9 +121,10 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->guest_replication.reset();
 		this->roles_assigned_at.reset();
 	}
-	this->publish({"connecting",
-	               settings.hosting ? "Creating relay room..." : "Joining relay room...",
-	               {}, false, false});
+	this->publish(RelayLobbyStatus{
+		.phase = "connecting",
+		.message = settings.hosting ? "Creating relay room..." : "Joining relay room...",
+	});
 	this->worker = std::thread{[this, settings = std::move(settings)]() {
 		this->run(settings);
 	}};
@@ -133,7 +134,10 @@ void RelayLobbyClient::refresh(RelayLobbyConfig settings) {
 	this->close();
 	validate_endpoint(settings);
 	this->stopping = false;
-	this->publish({"refreshing", "Refreshing available games...", {}, false, false});
+	this->publish(RelayLobbyStatus{
+		.phase = "refreshing",
+		.message = "Refreshing available games...",
+	});
 	this->worker = std::thread{[this, settings = std::move(settings)]() {
 		this->run_refresh(settings);
 	}};
@@ -218,10 +222,12 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 		if (settings.hosting) {
 			auto room_id = create_relay_room(
 				*socket, token, settings.room_name, settings.name);
-			this->publish({"waiting",
-			               "Room #" + std::to_string(room_id)
-			                   + " is advertised. Waiting for a guest...",
-			               settings.name + " (host)", false, true});
+			this->publish(RelayLobbyStatus{
+				.phase = "waiting",
+				.message = "Room #" + std::to_string(room_id) + " is advertised. Waiting for a guest...",
+				.participants = settings.name + " (host)",
+				.connected = true,
+			});
 			await_relay_room(*socket, room_id);
 		}
 		else {
@@ -242,8 +248,13 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			socket->send_frame(accepted->make_frame(
 				MessageType::PARTICIPANT_SNAPSHOT,
 				encode_participant_snapshot(roster)));
-			this->publish({"lobby", "Guest connected. Host may start the match.",
-				settings.name + " (host)\n" + guest_name + " (guest)", true, true});
+			this->publish(RelayLobbyStatus{
+				.phase = "lobby",
+				.message = "Guest connected. Host may start the match.",
+				.participants = settings.name + " (host)\n" + guest_name + " (guest)",
+				.can_start = true,
+				.connected = true,
+			});
 			while (not this->stopping and not this->start_requested) {
 				std::this_thread::sleep_for(std::chrono::milliseconds{20});
 			}
@@ -259,10 +270,16 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			const auto host_player = player_for_participant(assignment, 1);
 			const auto roles = describe_match_roles(roster, assignment);
 			const auto host_role = local_role_name(assignment, host_player);
-			this->publish({"assigned",
-				"Match start requested; synchronizing the initial world.",
-				roster.participants[0].name + " (host)\n" + guest_name + " (guest)",
-				false, true, host_player, guest_player, 0, roles, host_role});
+			this->publish(RelayLobbyStatus{
+				.phase = "assigned",
+				.message = "Match start requested; synchronizing the initial world.",
+				.participants = settings.name + " (host)\n" + guest_name + " (guest)",
+				.connected = true,
+				.local_player_id = host_player,
+				.remote_player_id = guest_player,
+				.roles = roles,
+				.local_role = host_role,
+			});
 			while (not this->stopping) {
 				std::optional<WorldState> snapshot;
 				{
@@ -288,11 +305,17 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 					    or ready.snapshot_revision != snapshot->world_revision) {
 						throw Error{MSG(err) << "Guest acknowledged the wrong player or world revision"};
 					}
-					this->publish({"bootstrap",
-						"Initial world acknowledged. Live gameplay networking is not connected yet.",
-						roster.participants[0].name + " (host)\n" + guest_name + " (guest)",
-						false, true, host_player, guest_player, snapshot->world_revision,
-						roles, host_role});
+					this->publish(RelayLobbyStatus{
+						.phase = "bootstrap",
+						.message = "Initial world acknowledged. Live gameplay networking is not connected yet.",
+						.participants = settings.name + " (host)\n" + guest_name + " (guest)",
+						.connected = true,
+						.local_player_id = host_player,
+						.remote_player_id = guest_player,
+						.snapshot_revision = snapshot->world_revision,
+						.roles = roles,
+						.local_role = host_role,
+					});
 					break;
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -319,7 +342,12 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				if (not people.empty()) people += "\n";
 				people += person.name + (person.is_host ? " (host)" : " (guest)");
 			}
-			this->publish({"lobby", "Connected. Waiting for host to start...", people, false, true});
+			this->publish(RelayLobbyStatus{
+				.phase = "lobby",
+				.message = "Connected. Waiting for host to start...",
+				.participants = people,
+				.connected = true,
+			});
 			frame = socket->receive_frame();
 			if (not frame) {
 				throw Error{MSG(err) << "Relay host closed before match start"};
@@ -335,9 +363,16 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			const auto host_player = player_for_participant(assigned, 1);
 			const auto roles = describe_match_roles(roster, assigned);
 			const auto guest_role = local_role_name(assigned, guest_player);
-			this->publish({"assigned",
-				"Match start requested; waiting for authoritative initial world.",
-				people, false, true, guest_player, host_player, 0, roles, guest_role});
+			this->publish(RelayLobbyStatus{
+				.phase = "assigned",
+				.message = "Match start requested; waiting for authoritative initial world.",
+				.participants = people,
+				.connected = true,
+				.local_player_id = guest_player,
+				.remote_player_id = host_player,
+				.roles = roles,
+				.local_role = guest_role,
+			});
 			frame = socket->receive_frame();
 			if (not frame) {
 				throw Error{MSG(err) << "Host disconnected before initial world"};
@@ -356,10 +391,17 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				std::lock_guard lock{this->mutex};
 				this->guest_replication = std::move(tracker);
 			}
-			this->publish({"bootstrap",
-				"Initial world received. Live gameplay networking is not connected yet.",
-				people, false, true, guest_player, host_player, revision,
-				roles, guest_role});
+			this->publish(RelayLobbyStatus{
+				.phase = "bootstrap",
+				.message = "Initial world received. Live gameplay networking is not connected yet.",
+				.participants = people,
+				.connected = true,
+				.local_player_id = guest_player,
+				.remote_player_id = host_player,
+				.snapshot_revision = revision,
+				.roles = roles,
+				.local_role = guest_role,
+			});
 			if (not this->stopping) {
 				monitor_bootstrapped_connection(*socket, session, this->stopping);
 			}
@@ -375,7 +417,10 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			socket->close();
 		}
 		if (not this->stopping) {
-			this->publish({"error", error.what(), {}, false, false});
+			this->publish(RelayLobbyStatus{
+				.phase = "error",
+				.message = error.what(),
+			});
 		}
 	}
 }
@@ -399,15 +444,21 @@ void RelayLobbyClient::run_refresh(RelayLobbyConfig settings) {
 			listing += "#" + std::to_string(room.room_id) + "  "
 			        + room.room_name + "  (" + room.host_name + ")";
 		}
-		this->publish({"menu",
-		               rooms.empty() ? "No games are waiting."
-		                             : "The first room is selected; choose Join Room or enter another ID.",
-		               {}, false, false, 0, 0, 0, std::move(listing),
-		               rooms.empty() ? 0 : rooms.front().room_id});
+		this->publish(RelayLobbyStatus{
+			.phase = "menu",
+			.message = rooms.empty()
+			           ? "No games are waiting."
+			           : "The first room is selected; choose Join Room or enter another ID.",
+			.rooms = std::move(listing),
+			.suggested_room_id = rooms.empty() ? 0 : rooms.front().room_id,
+		});
 	}
 	catch (const std::exception &error) {
 		if (not this->stopping) {
-			this->publish({"error", error.what(), {}, false, false});
+			this->publish(RelayLobbyStatus{
+				.phase = "error",
+				.message = error.what(),
+			});
 		}
 	}
 }

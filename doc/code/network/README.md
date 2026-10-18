@@ -68,8 +68,9 @@ Use address `127.0.0.1` and port `32456` in both lobby screens.
 Choose different player names.
 On the first client, enter a game name and select **Host Game**.
 On the second client, select **Refresh Games** and then **Join Room** to use the first result, or enter another displayed room ID before joining.
-The host can select **Draw Roles** after both clients appear.
-Both screens should show the same Hunter/Builder assignment and reach synchronized bootstrap at world revision 1.
+The host selects **Start Game** after both clients appear. The authoritative
+Hunter/Builder draw is revealed to both participants for five seconds; both
+screens then show synchronized bootstrap at world revision 1.
 The relay remains available for later rooms after either client disconnects.
 
 For a private alpha, start the relay with one repeatable `--player-token TOKEN_64_HEX` option per authorized player.
@@ -203,8 +204,9 @@ bin/run relay
 Launch two copies of `bin/run game` and use relay address `127.0.0.1` and port `32456`.
 On the first client choose **Host Game**.
 On the second choose **Refresh Games**, enter the listed room ID and choose **Join Room**.
-Click **Draw Roles** on the host.
-The clients should agree about the Hunter/Builder allocation and reach **bootstrap** after transferring and acknowledging the initial world.
+Click **Start Game** on the host. Both clients reveal the same Hunter/Builder
+allocation for five seconds, then reach **bootstrap** after transferring and
+acknowledging the initial world.
 
 Private-alpha mode uses repeatable authorized player tokens:
 

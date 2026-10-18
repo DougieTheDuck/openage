@@ -12,8 +12,10 @@ The prompts used for the initial set are recorded in [prompts.md](prompts.md).
 Start the engine with `run game` (or simply `run`) to open the relay lobby menu.
 Use `run game --solo` for the existing local no-network mode; `run test ...`
 continues to run headless and network regression tests.
-The relay menu requires pre-provisioned relay credentials; the current relay
-server cannot discover a room or mint credentials in the menu. See
+The public relay now hosts a room directory. Start a relay with
+`bin/run relay` and use **Host Game**, **Refresh Games**, and **Join Room** in
+two clients without pre-provisioning match IDs or tokens. Private-alpha relays
+may optionally require distinct authorized player tokens; see
 [pre-match networking](../../doc/code/network/README.md#startup-relay-lobby).
 
 The Host and Join buttons connect to the existing relay transport. Once both
