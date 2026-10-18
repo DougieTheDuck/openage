@@ -43,6 +43,8 @@ struct RelayLobbyStatus {
 	gamestate::player_id_t local_player_id{0};
 	gamestate::player_id_t remote_player_id{0};
 	uint64_t snapshot_revision{0};
+	/** Number of full recovery snapshots accepted after initial bootstrap. */
+	uint32_t snapshot_recoveries{0};
 	std::string rooms{};
 	uint64_t suggested_room_id{0};
 	/** The same name/role assignments on every peer, established by StartMatch. */
@@ -100,6 +102,9 @@ public:
 	/** Consume command decisions (or rejections) on the guest presenter. */
 	std::vector<CommandResult> take_command_results();
 
+	/** Request a recipient-specific authoritative snapshot on the active guest. */
+	bool request_recovery_snapshot();
+
 	/** Guest's validated authoritative bootstrap state (once received). */
 	std::shared_ptr<ReplicationTracker> get_replication() const;
 
@@ -123,6 +128,7 @@ private:
 	std::deque<CommandResult> pending_command_results{};
 	std::deque<CommandResult> guest_command_results{};
 	uint64_t next_guest_command_id{1};
+	bool guest_snapshot_requested{false};
 	/** Largest revision submitted, including an update in flight. */
 	uint64_t last_host_offered_revision{0};
 	std::shared_ptr<ReplicationTracker> guest_replication{};

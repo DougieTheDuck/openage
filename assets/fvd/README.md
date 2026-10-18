@@ -103,3 +103,8 @@ Right-clicking to move interrupts building, and invalid, unreachable, or abandon
 The bundled modpack lives outside `converted/`.
 Its relative graphic references are resolved from the renderer's converted asset directory back to this directory.
 For the engine and data format details, see [game simulation](../../doc/code/game_simulation/README.md) and [modpacks](../../doc/media/openage/modpacks.md).
+
+Online guest commands now include right-click Builder focus attacks for
+Horses, right-click prioritization of queued Foundations, and Shift+clicked
+construction queues. The host validates the target and owner. Guest replication
+recovers world-revision gaps with full authenticated snapshots.

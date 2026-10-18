@@ -32,6 +32,12 @@ gamestate::component::command::command_t simulation_command(CommandKind kind) {
 		return gamestate::component::command::command_t::ATTACK_MOVE;
 	case CommandKind::BUILD_TOWER:
 		return gamestate::component::command::command_t::BUILD_TOWER;
+	case CommandKind::FOCUS_ATTACK:
+		return gamestate::component::command::command_t::FOCUS_ATTACK;
+	case CommandKind::PRIORITIZE_FOUNDATION:
+		// Existing simulation handler prioritizes a foundation via MOVE
+		// with target_entity, preserving the same ownership checks.
+		return gamestate::component::command::command_t::MOVE;
 	default:
 		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
 		                     << static_cast<uint16_t>(kind)};
@@ -84,8 +90,12 @@ void submit_authenticated_command(
 		{"target", command.intent.target},
 		{"owner", command.identity.player_id},
 		{"entity_ids", command.intent.entity_ids},
+		{"queue", command.intent.queue},
 		{"result_cb", std::move(result_callback)},
 	};
+	if (command.intent.target_entity) {
+		params.emplace("target_entity", *command.intent.target_entity);
+	}
 	event_loop->submit_event(
 		"game.send_command",
 		commander,

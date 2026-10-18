@@ -51,6 +51,8 @@ enum class CommandKind : uint16_t {
 	MOVE = 1,
 	ATTACK_MOVE = 2,
 	BUILD_TOWER = 3,
+	FOCUS_ATTACK = 4,
+	PRIORITIZE_FOUNDATION = 5,
 };
 
 /** Host decision for one client command. */
@@ -98,6 +100,10 @@ struct CommandIntent {
 	CommandKind kind{CommandKind::MOVE};
 	std::vector<gamestate::entity_id_t> entity_ids{};
 	coord::phys3 target{0, 0, 0};
+	/** Optional target entity for focus attacks and foundation prioritization. */
+	std::optional<gamestate::entity_id_t> target_entity{};
+	/** Append a tower to an existing Builder construction queue. */
+	bool queue{false};
 };
 
 /** Authoritative result for one submitted command. */

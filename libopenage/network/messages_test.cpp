@@ -95,9 +95,40 @@ void messages() {
 	decoded_intent.entity_ids == intent.entity_ids or TESTFAIL;
 	TESTEQUALS(decoded_intent.target, intent.target);
 
+	for (const auto kind : {CommandKind::FOCUS_ATTACK,
+	                        CommandKind::PRIORITIZE_FOUNDATION}) {
+		auto targeted = intent;
+		targeted.kind = kind;
+		targeted.target_entity = uint64_t{501};
+		auto bytes = encode_command_intent(targeted);
+		auto roundtrip = decode_command_intent(bytes);
+		TESTEQUALS(roundtrip.target_entity.has_value(), true);
+		TESTEQUALS(*roundtrip.target_entity, uint64_t{501});
+		TESTEQUALS(roundtrip.kind == kind, true);
+		TESTEQUALS(roundtrip.queue, false);
+		auto missing = targeted;
+		missing.target_entity.reset();
+		TESTTHROWS(encode_command_intent(missing));
+		bytes.pop_back();
+		TESTTHROWS(decode_command_intent(bytes));
+	}
+
+	auto queued = intent;
+	queued.kind = CommandKind::BUILD_TOWER;
+	queued.queue = true;
+	auto queued_bytes = encode_command_intent(queued);
+	auto decoded_queue = decode_command_intent(queued_bytes);
+	TESTEQUALS(decoded_queue.queue, true);
+	TESTEQUALS(decoded_queue.target_entity.has_value(), false);
+	queued.kind = CommandKind::MOVE;
+	TESTTHROWS(encode_command_intent(queued));
+	auto invalid_target_flag = encoded_intent;
+	invalid_target_flag[11] = 1;
+	TESTTHROWS(decode_command_intent(invalid_target_flag));
+
 	auto invalid_kind = encoded_intent;
 	invalid_kind[8] = 0;
-	invalid_kind[9] = 4;
+	invalid_kind[9] = 6;
 	TESTTHROWS(decode_command_intent(invalid_kind));
 
 	auto invalid_flags = encoded_intent;

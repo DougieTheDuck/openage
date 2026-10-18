@@ -501,3 +501,7 @@ snapshots, deltas and recovery requests; restarting a match requires a new
 connection, fresh session and a new tracker. TCP EOF is not evidence of a
 successful host migration.
 Failure to enqueue a connection lifecycle event is fatal to the host session because continuing would conceal a disconnect from authoritative state.
+
+Guest commands now include target-specific focus attacks and queued
+construction; SnapshotRequest automatically recovers missing world revisions
+without disconnecting. Host still validates ownership and target IDs.
