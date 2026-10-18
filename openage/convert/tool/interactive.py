@@ -7,7 +7,6 @@ Interactive browser for game asset files.
 from __future__ import annotations
 
 import os
-import readline  # pylint: disable=unused-import
 import typing
 
 from openage.convert.processor.export.media_exporter import MediaExporter
@@ -105,12 +104,21 @@ def interactive_browser(cfg: Path, srcdir: Path | None = None) -> None:
             MediaExporter.save_png(tex, Directory(out_path).root, filename)
 
     import code
-    import rlcompleter
 
-    completer = rlcompleter.Completer(locals())
-    readline.parse_and_bind("tab: complete")
-    readline.parse_and_bind("set show-all-if-ambiguous on")
-    readline.set_completer(completer.complete)
+    # readline is optional, and is not part of the Windows standard library.
+    # pyreadline3 provides it on Windows when installed, but importing asset
+    # conversion modules should never require interactive shell completion.
+    try:
+        import readline  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        warn("readline unavailable; interactive-browser tab completion disabled")
+    else:
+        import rlcompleter  # pylint: disable=import-outside-toplevel
+
+        completer = rlcompleter.Completer(locals())
+        readline.parse_and_bind("tab: complete")
+        readline.parse_and_bind("set show-all-if-ambiguous on")
+        readline.set_completer(completer.complete)
 
     code.interact(
         banner=(

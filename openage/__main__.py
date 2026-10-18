@@ -131,21 +131,27 @@ def main(argv=None):
 
     init_subparser(subparsers.add_parser("relay", parents=[global_cli]))
 
-    from .convert.main import init_subparser
+    # A dedicated relay is a headless networking service; it must not import
+    # the asset converter or its interactive-browser dependencies just to
+    # register unrelated subcommands. Keep the full command list for normal
+    # invocations and top-level --help.
+    requested_args = sys.argv[1:] if argv is None else argv
+    if "relay" not in requested_args:
+        from .convert.main import init_subparser
 
-    init_subparser(subparsers.add_parser("convert", parents=[global_cli]))
+        init_subparser(subparsers.add_parser("convert", parents=[global_cli]))
 
-    from .convert.tool.singlefile import init_subparser
+        from .convert.tool.singlefile import init_subparser
 
-    init_subparser(subparsers.add_parser("convert-file", parents=[global_cli]))
+        init_subparser(subparsers.add_parser("convert-file", parents=[global_cli]))
 
-    from .convert.tool.api_export import init_subparser
+        from .convert.tool.api_export import init_subparser
 
-    init_subparser(subparsers.add_parser("convert-export-api", parents=[global_cli]))
+        init_subparser(subparsers.add_parser("convert-export-api", parents=[global_cli]))
 
-    from .codegen.main import init_subparser
+        from .codegen.main import init_subparser
 
-    init_subparser(subparsers.add_parser("codegen", parents=[global_cli]))
+        init_subparser(subparsers.add_parser("codegen", parents=[global_cli]))
 
     args, remaining_args = cli.parse_known_args(argv)
 
