@@ -628,7 +628,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 							});
 					}
 					else {
-						// Drag-select host-owned Horse groups using authoritative
+						// Drag-select locally owned Horses or a Builder from authoritative
 						// positions, without querying the paused guest simulation.
 						Eigen::Matrix4f matrix =
 							camera->get_projection_matrix() * camera->get_view_matrix();
@@ -636,7 +636,8 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 						std::vector<gamestate::entity_id_t> picked;
 						for (const auto &entity : replica->entities) {
 							if (entity.owner_id != replica->local_player_id
-							    or entity.definition != "fvd.data.entities.Horse") continue;
+							    or (entity.definition != "fvd.data.entities.Horse"
+							        and entity.definition != "fvd.data.entities.Builder")) continue;
 							auto scene = entity.position.to_scene3().to_world_space();
 							Eigen::Vector4f clip = matrix * Eigen::Vector4f{
 								scene.x(), scene.y(), scene.z(), 1.0f};
@@ -648,6 +649,8 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 							    and y >= std::min(drag_start.y, args.mouse.y)
 							    and y <= std::max(drag_start.y, args.mouse.y)) {
 								picked.push_back(entity.entity_id);
+								// Builder controls currently accept exactly one unit.
+								if (entity.definition == "fvd.data.entities.Builder") break;
 							}
 						}
 						apply_guest_selection(controller, *replica, selection_generation, picked);
