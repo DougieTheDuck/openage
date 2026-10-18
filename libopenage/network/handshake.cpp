@@ -37,8 +37,7 @@ void require_handshake_envelope(const Frame &frame) {
 
 std::string compatibility_rejection(const Frame &frame,
                                     const ClientHello &hello,
-                                    const AssetDigest &required_asset_digest,
-	std::string *accepted_participant_name) {
+                                    const AssetDigest &required_asset_digest) {
 	if (hello.minimum_protocol_minor > frame.protocol_minor) {
 		return "client protocol compatibility range is invalid";
 	}
@@ -101,7 +100,8 @@ uint64_t generate_session_id() {
 std::optional<ConnectionSession> host_handshake(
 	TcpConnection &connection,
 	gamestate::player_id_t assigned_player,
-	const AssetDigest &required_asset_digest) {
+	const AssetDigest &required_asset_digest,
+	std::string *accepted_participant_name) {
 	if (assigned_player == 0) {
 		throw Error{MSG(err) << "Lobby-assigned FVD player ID must be nonzero"};
 	}

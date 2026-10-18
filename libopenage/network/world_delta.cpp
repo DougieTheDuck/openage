@@ -285,7 +285,7 @@ std::vector<uint8_t> encode_world_delta(const WorldDelta &delta) {
 	}
 	for (auto id : delta.removed_constructions) append_u64(bytes, id);
 	for (auto id : delta.removed_attack_orders) append_u64(bytes, id);
- 	if (bytes.size() > MAX_PAYLOAD_SIZE) {
+	if (bytes.size() > MAX_PAYLOAD_SIZE) {
 		throw Error{MSG(err) << "FVD world delta exceeds frame payload"};
 	}
 	return bytes;

@@ -25,8 +25,9 @@ def init_subparser(cli: ArgumentParser):
     cli.add_argument("--headless", action="store_true", help="run without displaying graphics")
 
     cli.add_argument("--modpacks", nargs="+", type=str, default=["fvd"], help="list of modpacks to load")
-    cli.add_argument("--solo", "--single-player", action="store_true",
-                     help="skip the lobby and start local FVD gameplay")
+    cli.add_argument(
+        "--solo", "--single-player", action="store_true", help="skip the lobby and start local FVD gameplay"
+    )
 
     cli.add_argument(
         "--window-size",

@@ -2,8 +2,8 @@
 
 #include "main.h"
 
-#include <memory>
 #include <algorithm>
+#include <memory>
 
 #include "cvar/cvar.h"
 #include "engine/engine.h"

@@ -50,6 +50,28 @@ synchronized multiplayer.
 The provisional asset handshake digest must be replaced by a manifest digest
 before Internet deployment; the existing TCP relay has no encryption.
 
+### Manual two-player relay check
+
+Run the relay and the two game clients in three terminals.
+The example credentials are development values for a local test and must not be reused for an Internet service.
+
+```sh
+bin/run relay --listen 127.0.0.1 --port 32456 \
+  --pair 1 2 \
+  0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 \
+  65666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8081828384
+```
+
+Start `bin/run game` twice.
+In both lobby screens use address `127.0.0.1`, port `32456`, match ID `1`, and pair ID `2`.
+Choose different names, enter the first token in the Host client and the second token in the Join client, then select Host and Join respectively.
+The host can select Draw Roles after both clients appear.
+The expected endpoint is that both screens show the same Hunter/Builder assignment and reach the synchronized bootstrap state with world revision 1.
+Closing either lobby closes both sides of the relay pair and the one-match relay process exits.
+
+Add one `--pair MATCH_ID PLAYER_ID HOST_TOKEN GUEST_TOKEN` argument for every guest when exercising the multi-pair relay service directly.
+The current graphical lobby consumes one pair and therefore supports one host plus one guest.
+
 ## Pre-match lobby core
 
 `network::HostLobby` now owns the pre-start participant roster independently
@@ -73,13 +95,10 @@ name; `START_MATCH` includes the final participant-to-player mapping and
 Hunter/Builder role. The decoder rejects invalid sizes, reserved flags,
 duplicate identities and malformed role allocations.
 
-**Integration still required:** the direct-IP and relay lobby socket handlers
-must broadcast these payloads, present them in Qt, and start the simulation
-using **only the assigned participants**. Currently `host_handshake` still
-binds the game player slot at acceptance, so it must be adapted to distinguish
-pre-start participant identity from final player identity before this lobby
-can be used in real multiplayer. This new module does not claim that the
-graphical lobby is playable yet.
+The two-person relay lobby broadcasts these payloads and rebinds its provisional
+guest slot to the final assignment before exchanging the initial world.
+Direct-IP startup, more than one guest, initialization using only admitted
+participants, and the continuous gameplay handoff remain to be integrated.
 
 ## Transport
 

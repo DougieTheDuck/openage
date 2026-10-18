@@ -132,10 +132,11 @@ void lobby_relay_client() {
 	TESTEQUALS(host.status().snapshot_revision, uint64_t{1});
 	TESTEQUALS(guest.status().snapshot_revision, uint64_t{1});
 
-	host.close();
 	guest.close();
+	TESTEQUALS(wait_for(host, "error"), true);
 	relay.join();
 	if (relay_error) std::rethrow_exception(relay_error);
+	host.close();
 	TESTEQUALS(host.status().phase, std::string{"menu"});
 }
 

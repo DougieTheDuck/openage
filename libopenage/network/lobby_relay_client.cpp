@@ -4,9 +4,9 @@
 
 #include <chrono>
 #include <limits>
-#include <stdexcept>
 #include <utility>
 
+#include "error/error.h"
 #include "network/handshake.h"
 #include "network/lobby.h"
 #include "network/replication.h"
@@ -20,12 +20,12 @@ uint8_t hex_digit(char ch) {
 	if (ch >= '0' and ch <= '9') return static_cast<uint8_t>(ch - '0');
 	if (ch >= 'a' and ch <= 'f') return static_cast<uint8_t>(ch - 'a' + 10);
 	if (ch >= 'A' and ch <= 'F') return static_cast<uint8_t>(ch - 'A' + 10);
-	throw std::invalid_argument{"The relay token must contain hexadecimal characters"};
+	throw Error{MSG(err) << "The relay token must contain hexadecimal characters"};
 }
 
 RelayToken parse_token(const std::string &hex) {
 	if (hex.size() != RELAY_TOKEN_SIZE * 2) {
-		throw std::invalid_argument{"A relay token needs exactly 64 hexadecimal characters"};
+		throw Error{MSG(err) << "A relay token needs exactly 64 hexadecimal characters"};
 	}
 	RelayToken token{};
 	for (size_t i = 0; i < RELAY_TOKEN_SIZE; ++i) {
@@ -60,9 +60,25 @@ void validate_config(const RelayLobbyConfig &cfg) {
 	if (cfg.address.empty() or cfg.port == 0 or cfg.match_id == 0
 	    or cfg.pair_id == 0 or cfg.name.empty()
 	    or cfg.name.size() > MAX_PARTICIPANT_NAME_SIZE) {
-		throw std::invalid_argument{"Relay address, port, match ID, pair ID and player name are required"};
+		throw Error{MSG(err) << "Relay address, port, match ID, pair ID and player name are required"};
 	}
 	(void) parse_token(cfg.token_hex);
+}
+
+void monitor_bootstrapped_connection(TcpConnection &connection,
+                                     ConnectionSession &session,
+                                     const std::atomic<bool> &stopping) {
+	auto frame = connection.receive_frame();
+	if (not frame) {
+		if (not stopping) {
+			throw Error{MSG(err) << "Relay peer disconnected after match bootstrap"};
+		}
+		return;
+	}
+	session.validate_incoming(*frame);
+	throw Error{MSG(err) << "Unexpected FVD message "
+	                     << static_cast<uint16_t>(frame->message_type)
+	                     << " after match bootstrap"};
 }
 
 } // namespace
@@ -103,7 +119,7 @@ void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
 	    or snapshot.local_player_id != this->current.remote_player_id
 	    or snapshot.base_revision != 0 or snapshot.world_revision == 0
 	    or this->pending_host_snapshot) {
-		throw std::invalid_argument{"Invalid or duplicate FVD host bootstrap snapshot"};
+		throw Error{MSG(err) << "Invalid or duplicate FVD host bootstrap snapshot"};
 	}
 	this->pending_host_snapshot = std::move(snapshot);
 }
@@ -167,7 +183,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			auto accepted = host_handshake(
 				*socket, 2, provisional_gameplay_digest(), &guest_name);
 			if (not accepted) {
-				throw std::runtime_error{"Relay guest rejected by handshake"};
+				throw Error{MSG(err) << "Relay guest rejected by handshake"};
 			}
 			HostLobby lobby{1, settings.name};
 			lobby.join(2, guest_name);
@@ -175,7 +191,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			socket->send_frame(accepted->make_frame(
 				MessageType::PARTICIPANT_SNAPSHOT,
 				encode_participant_snapshot(roster)));
-			this->publish({"lobby", "Guest connected. Host may draw roles.", 
+			this->publish({"lobby", "Guest connected. Host may draw roles.",
 				settings.name + " (host)\n" + guest_name + " (guest)", true, true});
 			while (not this->stopping and not this->start_requested) {
 				std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -208,16 +224,16 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 						MessageType::WORLD_SNAPSHOT, encode_world_state(*snapshot)));
 					auto ready_frame = socket->receive_frame();
 					if (not ready_frame) {
-						throw std::runtime_error{"Guest disconnected before initial world acknowledgement"};
+						throw Error{MSG(err) << "Guest disconnected before initial world acknowledgement"};
 					}
 					accepted->validate_incoming(*ready_frame);
 					if (ready_frame->message_type != MessageType::MATCH_READY) {
-						throw std::runtime_error{"Expected initial world acknowledgement"};
+						throw Error{MSG(err) << "Expected initial world acknowledgement"};
 					}
 					const auto ready = decode_match_ready(ready_frame->payload);
 					if (ready.player_id != guest_player
 					    or ready.snapshot_revision != snapshot->world_revision) {
-						throw std::runtime_error{"Guest acknowledged the wrong player or world revision"};
+						throw Error{MSG(err) << "Guest acknowledged the wrong player or world revision"};
 					}
 					this->publish({"bootstrap",
 						"Initial world acknowledged. Gameplay renderer/commands are not connected yet.",
@@ -227,16 +243,21 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds{20});
 			}
+			if (not this->stopping) {
+				monitor_bootstrapped_connection(*socket, *accepted, this->stopping);
+			}
 		}
 		else {
 			auto session = client_handshake(*socket, {
 				PROTOCOL_MINIMUM_COMPATIBLE_MINOR, settings.name,
 				"fvd-lobby", provisional_gameplay_digest()});
 			auto frame = socket->receive_frame();
-			if (not frame) throw std::runtime_error{"Relay host closed before lobby snapshot"};
+			if (not frame) {
+				throw Error{MSG(err) << "Relay host closed before lobby snapshot"};
+			}
 			session.validate_incoming(*frame);
 			if (frame->message_type != MessageType::PARTICIPANT_SNAPSHOT) {
-				throw std::runtime_error{"Expected a relay lobby roster"};
+				throw Error{MSG(err) << "Expected a relay lobby roster"};
 			}
 			const auto roster = decode_participant_snapshot(frame->payload);
 			std::string people{};
@@ -246,10 +267,12 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			}
 			this->publish({"lobby", "Connected. Waiting for host to start...", people, false, true});
 			frame = socket->receive_frame();
-			if (not frame) throw std::runtime_error{"Relay host closed before match start"};
+			if (not frame) {
+				throw Error{MSG(err) << "Relay host closed before match start"};
+			}
 			session.validate_incoming(*frame);
 			if (frame->message_type != MessageType::START_MATCH) {
-				throw std::runtime_error{"Expected the match start assignment"};
+				throw Error{MSG(err) << "Expected the match start assignment"};
 			}
 			const auto assigned = decode_start_match(frame->payload);
 			validate_start_match_against_roster(roster, assigned);
@@ -261,10 +284,12 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				assignment_text(assigned), false, true,
 				guest_player, host_player, 0});
 			frame = socket->receive_frame();
-			if (not frame) throw std::runtime_error{"Host disconnected before initial world"};
+			if (not frame) {
+				throw Error{MSG(err) << "Host disconnected before initial world"};
+			}
 			session.validate_incoming(*frame);
 			if (frame->message_type != MessageType::WORLD_SNAPSHOT) {
-				throw std::runtime_error{"Expected an authoritative world snapshot"};
+				throw Error{MSG(err) << "Expected an authoritative world snapshot"};
 			}
 			auto tracker = std::make_shared<ReplicationTracker>(guest_player);
 			tracker->accept_snapshot(decode_world_state(frame->payload));
@@ -280,14 +305,20 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				"Initial world received. Gameplay renderer/commands are not connected yet.",
 				assignment_text(assigned), false, true,
 				guest_player, host_player, revision});
-		}
-		// Keep the relay pair open to allow both clients to inspect the
-		// assignment, until the menu is closed or the transport drops.
-		while (not this->stopping and socket->is_open()) {
-			std::this_thread::sleep_for(std::chrono::milliseconds{100});
+			if (not this->stopping) {
+				monitor_bootstrapped_connection(*socket, session, this->stopping);
+			}
 		}
 	}
 	catch (const std::exception &error) {
+		std::shared_ptr<TcpConnection> socket;
+		{
+			std::lock_guard lock{this->mutex};
+			socket = this->connection;
+		}
+		if (socket) {
+			socket->close();
+		}
 		if (not this->stopping) {
 			this->publish({"error", error.what(), {}, false, false});
 		}

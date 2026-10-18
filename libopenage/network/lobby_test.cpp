@@ -5,10 +5,10 @@
 #include <algorithm>
 #include <array>
 #include <limits>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "error/error.h"
 #include "network/protocol.h"
 #include "testing/testing.h"
 
@@ -169,7 +169,7 @@ void lobby() {
 	TESTTHROWS(failed.start({}));
 	TESTTHROWS(failed.start([](uint64_t n) { return n; }));
 	TESTTHROWS(failed.start([](uint64_t) -> uint64_t {
-		throw std::runtime_error("random source failure");
+		throw Error{MSG(err) << "random source failure"};
 	}));
 	TESTEQUALS(failed.started(), false);
 	TESTEQUALS(failed.snapshot().revision, uint64_t{2});

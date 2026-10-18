@@ -7,10 +7,10 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include "network/messages.h"
 #include <string>
 #include <thread>
 
+#include "network/messages.h"
 #include "network/transport.h"
 
 namespace openage::network {

@@ -751,7 +751,7 @@ void fvd_hunter_combat() {
 	TESTEQUALS(state->get_game_entities().contains(one->get_id()), false);
 	auto kills = fvd->get_kills(5);
 	TESTEQUALS(kills >= 1, true);
-	fvd->arrow_hit(state, one->get_id(), 5, 100, at(32));
+	fvd->arrow_hit(state, one->get_id(), 5, 0, 100, at(32));
 	TESTEQUALS(fvd->get_kills(5), kills);
 	TESTEQUALS(fvd->get_kills(4), uint64_t{0});
 
@@ -886,7 +886,7 @@ void fvd_hunter_attack_move_regressions() {
 		loop, state, 1, "fvd.data.entities.Horse", {95, 95, 0}, at(30));
 	auto survivor = entities->spawn_game_entity(
 		loop, state, 1, "fvd.data.entities.Horse", {96, 95, 0}, at(30));
-	fvd->arrow_hit(state, dead->get_id(), 5, 100, at(30));
+	fvd->arrow_hit(state, dead->get_id(), 5, 0, 100, at(30));
 	TESTEQUALS(state->get_game_entities().contains(dead->get_id()), false);
 	TESTEQUALS(fvd->can_command_units(
 		state, 1, {dead->get_id(), survivor->get_id()}, at(30)), true);
