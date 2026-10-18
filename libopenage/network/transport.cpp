@@ -391,6 +391,26 @@ bool TcpConnection::is_open() const {
 	return this->socket_handle.load() != INVALID_SOCKET_HANDLE;
 }
 
+bool TcpConnection::peer_connected() const {
+	std::shared_lock socket_lock{this->socket_lifetime_mutex};
+	auto handle = this->socket_handle.load();
+	if (handle == INVALID_SOCKET_HANDLE) {
+		return false;
+	}
+
+	// The FVD TCP sockets are nonblocking. MSG_PEEK lets the relay detect
+	// a waiting host's FIN without stealing any pending protocol data.
+	char byte{};
+	const auto received = ::recv(to_native(handle), &byte, 1, MSG_PEEK);
+	if (received > 0) {
+		return true;
+	}
+	if (received == 0) {
+		return false; // Peer completed an orderly shutdown.
+	}
+	return interrupted_socket_call() or would_block_socket_call();
+}
+
 TcpListener::TcpListener() :
 	socket_handle{INVALID_SOCKET_HANDLE},
 	port{0},

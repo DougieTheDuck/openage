@@ -42,6 +42,9 @@ Gameplay inputs are suppressed behind the overlay.
 **Current limitations:** The screen supports **one guest per host**.
 The relay address must still be known because there is no embedded relay server, global service directory or hardcoded public relay.
 The first guest consumes the advertised room, and multi-guest room forwarding remains pending.
+On a fresh room-list request, the relay drops advertised rooms whose host TCP
+connection has closed, and refuses a join if its host has already disconnected.
+The UI's room list is refreshed by **Refresh Games**, not pushed in real time.
 Session IDs now survive the final role rebinding, and the initial world
 snapshot/acknowledgement runs through that same relay connection. **Continuous
 deltas, command forwarding, authoritative disconnect handling and guest

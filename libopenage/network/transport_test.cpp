@@ -2,6 +2,7 @@
 
 #include "transport.h"
 
+#include <chrono>
 #include <exception>
 #include <thread>
 
@@ -44,6 +45,7 @@ void transport() {
 
 	auto client = TcpConnection::connect("127.0.0.1", listener.get_port());
 	TESTEQUALS(client.is_open(), true);
+	TESTEQUALS(client.peer_connected(), true);
 
 	Frame command{};
 	command.message_type = MessageType::COMMAND_INTENT;
@@ -58,6 +60,8 @@ void transport() {
 	ping.sequence = 2;
 	client.send_frame(ping);
 
+	// Checking liveness must not eat incoming gameplay frames.
+	TESTEQUALS(client.peer_connected(), true);
 	auto response = client.receive_frame();
 	response.has_value() or TESTFAIL;
 	response->message_type == MessageType::WORLD_DELTA or TESTFAIL;
@@ -65,11 +69,29 @@ void transport() {
 	TESTEQUALS(response->sequence, uint64_t{1});
 	response->payload == std::vector<uint8_t>({0x10, 0x20, 0x30}) or TESTFAIL;
 	TESTEQUALS(client.receive_frame().has_value(), false);
+	TESTEQUALS(client.peer_connected(), false);
 
 	server.join();
 	if (server_error) {
 		std::rethrow_exception(server_error);
 	}
+
+	// Test the open-socket / disconnected-peer distinction independently:
+	// the relay holds open sockets after an abandoned room's host leaves.
+	auto abandoned_host = TcpConnection::connect("127.0.0.1", listener.get_port());
+	auto relay_socket = listener.accept();
+	TESTEQUALS(relay_socket.peer_connected(), true);
+	abandoned_host.close();
+	bool detected = false;
+	for (size_t attempt = 0; attempt < 50; ++attempt) {
+		if (not relay_socket.peer_connected()) {
+			detected = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(detected, true);
+	TESTEQUALS(relay_socket.is_open(), true);
 }
 
 } // namespace openage::network::tests

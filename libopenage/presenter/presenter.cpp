@@ -421,20 +421,17 @@ void Presenter::init_input() {
 
 	this->window->add_key_callback([&](const QKeyEvent &ev) {
 		if (this->fvd_lobby_enabled) {
-			if (this->gui) {
-				this->gui->get_input_handler()->process(
-					std::shared_ptr<QEvent>{ev.clone()});
-			}
+			// GuiRendererImpl already forwards every key to its QQuickWindow.
+			// Forwarding here too makes each character appear twice in TextInput.
+			// Do not dispatch lobby keystrokes to gameplay bindings either.
 			return;
 		}
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_button_callback([&](const QMouseEvent &ev) {
 		if (this->fvd_lobby_enabled) {
-			if (this->gui) {
-				this->gui->get_input_handler()->process(
-					std::shared_ptr<QEvent>{ev.clone()});
-			}
+			// GuiRendererImpl forwards mouse buttons to QQuickWindow already.
+			// Only perform presenter-owned button hit testing once here.
 			if (ev.button() == Qt::LeftButton) {
 				const auto action = this->fvd_lobby_action_at(ev.position());
 				if (ev.type() == QEvent::MouseButtonPress) {
@@ -507,10 +504,7 @@ void Presenter::init_input() {
 	});
 	this->window->add_mouse_wheel_callback([&](const QWheelEvent &ev) {
 		if (this->fvd_lobby_enabled) {
-			if (this->gui) {
-				this->gui->get_input_handler()->process(
-					std::shared_ptr<QEvent>{ev.clone()});
-			}
+			// Scroll forwarding is also owned by GuiRendererImpl.
 			return;
 		}
 		if (this->gui) {

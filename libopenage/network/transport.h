@@ -58,6 +58,13 @@ public:
 	/** Whether this object currently owns an open socket. */
 	bool is_open() const;
 
+	/**
+	 * Non-consuming, nonblocking probe for an already disconnected peer.
+	 * False on EOF or socket errors; true when open or no data is pending.
+	 * A disconnect not yet observed by TCP cannot be detected here.
+	 */
+	bool peer_connected() const;
+
 private:
 	explicit TcpConnection(uintptr_t socket_handle);
 

@@ -700,6 +700,12 @@ std::optional<RelayPair> RelayRoomDirectory::admit(TcpConnection &connection) {
 			if (found == this->rooms.end()) {
 				rejection = "relay room is no longer available";
 			}
+			else if (not found->second.host.peer_connected()) {
+				// A disconnected host may remain in the directory until the
+				// next query. Never allow a guest to join its orphaned room.
+				this->rooms.erase(found);
+				rejection = "relay room host has disconnected";
+			}
 			else if (this->requires_token()
 			         and tokens_equal(found->second.host_token, join.token)) {
 				rejection = "host and guest must use different player tokens";
@@ -755,6 +761,12 @@ std::vector<RelayRoomSummary> RelayRoomDirectory::list() {
 	result.reserve(this->rooms.size());
 	auto heartbeat = relay_frame(MessageType::PING, {});
 	for (auto room = this->rooms.begin(); room != this->rooms.end();) {
+		// A successful send does not guarantee the peer is still present:
+		// TCP can buffer a heartbeat after the host closed its socket.
+		if (not room->second.host.peer_connected()) {
+			room = this->rooms.erase(room);
+			continue;
+		}
 		try {
 			room->second.host.send_frame(heartbeat);
 			result.push_back(room->second.summary);

@@ -2,6 +2,7 @@
 
 #include "relay_service.h"
 
+#include <chrono>
 #include <exception>
 #include <thread>
 
@@ -75,6 +76,24 @@ void relay_service() {
 	forwarded.has_value() or TESTFAIL;
 	TESTEQUALS(forwarded->session_id, frame.session_id);
 	TESTEQUALS(forwarded->payload == frame.payload, true);
+
+	// A closed host must not leave an advertised, joinable phantom room.
+	// The relay's old send-only heartbeat could succeed after peer close.
+	auto abandoned = create_relay_room(
+		"127.0.0.1", port, host_token, "Abandoned Room", "Former Host");
+	TESTEQUALS(directory.room_count(), size_t{1});
+	abandoned.connection.close();
+	bool expired = false;
+	for (size_t attempt = 0; attempt < 50; ++attempt) {
+		if (list_relay_rooms("127.0.0.1", port, guest_token).empty()) {
+			expired = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(expired, true);
+	TESTEQUALS(directory.room_count(), size_t{0});
+	TESTTHROWS(join_relay_room("127.0.0.1", port, guest_token, abandoned.room_id));
 
 	listener.close();
 	service.join();
