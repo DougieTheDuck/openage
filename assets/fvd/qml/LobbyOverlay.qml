@@ -60,7 +60,7 @@ Item {
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "Connect through a provisioned relay pair. The relay administrator must first create the match ID, pair ID and separate host/guest tokens."
+                    text: "Host a public game or refresh the relay room list and join by room ID. Enter an access token only when the relay runs in private-alpha mode."
                     color: "#bdd0c5"
                     font.pixelSize: 12
                 }
@@ -103,31 +103,31 @@ Item {
                     }
                 }
 
-                Text { text: "Match ID and relay pair ID"; color: "#dfe9e3"; font.pixelSize: 12 }
-                Row {
-                    width: parent.width; spacing: 8
-                    Repeater {
-                        model: 2
-                        delegate: Rectangle {
-                            width: (settings.width - 8) / 2; height: 36
-                            color: "#17221e"; radius: 4; border.color: "#688478"; border.width: 1
-                            TextInput {
-                                anchors.fill: parent; anchors.margins: 9
-                                text: ""
-                                color: "white"; font.pixelSize: 14
-                                inputMethodHints: Qt.ImhDigitsOnly
-                                onTextEdited: {
-                                    if (menu.lobby) {
-                                        if (index === 0) menu.lobby.matchId = text
-                                        else menu.lobby.pairId = text
-                                    }
-                                }
-                            }
-                        }
+                Text { text: "Game name"; color: "#dfe9e3"; font.pixelSize: 12 }
+                Rectangle {
+                    width: parent.width; height: 36
+                    color: "#17221e"; radius: 4; border.color: "#688478"; border.width: 1
+                    TextInput {
+                        anchors.fill: parent; anchors.margins: 9
+                        text: "FVD Game"; color: "white"; font.pixelSize: 14
+                        onTextEdited: if (menu.lobby) menu.lobby.roomName = text
                     }
                 }
 
-                Text { text: "Your role-specific 64-character relay token"; color: "#dfe9e3"; font.pixelSize: 12 }
+                Text { text: "Room ID to join"; color: "#dfe9e3"; font.pixelSize: 12 }
+                Rectangle {
+                    width: parent.width; height: 36
+                    color: "#17221e"; radius: 4; border.color: "#688478"; border.width: 1
+                    TextInput {
+                        anchors.fill: parent; anchors.margins: 9
+                        text: menu.lobby ? menu.lobby.roomId : ""
+                        color: "white"; font.pixelSize: 14
+                        inputMethodHints: Qt.ImhDigitsOnly
+                        onTextEdited: if (menu.lobby) menu.lobby.roomId = text
+                    }
+                }
+
+                Text { text: "Private-alpha player token (optional)"; color: "#dfe9e3"; font.pixelSize: 12 }
                 Rectangle {
                     width: parent.width; height: 36
                     color: "#17221e"; radius: 4; border.color: "#688478"; border.width: 1
@@ -140,10 +140,10 @@ Item {
                 }
 
                 Row {
-                    width: parent.width; spacing: 10
+                    width: parent.width; spacing: 8
                     Rectangle {
                         objectName: "fvdLobbyHostButton"
-                        width: (settings.width - 10) / 2; height: 41; radius: 5
+                        width: (settings.width - 8) / 2; height: 41; radius: 5
                         color: "#426c5a"; border.color: "#9bcdb8"
                         Text {
                             anchors.centerIn: parent
@@ -152,18 +152,55 @@ Item {
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor }
                     }
                     Rectangle {
-                        objectName: "fvdLobbyJoinButton"
-                        width: (settings.width - 10) / 2; height: 41; radius: 5
-                        color: "#365168"; border.color: "#9bbdd1"
+                        objectName: "fvdLobbyRefreshButton"
+                        width: (settings.width - 8) / 2; height: 41; radius: 5
+                        color: "#4b5f69"; border.color: "#9bbdd1"
                         Text {
                             anchors.centerIn: parent
-                            text: "JOIN GAME"; color: "white"; font.bold: true
+                            text: "REFRESH GAMES"; color: "white"; font.bold: true
                         }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor }
                     }
                 }
 
-                Item { width: 1; height: 6 }
+                Rectangle {
+                    objectName: "fvdLobbyJoinButton"
+                    width: parent.width; height: 41; radius: 5
+                    color: "#365168"; border.color: "#9bbdd1"
+                    Text {
+                        anchors.centerIn: parent
+                        text: "JOIN ROOM"; color: "white"; font.bold: true
+                    }
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 96
+                    radius: 5
+                    color: "#17221e"
+                    border.color: "#546d60"
+                    clip: true
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 5
+                        Text {
+                            color: "#bbd8c8"
+                            text: "AVAILABLE GAMES"
+                            font.bold: true
+                            font.pixelSize: 11
+                        }
+                        Text {
+                            width: parent.width
+                            color: "#f4deb3"
+                            font.pixelSize: 12
+                            textFormat: Text.PlainText
+                            text: menu.lobby && menu.lobby.rooms.length > 0
+                                  ? menu.lobby.rooms : "Refresh to look for waiting games."
+                        }
+                    }
+                }
 
                 Rectangle {
                     width: parent.width
@@ -178,7 +215,7 @@ Item {
                         Text {
                             width: parent.width
                             color: "#bbd8c8"
-                            text: "STATUS · " + (menu.lobby ? menu.lobby.phase.toUpperCase() : "MENU")
+                            text: "STATUS - " + (menu.lobby ? menu.lobby.phase.toUpperCase() : "MENU")
                             font.bold: true
                             font.pixelSize: 11
                         }
@@ -193,6 +230,7 @@ Item {
                             width: parent.width
                             color: "#f4deb3"
                             font.pixelSize: 12
+                            textFormat: Text.PlainText
                             text: menu.lobby ? menu.lobby.participants : ""
                         }
                     }
@@ -229,7 +267,7 @@ Item {
                     color: "#b7b7ae"; font.pixelSize: 11
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
-                    text: "Local developer play: run game --solo\nThe relay lobby is testable; synchronized gameplay handoff is still in development."
+                    text: "Local developer play: run game --solo\nRun relay with no token options for public games, or add one --player-token per alpha player."
                 }
             }
         }

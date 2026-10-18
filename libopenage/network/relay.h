@@ -19,11 +19,17 @@ namespace openage::network {
 /** Protocol minor version that introduced relay admission messages. */
 constexpr uint16_t RELAY_PROTOCOL_MINOR = 1;
 
+/** Protocol minor version that introduced public relay rooms. */
+constexpr uint16_t RELAY_DIRECTORY_PROTOCOL_MINOR = 2;
+
 /** Size of a lobby-issued relay admission token. */
 constexpr size_t RELAY_TOKEN_SIZE = 32;
 
-/** A single-use 256-bit bearer credential issued by the lobby. */
+/** A 256-bit relay bearer credential. */
 using RelayToken = std::array<uint8_t, RELAY_TOKEN_SIZE>;
+
+/** Largest room name advertised by the relay directory. */
+constexpr size_t MAX_RELAY_ROOM_NAME_SIZE = 64;
 
 /** Side of one relayed host-to-guest connection. */
 enum class RelayRole : uint16_t {
@@ -53,6 +59,72 @@ struct RelayPair {
 	gamestate::player_id_t player_id{};
 	TcpConnection host{};
 	TcpConnection guest{};
+};
+
+/** A room visible to clients browsing the relay directory. */
+struct RelayRoomSummary {
+	uint64_t room_id{};
+	std::string room_name{};
+	std::string host_name{};
+};
+
+/** A newly advertised room and its still-connected host socket. */
+struct HostedRelayRoom {
+	uint64_t room_id{};
+	TcpConnection connection{};
+};
+
+/**
+ * Thread-safe directory of rooms created by connected hosts.
+ *
+ * An empty authorized-token list makes the directory public. Otherwise each
+ * request must provide a token from the list, and a host token cannot join its
+ * own room.
+ */
+class RelayRoomDirectory {
+public:
+	/** Create a bounded public or token-restricted room directory. */
+	RelayRoomDirectory(size_t max_rooms,
+	                   std::vector<RelayToken> authorized_tokens = {});
+
+	/**
+	 * Handle one room creation, listing or join request.
+	 *
+	 * @return A completed host/guest pair after a successful join, or nullopt
+	 * after a listing, room creation or rejected request.
+	 */
+	std::optional<RelayPair> admit(TcpConnection &connection);
+
+	/** Admit a temporary connection. */
+	std::optional<RelayPair> admit(TcpConnection &&connection);
+
+	/** Close and remove every waiting room. */
+	size_t cancel_all();
+
+	/** Live room summaries, ordered by room ID. */
+	std::vector<RelayRoomSummary> list();
+
+	/** Number of hosts currently waiting for a guest. */
+	size_t room_count() const;
+
+	/** Whether clients must present an authorized token. */
+	bool requires_token() const;
+
+private:
+	struct PendingRoom {
+		RelayRoomSummary summary;
+		RelayToken host_token;
+		TcpConnection host;
+	};
+
+	bool authorized(const RelayToken &token) const;
+	uint64_t allocate_room_id();
+
+	const size_t max_rooms;
+	const std::vector<RelayToken> authorized_tokens;
+	mutable std::mutex mutex;
+	std::map<uint64_t, PendingRoom> rooms;
+	uint64_t next_room_id{1};
 };
 
 /**
@@ -121,6 +193,9 @@ std::vector<uint8_t> encode_relay_connect(const RelayConnect &connect);
 /** Decode and validate a relay admission payload. */
 RelayConnect decode_relay_connect(const std::vector<uint8_t> &payload);
 
+/** Send a bounded rejection reason and close a pre-session connection. */
+void reject_relay(TcpConnection &connection, const std::string &reason);
+
 /**
  * Open an outbound relay connection and authenticate one side of a pair.
  *
@@ -133,6 +208,42 @@ void authenticate_relay(TcpConnection &connection, const RelayConnect &connect);
 TcpConnection connect_relay(const std::string &address,
                             uint16_t port,
                             const RelayConnect &connect);
+
+/** Create and advertise a room without waiting for a guest. */
+uint64_t create_relay_room(TcpConnection &connection,
+                           const RelayToken &token,
+                           const std::string &room_name,
+                           const std::string &host_name);
+
+/** Connect, create and advertise a room without waiting for a guest. */
+HostedRelayRoom create_relay_room(const std::string &address,
+                                  uint16_t port,
+                                  const RelayToken &token,
+                                  const std::string &room_name,
+                                  const std::string &host_name);
+
+/** Wait until a guest joins a room created by create_relay_room(). */
+void await_relay_room(TcpConnection &connection, uint64_t room_id);
+
+/** Fetch the current public room list, authenticating when required. */
+std::vector<RelayRoomSummary> list_relay_rooms(TcpConnection &connection,
+                                               const RelayToken &token);
+
+/** Connect and fetch the current public room list. */
+std::vector<RelayRoomSummary> list_relay_rooms(const std::string &address,
+                                               uint16_t port,
+                                               const RelayToken &token);
+
+/** Join a listed room and wait until the relay connects it to the host. */
+void join_relay_room(TcpConnection &connection,
+                     const RelayToken &token,
+                     uint64_t room_id);
+
+/** Connect, join a listed room and wait for its host. */
+TcpConnection join_relay_room(const std::string &address,
+                              uint16_t port,
+                              const RelayToken &token,
+                              uint64_t room_id);
 
 /**
  * Accept both sides of one provisioned pair in either arrival order.
@@ -147,6 +258,9 @@ RelayPair accept_relay_pair(TcpListener &listener,
  * Forward complete protocol frames in both directions until either peer
  * disconnects.
  */
+void forward_relay_pair(TcpConnection &host, TcpConnection &guest);
+
+/** Forward an owned pair until either peer disconnects. */
 void forward_relay_pair(RelayPair pair);
 
 } // namespace openage::network

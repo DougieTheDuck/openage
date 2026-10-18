@@ -3,9 +3,7 @@
 #include "relay_service.h"
 
 #include <exception>
-#include <optional>
 #include <thread>
-#include <utility>
 
 #include "network/relay.h"
 #include "testing/testing.h"
@@ -22,133 +20,72 @@ RelayToken service_test_token(uint8_t seed) {
 	return token;
 }
 
-RelayPairCredentials service_test_credentials(gamestate::player_id_t player_id,
-                                              uint8_t seed) {
-	return {
-		91,
-		player_id,
-		service_test_token(seed),
-		service_test_token(static_cast<uint8_t>(seed + 40)),
-	};
-}
-
-RelayConnect service_test_connect(const RelayPairCredentials &credentials,
-                                  RelayRole role) {
-	return {
-		credentials.match_id,
-		credentials.player_id,
-		role,
-		role == RelayRole::HOST ? credentials.host_token : credentials.guest_token,
-	};
-}
-
 } // namespace
 
 void relay_service() {
-	auto first_credentials = service_test_credentials(2, 1);
-	auto second_credentials = service_test_credentials(3, 101);
-	RelayPairRegistry registry{2};
-	registry.provision(first_credentials);
-	registry.provision(second_credentials);
+	auto host_token = service_test_token(1);
+	auto guest_token = service_test_token(101);
+	RelayRoomDirectory directory{1, {host_token, guest_token}};
+	TESTEQUALS(directory.requires_token(), true);
+	TESTEQUALS(directory.room_count(), size_t{0});
+
 	auto listener = TcpListener::listen("127.0.0.1", 0);
 	auto port = listener.get_port();
-
 	std::exception_ptr service_error{};
 	std::jthread service{[&]() {
 		try {
-			serve_relay_pairs(listener, registry, 2);
+			serve_relay_directory(listener, directory, 8);
 		}
 		catch (...) {
 			service_error = std::current_exception();
 		}
 	}};
-	auto stalled_admission = TcpConnection::connect("127.0.0.1", port);
 
-	std::optional<TcpConnection> first_host{};
-	std::optional<TcpConnection> first_guest{};
-	std::optional<TcpConnection> second_host{};
-	std::optional<TcpConnection> second_guest{};
-	std::exception_ptr connection_errors[4]{};
-	std::jthread connections[4]{
-		std::jthread{[&]() {
-			try {
-				first_host = connect_relay(
-					"127.0.0.1", port, service_test_connect(first_credentials, RelayRole::HOST));
-			}
-			catch (...) {
-				connection_errors[0] = std::current_exception();
-			}
-		}},
-		std::jthread{[&]() {
-			try {
-				second_guest = connect_relay(
-					"127.0.0.1", port, service_test_connect(second_credentials, RelayRole::GUEST));
-			}
-			catch (...) {
-				connection_errors[1] = std::current_exception();
-			}
-		}},
-		std::jthread{[&]() {
-			try {
-				first_guest = connect_relay(
-					"127.0.0.1", port, service_test_connect(first_credentials, RelayRole::GUEST));
-			}
-			catch (...) {
-				connection_errors[2] = std::current_exception();
-			}
-		}},
-		std::jthread{[&]() {
-			try {
-				second_host = connect_relay(
-					"127.0.0.1", port, service_test_connect(second_credentials, RelayRole::HOST));
-			}
-			catch (...) {
-				connection_errors[3] = std::current_exception();
-			}
-		}},
-	};
-	for (auto &connection : connections) {
-		connection.join();
-	}
-	for (const auto &error : connection_errors) {
-		if (error) {
-			std::rethrow_exception(error);
-		}
-	}
-	first_host.has_value() or TESTFAIL;
-	first_guest.has_value() or TESTFAIL;
-	second_host.has_value() or TESTFAIL;
-	second_guest.has_value() or TESTFAIL;
-	TESTEQUALS(stalled_admission.receive_frame().has_value(), false);
+	RelayToken unauthorized{};
+	TESTTHROWS(list_relay_rooms("127.0.0.1", port, unauthorized));
+	auto hosted = create_relay_room(
+		"127.0.0.1", port, host_token, "Test Room", "Host Player");
+	TESTEQUALS(hosted.room_id != 0, true);
+	TESTEQUALS(directory.room_count(), size_t{1});
+	TESTTHROWS(create_relay_room(
+		"127.0.0.1", port, guest_token, "Overflow Room", "Other Host"));
+	TESTEQUALS(directory.room_count(), size_t{1});
 
-	Frame first_frame{};
-	first_frame.message_type = MessageType::PING;
-	first_frame.session_id = 201;
-	first_frame.sequence = 1;
-	first_frame.payload = {1};
-	first_host->send_frame(first_frame);
-	auto first_forwarded = first_guest->receive_frame();
-	first_forwarded.has_value() or TESTFAIL;
-	TESTEQUALS(first_forwarded->session_id, first_frame.session_id);
+	auto rooms = list_relay_rooms("127.0.0.1", port, guest_token);
+	TESTEQUALS(rooms.size(), size_t{1});
+	TESTEQUALS(rooms[0].room_id, hosted.room_id);
+	TESTEQUALS(rooms[0].room_name, std::string{"Test Room"});
+	TESTEQUALS(rooms[0].host_name, std::string{"Host Player"});
+	TESTTHROWS(join_relay_room("127.0.0.1", port, host_token, hosted.room_id));
+	TESTEQUALS(directory.room_count(), size_t{1});
 
-	Frame second_frame{};
-	second_frame.message_type = MessageType::PING;
-	second_frame.session_id = 202;
-	second_frame.sequence = 1;
-	second_frame.payload = {2};
-	second_guest->send_frame(second_frame);
-	auto second_forwarded = second_host->receive_frame();
-	second_forwarded.has_value() or TESTFAIL;
-	TESTEQUALS(second_forwarded->session_id, second_frame.session_id);
+	auto guest = join_relay_room(
+		"127.0.0.1", port, guest_token, hosted.room_id);
+	await_relay_room(hosted.connection, hosted.room_id);
+	TESTEQUALS(directory.room_count(), size_t{0});
+	TESTEQUALS(list_relay_rooms("127.0.0.1", port, guest_token).empty(), true);
 
-	first_host->close();
-	first_guest->close();
-	second_host->close();
-	second_guest->close();
+	Frame frame{};
+	frame.message_type = MessageType::PING;
+	frame.session_id = 201;
+	frame.sequence = 1;
+	frame.payload = {1, 2, 3};
+	hosted.connection.send_frame(frame);
+	auto forwarded = guest.receive_frame();
+	forwarded.has_value() or TESTFAIL;
+	TESTEQUALS(forwarded->session_id, frame.session_id);
+	TESTEQUALS(forwarded->payload == frame.payload, true);
+
+	listener.close();
 	service.join();
 	if (service_error) {
 		std::rethrow_exception(service_error);
 	}
+	hosted.connection.close();
+	guest.close();
+
+	RelayRoomDirectory public_directory{1};
+	TESTEQUALS(public_directory.requires_token(), false);
 }
 
 } // namespace openage::network::tests

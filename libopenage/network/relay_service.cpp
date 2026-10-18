@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <exception>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -19,6 +18,34 @@ namespace openage::network {
 
 namespace {
 
+std::mutex running_listener_mutex{};
+TcpListener *running_listener{};
+
+class RunningRelayListener {
+public:
+	explicit RunningRelayListener(TcpListener &listener) :
+		listener{&listener} {
+		std::scoped_lock lock{running_listener_mutex};
+		if (running_listener != nullptr) {
+			throw Error{MSG(err) << "Only one command-line relay can run in a process"};
+		}
+		running_listener = this->listener;
+	}
+
+	~RunningRelayListener() {
+		std::scoped_lock lock{running_listener_mutex};
+		if (running_listener == this->listener) {
+			running_listener = nullptr;
+		}
+	}
+
+	RunningRelayListener(const RunningRelayListener &) = delete;
+	RunningRelayListener &operator=(const RunningRelayListener &) = delete;
+
+private:
+	TcpListener *listener;
+};
+
 RelayToken service_token(const std::string &token) {
 	if (token.size() != RELAY_TOKEN_SIZE) {
 		throw Error{MSG(err) << "FVD relay service tokens must contain exactly "
@@ -32,136 +59,167 @@ RelayToken service_token(const std::string &token) {
 	return result;
 }
 
-RelayPairCredentials service_credentials(const RelayServiceCredentials &credentials) {
-	return {
-		credentials.match_id,
-		credentials.player_id,
-		service_token(credentials.host_token),
-		service_token(credentials.guest_token),
-	};
-}
+struct RelayWorker {
+	std::shared_ptr<std::atomic_bool> finished;
+	std::jthread thread;
+};
 
 } // namespace
 
-void serve_relay_pairs(TcpListener &listener,
-                       RelayPairRegistry &registry,
-                       size_t pair_count) {
-	if (pair_count == 0 or registry.pair_count() != pair_count) {
-		throw Error{MSG(err) << "FVD relay service requires every expected pair "
-		                     << "to be provisioned before admission"};
+void serve_relay_directory(TcpListener &listener,
+                           RelayRoomDirectory &directory,
+                           size_t max_connections) {
+	if (max_connections == 0) {
+		throw Error{MSG(err) << "FVD relay service connection capacity must be nonzero"};
 	}
 
-	std::atomic_size_t completed_pairs{};
+	std::mutex connections_mutex{};
+	std::vector<std::shared_ptr<TcpConnection>> active_connections{};
 	std::atomic_bool stopping{};
-	std::mutex admissions_mutex{};
-	std::vector<std::shared_ptr<TcpConnection>> active_admissions{};
-	std::mutex error_mutex{};
-	std::exception_ptr service_error{};
-	std::vector<std::jthread> workers{};
+	std::mutex pairs_mutex{};
+	std::vector<TcpConnection *> active_pair_connections{};
+	std::vector<RelayWorker> workers{};
 
-	auto close_admissions = [&]() {
-		std::scoped_lock lock{admissions_mutex};
-		for (const auto &connection : active_admissions) {
-			connection->close();
-		}
-	};
-	auto fail_admission = [&](std::exception_ptr error) {
-		{
-			std::scoped_lock lock{error_mutex};
-			if (not service_error) {
-				service_error = error;
-			}
-		}
-		stopping.store(true);
-		listener.close();
-		registry.cancel_all();
-		close_admissions();
+	auto remove_finished = [&]() {
+		workers.erase(
+			std::remove_if(
+				workers.begin(),
+				workers.end(),
+				[](RelayWorker &worker) {
+					if (not worker.finished->load()) {
+						return false;
+					}
+					worker.thread.join();
+					return true;
+				}),
+			workers.end());
 	};
 
-	while (not stopping.load()) {
+	while (listener.is_open()) {
+		remove_finished();
 		std::shared_ptr<TcpConnection> connection{};
 		try {
 			connection = std::make_shared<TcpConnection>(listener.accept());
 		}
 		catch (...) {
-			if (stopping.load()) {
+			if (not listener.is_open()) {
 				break;
 			}
 			throw;
 		}
+
 		{
-			std::scoped_lock lock{admissions_mutex};
-			if (stopping.load()) {
-				connection->close();
-				break;
+			std::scoped_lock lock{connections_mutex};
+			if (active_connections.size() >= max_connections) {
+				reject_relay(*connection, "relay connection capacity is full");
+				continue;
 			}
-			active_admissions.push_back(connection);
+			active_connections.push_back(connection);
 		}
 
-		workers.emplace_back([&, connection]() {
-			std::optional<RelayPair> pair{};
-			try {
-				pair = registry.admit(*connection);
-			}
-			catch (...) {
-				fail_admission(std::current_exception());
-			}
-
-			if (pair.has_value()) {
-				auto completed = completed_pairs.fetch_add(1) + 1;
-				if (completed == pair_count) {
-					stopping.store(true);
-					listener.close();
-					close_admissions();
-				}
+		auto finished = std::make_shared<std::atomic_bool>(false);
+		workers.push_back({
+			finished,
+			std::jthread{[&, connection, finished]() {
 				try {
-					forward_relay_pair(std::move(*pair));
-				}
-				catch (...) {
-					std::scoped_lock lock{error_mutex};
-					if (not service_error) {
-						service_error = std::current_exception();
+					if (auto pair = directory.admit(*connection)) {
+						bool forward{};
+						{
+							std::scoped_lock lock{pairs_mutex};
+							if (stopping.load()) {
+								pair->host.close();
+								pair->guest.close();
+							}
+							else {
+								active_pair_connections.push_back(&pair->host);
+								active_pair_connections.push_back(&pair->guest);
+								forward = true;
+							}
+						}
+						if (forward) {
+							auto unregister_pair = [&]() {
+								std::scoped_lock lock{pairs_mutex};
+								for (auto *peer : {&pair->host, &pair->guest}) {
+									active_pair_connections.erase(
+										std::remove(active_pair_connections.begin(), active_pair_connections.end(), peer),
+										active_pair_connections.end());
+								}
+							};
+							try {
+								forward_relay_pair(pair->host, pair->guest);
+							}
+							catch (...) {
+								unregister_pair();
+								throw;
+							}
+							unregister_pair();
+						}
 					}
 				}
-			}
+				catch (const std::exception &error) {
+					log::log(WARN << "FVD relay connection ended with an error: "
+					              << error.what());
+				}
 
-			std::scoped_lock lock{admissions_mutex};
-			active_admissions.erase(
-				std::remove(active_admissions.begin(), active_admissions.end(), connection),
-				active_admissions.end());
-		});
+				{
+					std::scoped_lock lock{connections_mutex};
+					active_connections.erase(
+						std::remove(active_connections.begin(), active_connections.end(), connection),
+						active_connections.end());
+				}
+				finished->store(true);
+			}}});
 	}
 
+	stopping.store(true);
+	directory.cancel_all();
+	{
+		std::scoped_lock lock{connections_mutex};
+		for (const auto &connection : active_connections) {
+			connection->close();
+		}
+	}
+	{
+		std::scoped_lock lock{pairs_mutex};
+		for (auto *connection : active_pair_connections) {
+			connection->close();
+		}
+	}
 	for (auto &worker : workers) {
-		worker.join();
-	}
-	if (service_error) {
-		std::rethrow_exception(service_error);
+		worker.thread.join();
 	}
 }
 
 void run_relay_service(
 	const std::string &address,
 	uint16_t port,
-	const std::vector<RelayServiceCredentials> &credentials) {
-	if (credentials.empty()) {
-		throw Error{MSG(err) << "FVD relay service requires at least one pair"};
-	}
+	const std::vector<std::string> &authorized_tokens,
+	size_t max_rooms,
+	size_t max_connections) {
 	if (port == 0) {
 		throw Error{MSG(err) << "FVD relay service requires a nonzero listening port"};
 	}
 
-	RelayPairRegistry registry{credentials.size()};
-	for (const auto &pair : credentials) {
-		registry.provision(service_credentials(pair));
+	std::vector<RelayToken> tokens{};
+	tokens.reserve(authorized_tokens.size());
+	for (const auto &token : authorized_tokens) {
+		tokens.push_back(service_token(token));
 	}
-
+	RelayRoomDirectory directory{max_rooms, std::move(tokens)};
 	auto listener = TcpListener::listen(address, port);
+	RunningRelayListener running{listener};
 	log::log(INFO << "FVD relay listening on "
 	              << (address.empty() ? std::string{"all interfaces"} : address)
 	              << ':' << listener.get_port()
-	              << " for " << credentials.size() << " guest pair(s)");
-	serve_relay_pairs(listener, registry, credentials.size());
+	              << (directory.requires_token() ? " with player-token access" : " with public access"));
+	serve_relay_directory(listener, directory, max_connections);
+}
+
+void stop_relay_service() noexcept {
+	std::scoped_lock lock{running_listener_mutex};
+	if (running_listener != nullptr) {
+		running_listener->close();
+	}
 }
 
 } // namespace openage::network

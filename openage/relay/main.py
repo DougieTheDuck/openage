@@ -1,6 +1,6 @@
 # Copyright 2026 the openage authors. See copying.md for legal info.
 
-"""Command-line entry point for an FVD one-match relay service."""
+"""Command-line entry point for the FVD room relay service."""
 
 from __future__ import annotations
 
@@ -28,51 +28,91 @@ def init_subparser(cli: ArgumentParser) -> None:
         help="TCP port on which the relay accepts connections",
     )
     cli.add_argument(
-        "--pair",
+        "--player-token",
         action="append",
-        nargs=4,
-        required=True,
-        metavar=("MATCH_ID", "PLAYER_ID", "HOST_TOKEN", "GUEST_TOKEN"),
-        help="provision one guest pair with two 64-character hexadecimal tokens",
+        default=[],
+        metavar="TOKEN",
+        help=(
+            "authorize one reusable 64-character player token; repeat for each "
+            "alpha player (omitting this option enables public access)"
+        ),
+    )
+    cli.add_argument(
+        "--max-rooms",
+        type=int,
+        default=64,
+        help="maximum number of advertised rooms waiting for a guest",
+    )
+    cli.add_argument(
+        "--max-connections",
+        type=int,
+        default=128,
+        help="maximum number of concurrent relay requests and matches",
     )
 
 
-def _parse_pair(values: list[str], error: Callable[[str], typing.NoReturn]) -> tuple[int, int, bytes, bytes]:
-    """Parse and validate one command-line relay pair."""
+def _parse_token(value: str, error: Callable[[str], typing.NoReturn]) -> bytes:
+    """Parse and validate one authorized player token."""
     try:
-        match_id = int(values[0])
-        player_id = int(values[1])
+        token = bytes.fromhex(value)
     except ValueError:
-        error("relay match and player IDs must be integers")
-    if match_id <= 0 or match_id > 0xFFFFFFFFFFFFFFFF:
-        error("relay match IDs must be nonzero unsigned 64-bit integers")
-    if player_id <= 0 or player_id > 0xFFFFFFFFFFFFFFFF:
-        error("relay player IDs must be nonzero unsigned 64-bit integers")
-
-    try:
-        host_token = bytes.fromhex(values[2])
-        guest_token = bytes.fromhex(values[3])
-    except ValueError:
-        error("relay tokens must be hexadecimal")
-    if len(host_token) != 32 or len(guest_token) != 32:
-        error("relay tokens must contain exactly 32 bytes")
-    if not any(host_token) or not any(guest_token):
-        error("relay tokens must not be all zero")
-    if host_token == guest_token:
-        error("relay host and guest tokens must be distinct")
-    return match_id, player_id, host_token, guest_token
+        error("relay player tokens must be hexadecimal")
+    if len(token) != 32:
+        error("relay player tokens must contain exactly 32 bytes")
+    if not any(token):
+        error("relay player tokens must not be all zero")
+    return token
 
 
 def main(args: Namespace, error: Callable[[str], typing.NoReturn]) -> int:
-    """Run a relay for one set of lobby-provisioned guest pairs."""
+    """Run a persistent public or token-restricted relay."""
     if args.port <= 0 or args.port > 65535:
         error("relay port must be between 1 and 65535")
+    if args.max_rooms <= 0 or args.max_rooms > 4096:
+        error("relay max rooms must be between 1 and 4096")
+    if args.max_connections <= 0:
+        error("relay max connections must be positive")
 
-    pairs = [_parse_pair(values, error) for values in args.pair]
+    tokens = [_parse_token(value, error) for value in args.player_token]
+    if len(tokens) != len(set(tokens)):
+        error("relay player tokens must be unique")
 
     from ..cppinterface.setup import setup as cpp_interface_setup
-    from .main_cpp import run_relay
+    from .main_cpp import run_relay, stop_relay
 
     cpp_interface_setup(args)
-    info("starting FVD relay for %d guest pair(s)", len(pairs))
-    return run_relay(args.listen, args.port, pairs)
+    access = f"{len(tokens)} authorized player token(s)" if tokens else "public access"
+    info("starting FVD room relay with %s", access)
+    result: list[int] = []
+    failure: list[BaseException] = []
+
+    def serve() -> None:
+        try:
+            result.append(
+                run_relay(
+                    args.listen,
+                    args.port,
+                    tokens,
+                    args.max_rooms,
+                    args.max_connections,
+                )
+            )
+        except BaseException as exc:  # Propagate the worker failure on the CLI thread.
+            failure.append(exc)
+
+    from threading import Thread
+
+    worker = Thread(target=serve, name="fvd-relay")
+    worker.start()
+    try:
+        while worker.is_alive():
+            worker.join(0.25)
+    except KeyboardInterrupt:
+        while worker.is_alive():
+            stop_relay()
+            worker.join(0.05)
+        return 130
+
+    if failure:
+        raise failure[0]
+    return result[0]

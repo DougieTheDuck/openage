@@ -18,14 +18,13 @@ namespace openage::network {
 class ReplicationTracker;
 
 /**
- * One pre-provisioned relay pair (host + one guest). The relay's credentials
- * come from the separate relay provisioning command; this is not matchmaking.
+ * One host or guest request to a relay-managed public room directory.
  */
 struct RelayLobbyConfig {
 	std::string address{"127.0.0.1"};
 	uint16_t port{32456};
-	uint64_t match_id{0};
-	uint64_t pair_id{0};
+	uint64_t room_id{0};
+	std::string room_name{"FVD Game"};
 	std::string token_hex{};
 	std::string name{};
 	bool hosting{false};
@@ -33,13 +32,15 @@ struct RelayLobbyConfig {
 
 struct RelayLobbyStatus {
 	std::string phase{"menu"};
-	std::string message{"Enter the relay details provisioned by your relay server."};
+	std::string message{"Host a game or refresh the relay room list."};
 	std::string participants{};
 	bool can_start{false};
 	bool connected{false};
 	gamestate::player_id_t local_player_id{0};
 	gamestate::player_id_t remote_player_id{0};
 	uint64_t snapshot_revision{0};
+	std::string rooms{};
+	uint64_t suggested_room_id{0};
 };
 
 /**
@@ -59,6 +60,7 @@ public:
 	RelayLobbyClient &operator=(const RelayLobbyClient &) = delete;
 
 	void connect(RelayLobbyConfig settings);
+	void refresh(RelayLobbyConfig settings);
 	void request_start();
 
 	/** Supply a snapshot captured on the host simulation thread. */
@@ -72,6 +74,7 @@ public:
 
 private:
 	void run(RelayLobbyConfig settings);
+	void run_refresh(RelayLobbyConfig settings);
 	void publish(RelayLobbyStatus next);
 
 	mutable std::mutex mutex;

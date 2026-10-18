@@ -2,8 +2,9 @@
 
 #pragma once
 
+// pxd: from libc.stddef cimport size_t
 #include <cstddef>
-// pxd: from libc.stdint cimport uint16_t, uint64_t
+// pxd: from libc.stdint cimport uint16_t
 #include <cstdint>
 // pxd: from libcpp.string cimport string
 #include <string>
@@ -14,47 +15,39 @@
 
 namespace openage::network {
 
-class RelayPairRegistry;
+class RelayRoomDirectory;
 class TcpListener;
 
 /**
- * Relay credentials passed through the Python command boundary.
+ * Accept room directory requests and forward every completed room.
  *
- * Tokens contain exactly 32 raw bytes.
- *
- * pxd:
- *
- * cppclass RelayServiceCredentials:
- *     uint64_t match_id
- *     uint64_t player_id
- *     string host_token
- *     string guest_token
+ * The service runs until its listener is closed. At most max_connections
+ * clients may be processing requests or forwarding a match concurrently.
  */
-struct RelayServiceCredentials {
-	uint64_t match_id{};
-	uint64_t player_id{};
-	std::string host_token{};
-	std::string guest_token{};
-};
+void serve_relay_directory(TcpListener &listener,
+                           RelayRoomDirectory &directory,
+                           size_t max_connections);
 
 /**
- * Admit and forward every pair already provisioned in a registry.
+ * Run a persistent public or token-restricted relay service.
  *
- * The call returns after all provisioned pairs have connected and then
- * disconnected. New provisioning while this function runs is unsupported.
- */
-void serve_relay_pairs(TcpListener &listener,
-                       RelayPairRegistry &registry,
-                       size_t pair_count);
-
-/**
- * Run a one-match relay service from the command-line configuration.
+ * Each token contains exactly 32 raw bytes. An empty token list enables public
+ * access.
  *
- * pxd: void run_relay_service(const string &address, uint16_t port, const vector[RelayServiceCredentials] &credentials) except +
+ * pxd: void run_relay_service(const string &address, uint16_t port, const vector[string] &authorized_tokens, size_t max_rooms, size_t max_connections) except +
  */
 OAAPI void run_relay_service(
 	const std::string &address,
 	uint16_t port,
-	const std::vector<RelayServiceCredentials> &credentials);
+	const std::vector<std::string> &authorized_tokens,
+	size_t max_rooms,
+	size_t max_connections);
+
+/**
+ * Close the listener owned by a running command-line relay.
+ *
+ * pxd: void stop_relay_service() noexcept
+ */
+OAAPI void stop_relay_service() noexcept;
 
 } // namespace openage::network

@@ -12,9 +12,10 @@ Launching the FVD game normally opens a Qt Quick multiplayer menu, leaving the
 simulation clock paused at zero. `run game --solo` retains the existing
 local gameplay and `run test` uses the existing test runner.
 
-The menu asks for a relay DNS/address, port, match ID, pair ID, user name and
-one role-specific 32-byte bearer token encoded as 64 hex characters.
-It uses the existing relay admission and session handshake, then sends
+The menu asks for a relay DNS/address, port, player name and optional private-alpha token.
+A host supplies a game name and creates an advertised room whose nonzero ID comes from the relay.
+A guest refreshes the room list, enters one of those IDs and joins it.
+It uses the relay directory admission and existing session handshake, then sends
 `PARTICIPANT_SNAPSHOT` from the host and `START_MATCH` after the host clicks
 Draw Roles. The roster and assignments shown come from validated network
 messages, not local placeholder role calculations. After the lottery the
@@ -33,10 +34,9 @@ outstanding simulation snapshot requests to prevent stale cross-match results. F
 handshakes report their errors in the menu; socket work is on a separate thread.
 Gameplay inputs are suppressed behind the overlay.
 
-**Current limitations:** The existing relay requires an administrator to
-pre-provision one pair with `run relay --pair ...`. The screen currently
-supports **one guest per host**, not an automatic searchable room or dynamic
-provisioning. There is no embedded relay server or hardcoded public relay.
+**Current limitations:** The screen supports **one guest per host**.
+The relay address must still be known because there is no embedded relay server, global service directory or hardcoded public relay.
+The first guest consumes the advertised room, and multi-guest room forwarding remains pending.
 Session IDs now survive the final role rebinding, and the initial world
 snapshot/acknowledgement runs through that same relay connection. **Continuous
 deltas, command forwarding, authoritative disconnect handling and guest
@@ -52,25 +52,24 @@ before Internet deployment; the existing TCP relay has no encryption.
 
 ### Manual two-player relay check
 
-Run the relay and the two game clients in three terminals.
-The example credentials are development values for a local test and must not be reused for an Internet service.
+Run the persistent relay and the two game clients in three terminals.
 
 ```sh
-bin/run relay --listen 127.0.0.1 --port 32456 \
-  --pair 1 2 \
-  0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 \
-  65666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f8081828384
+bin/run relay
 ```
 
 Start `bin/run game` twice.
-In both lobby screens use address `127.0.0.1`, port `32456`, match ID `1`, and pair ID `2`.
-Choose different names, enter the first token in the Host client and the second token in the Join client, then select Host and Join respectively.
-The host can select Draw Roles after both clients appear.
-The expected endpoint is that both screens show the same Hunter/Builder assignment and reach the synchronized bootstrap state with world revision 1.
-Closing either lobby closes both sides of the relay pair and the one-match relay process exits.
+Use address `127.0.0.1` and port `32456` in both lobby screens.
+Choose different player names.
+On the first client, enter a game name and select **Host Game**.
+On the second client, select **Refresh Games** and then **Join Room** to use the first result, or enter another displayed room ID before joining.
+The host can select **Draw Roles** after both clients appear.
+Both screens should show the same Hunter/Builder assignment and reach synchronized bootstrap at world revision 1.
+The relay remains available for later rooms after either client disconnects.
 
-Add one `--pair MATCH_ID PLAYER_ID HOST_TOKEN GUEST_TOKEN` argument for every guest when exercising the multi-pair relay service directly.
-The current graphical lobby consumes one pair and therefore supports one host plus one guest.
+For a private alpha, start the relay with one repeatable `--player-token TOKEN_64_HEX` option per authorized player.
+Every host, refresh and join request must then include one listed token.
+The host and guest of a room must use different tokens.
 
 ## Pre-match lobby core
 
@@ -117,24 +116,35 @@ The host binds that connection to the lobby participant and assigned player; mes
 The session ID detects stale messages and routing mistakes but is not a security credential.
 The transport does not yet encrypt traffic or authenticate the authoritative host.
 
-## Relay pairing
+## Relay rooms and pairing
 
 An Internet relay gives every participant an outbound connection, so the game does not depend on router port forwarding or NAT traversal.
 The authoritative player host opens one relay connection for each remote participant and every guest opens its corresponding connection.
 After pairing, the host runs the existing server handshake over that outbound socket and the guest runs the existing client handshake.
 The relay forwards complete FVD frames in both directions and does not create a simulation, assign a session ID or interpret gameplay payloads.
 
-The lobby provisions a nonzero match ID, a nonzero guest player ID and two distinct single-use 256-bit bearer tokens for each host-to-guest pair.
-The host and guest identify their role with separate tokens, preventing either credential from claiming the other side of the pair.
-The relay consumes `RelayConnect`, rejects malformed, unauthorized or duplicate-role admissions, and sends `RelayReady` only after both sides have arrived.
+`network::RelayRoomDirectory` owns a bounded set of host-created rooms.
+`RelayCreateRoom` advertises a room name and host name and returns a relay-generated room ID.
+`RelayListRooms` returns the live rooms in ID order, and `RelayJoinRoom` consumes one room by attaching its first guest.
+The relay sends `RelayReady` with the room ID and provisional guest player ID 2 after both sockets are paired.
 Normal `ClientHello` and gameplay frames follow `RelayReady` unchanged.
-The relay admission token proves possession to the relay but is visible on the current unencrypted TCP connection, so a public deployment must protect the relay transport before treating it as an Internet security boundary.
+Room listing sends a pre-session heartbeat to waiting hosts so cleanly disconnected rooms can be removed instead of remaining advertised.
+
+An empty relay authorization list enables public room creation, listing and joining.
+A nonempty list restricts all three operations to repeatable 256-bit player bearer tokens supplied through `--player-token`.
+The same private token cannot represent both sides of one room.
+Room IDs are discovery identifiers rather than credentials.
+Tokens are visible on the current unencrypted TCP connection, so an Internet deployment must protect the relay transport before treating them as a security boundary.
+
+The older low-level provisioned-pair API remains available to deterministic transport tests.
+It provisions a nonzero match ID, a nonzero guest player ID and two distinct single-use 256-bit bearer tokens for each host-to-guest pair.
+It consumes `RelayConnect`, rejects malformed, unauthorized or duplicate-role admissions, and sends `RelayReady` only after both sides have arrived.
 
 `network::RelayPairRegistry` holds a bounded set of lobby-provisioned pairs and safely admits connections from concurrent service workers.
 A pair leaves the registry when both roles authenticate, while lobby cancellation removes a pending pair and closes any role that already connected.
 Each completed pair is passed to its own `network::forward_relay_pair`, which closes both connections when either side disconnects without affecting other pairs.
 `network::accept_relay_pair` remains the single-pair convenience entry point used by deterministic tests.
-Direct TCP remains available for LAN play and deterministic transport tests.
+Direct TCP remains available to deterministic transport tests.
 
 ## Session and gameplay boundary
 
@@ -179,23 +189,30 @@ Network code can change connection management without changing horse, projectile
 
 ## Relay lobby developer test
 
-Run the dedicated relay service separately, with the *same* IDs and different
-randomly generated 32-byte host and guest tokens (64 hex characters each):
+Run the public relay service separately:
 
 ```sh
-bin/run relay --listen 127.0.0.1 --port 32456 \
-  --pair 23 2 HOST_TOKEN_64_HEX GUEST_TOKEN_64_HEX
+bin/run relay
 ```
 
-Launch two copies of `bin/run game`. On the first choose Host and enter
-the host token; on the second choose Join and enter the guest token. Use
-address `127.0.0.1`, port `32456`, match ID `23`, pair ID `2` in both.
-Click **Draw Roles** on the host. The clients should agree about the
-Hunter/Builder allocation and reach **bootstrap** after transferring and
-acknowledging the initial world. This is a developer setup; no public room
-directory or automatic relay provisioning exists yet.
+Launch two copies of `bin/run game` and use relay address `127.0.0.1` and port `32456`.
+On the first client choose **Host Game**.
+On the second choose **Refresh Games**, enter the listed room ID and choose **Join Room**.
+Click **Draw Roles** on the host.
+The clients should agree about the Hunter/Builder allocation and reach **bootstrap** after transferring and acknowledging the initial world.
+
+Private-alpha mode uses repeatable authorized player tokens:
+
+```sh
+bin/run relay \
+  --player-token HOST_TOKEN_64_HEX \
+  --player-token GUEST_TOKEN_64_HEX
+```
+
+Enter the corresponding token on each client before hosting, refreshing or joining.
 
 Focused automated check: `bin/run test openage::network::tests::lobby_relay_client`.
+Relay directory and access-control check: `bin/run test openage::network::tests::relay_service`.
 Local non-network gameplay: `bin/run game --solo`.
 
 ## Frame format
@@ -219,7 +236,7 @@ Payloads are limited to 1 MiB.
 The handshake uses session and sequence zero.
 After acceptance, each direction starts at sequence one and the receiver rejects duplicates, regressions and a session ID that does not match the connection.
 
-The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping`, `Pong`, `SnapshotRequest`, `RelayConnect`, `RelayReady` and `RelayReject`.
+The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping`, `Pong`, `SnapshotRequest`, `RelayConnect`, `RelayReady`, `RelayReject`, `MatchReady`, `RelayCreateRoom`, `RelayRoomCreated`, `RelayListRooms`, `RelayRoomList` and `RelayJoinRoom`.
 Payload schemas use fixed-width network-order integers, length-prefixed UTF-8 strings and length-prefixed arrays.
 
 ### Relay admission payloads
@@ -228,6 +245,19 @@ Payload schemas use fixed-width network-order integers, length-prefixed UTF-8 st
 `RelayReady` echoes the 8-byte match ID and 8-byte guest player ID.
 `RelayReject` uses the same length-prefixed, displayable reason encoding as `ServerReject`.
 These frames are valid only before relay pairing and are rejected by an accepted `ConnectionSession`.
+
+### Relay directory payloads
+
+Every directory request uses session and sequence zero and begins with a 32-byte player token.
+Public clients send an all-zero token, while a private relay requires one token from its launch-time authorization list.
+`RelayCreateRoom` appends a length-prefixed room name of at most 64 bytes and a length-prefixed host name of at most 128 bytes.
+`RelayRoomCreated` contains the generated 8-byte room ID.
+`RelayListRooms` contains only the token.
+`RelayRoomList` contains a 4-byte count followed by entries containing an 8-byte room ID, length-prefixed room name and length-prefixed host name.
+`RelayJoinRoom` appends the requested 8-byte room ID to the token.
+`RelayReady` identifies a directory pair with its room ID as the match ID and provisional guest player ID 2.
+`RelayReject` reports malformed requests, failed authorization, capacity limits and rooms that are no longer available.
+All directory frames are rejected by an accepted `ConnectionSession`.
 
 ### Command intent payload
 
@@ -317,6 +347,7 @@ incompatible with the shortened delta payload.
 Protocol major version 7 adds `MATCH_READY` and strict, one-time role
 rebinding after `START_MATCH`. Earlier versions are incompatible.
 Protocol minor version 1 supports optional relay admission within the same protocol major version.
+Protocol minor version 2 adds relay room creation, discovery and joining.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
 
 ### Incremental WorldDelta payload (protocol 5)

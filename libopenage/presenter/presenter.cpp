@@ -288,6 +288,7 @@ std::string Presenter::fvd_lobby_action_at(const QPointF &position) const {
 	if (not this->gui) return {};
 	for (const auto &[item, action] : {
 		std::pair{"fvdLobbyHostButton", "host"},
+		std::pair{"fvdLobbyRefreshButton", "refresh"},
 		std::pair{"fvdLobbyJoinButton", "join"},
 		std::pair{"fvdLobbyStartButton", "start"},
 		std::pair{"fvdLobbyBackButton", "disconnect"},
@@ -316,7 +317,7 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		this->fvd_lobby_client->request_start();
 		return;
 	}
-	if (action != "host" and action != "join") return;
+	if (action != "host" and action != "join" and action != "refresh") return;
 	this->fvd_lobby_local_error.clear();
 	this->fvd_bootstrap_requested = false;
 	this->fvd_bootstrap_supplied = false;
@@ -328,23 +329,33 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 			return this->fvd_lobby_state->value(name).toString().trimmed();
 		};
 		bool ok_port = false;
-		bool ok_match = false;
-		bool ok_pair = false;
 		const auto port = val("port").toUInt(&ok_port);
-		const auto match = val("matchId").toULongLong(&ok_match);
-		const auto pair = val("pairId").toULongLong(&ok_pair);
-		if (not ok_port or port == 0 or port > 65535
-		    or not ok_match or match == 0 or not ok_pair or pair == 0) {
-			throw std::invalid_argument{"Relay port, match ID and pair ID must be valid positive numbers"};
+		if (not ok_port or port == 0 or port > 65535) {
+			throw std::invalid_argument{"Relay port must be a valid positive number"};
 		}
 		network::RelayLobbyConfig config{};
 		config.address = val("address").toStdString();
 		config.port = static_cast<uint16_t>(port);
-		config.match_id = match;
-		config.pair_id = pair;
 		config.token_hex = val("token").toStdString();
 		config.name = val("name").toStdString();
+		if (action == "refresh") {
+			this->fvd_lobby_hosting = false;
+			this->fvd_lobby_suggested_room_id = 0;
+			this->fvd_lobby_state->insert("roomId", QString{});
+			this->fvd_lobby_client->refresh(std::move(config));
+			return;
+		}
 		config.hosting = action == "host";
+		if (config.hosting) {
+			config.room_name = val("roomName").toStdString();
+		}
+		else {
+			bool ok_room = false;
+			config.room_id = val("roomId").toULongLong(&ok_room);
+			if (not ok_room or config.room_id == 0) {
+				throw std::invalid_argument{"Room ID must be a valid positive number"};
+			}
+		}
 		this->fvd_lobby_hosting = config.hosting;
 		this->fvd_lobby_client->connect(std::move(config));
 	}
@@ -389,6 +400,13 @@ void Presenter::refresh_fvd_lobby_state() {
 	update("status", QString::fromStdString(
 		this->fvd_lobby_local_error.empty() ? state.message : this->fvd_lobby_local_error));
 	update("participants", QString::fromStdString(state.participants));
+	update("rooms", QString::fromStdString(state.rooms));
+	if (state.suggested_room_id != this->fvd_lobby_suggested_room_id) {
+		this->fvd_lobby_suggested_room_id = state.suggested_room_id;
+		update("roomId", state.suggested_room_id == 0
+		                   ? QString{}
+		                   : QString::number(state.suggested_room_id));
+	}
 	update("canStart", state.can_start);
 }
 
@@ -594,13 +612,14 @@ void Presenter::init_input() {
 				for (const auto &[key, value] : {
 					std::pair{"address", "127.0.0.1"},
 					std::pair{"port", "32456"},
-					std::pair{"matchId", ""},
-					std::pair{"pairId", ""},
+					std::pair{"roomName", "FVD Game"},
+					std::pair{"roomId", ""},
 					std::pair{"name", "Player"},
 					std::pair{"token", ""},
 					std::pair{"phase", "menu"},
-					std::pair{"status", "Enter the relay pair details supplied by the relay administrator."},
+					std::pair{"status", "Host a game or refresh the relay room list."},
 					std::pair{"participants", ""},
+					std::pair{"rooms", ""},
 				}) {
 					this->fvd_lobby_state->insert(key, QString::fromUtf8(value));
 				}

@@ -5,37 +5,37 @@ Run the FVD modpack in a graphical build, then verify these interactions at
 the default window size, after resizing the window, and with the mouse released
 outside the HUD after pressing inside it.
 
-- [ ] Select player 2's Builder; the panel shows Builder, current HP and Build Tower.
-- [ ] Click Build Tower. The Builder stays selected, placement mode begins, and
+- [x] Select player 2's Builder; the panel shows Builder, current HP and Build Tower.
+- [x] Click Build Tower. The Builder stays selected, placement mode begins, and
   no movement or terrain selection occurs behind the button. Press B to compare.
-- [ ] Click the same button when it reads Cancel; placement mode exits without
+- [x] Click the same button when it reads Cancel; placement mode exits without
   moving the Builder. Check the Hunter Attack-move and Cancel button too.
-- [ ] Hover a clear tile and an invalid/occupied tile; the preview changes
+- [x] Hover a clear tile and an invalid/occupied tile; the preview changes
   between valid and invalid without creating a construction order.
-- [ ] Click a valid tile; one Builder construction begins. The panel shows
+- [x] Click a valid tile; one Builder construction begins. The panel shows
   "Walking to tower site" where relevant, then a building percentage.
-- [ ] Select the Builder again and Shift-click at least two sites. Verify
+- [x] Select the Builder again and Shift-click at least two sites. Verify
   foundations and reservations persist, then each queued job executes in order.
-- [ ] Cancel with Escape, right-click and the panel's Cancel action. None of
+- [x] Cancel with Escape, right-click and the panel's Cancel action. None of
   these cancellation actions may move the Builder or create a tower.
-- [ ] Press and drag from the Build Tower panel into the game world before
+- [x] Press and drag from the Build Tower panel into the game world before
   release; selection and the world must remain unchanged.
-- [ ] Click and release in empty world terrain after using the panel; normal
+- [x] Click and release in empty world terrain after using the panel; normal
   selection and movement still work.
-- [ ] Select a Tower; inspect its HP, damage and armour, and confirm it has no
+- [x] Select a Tower; inspect its HP, damage and armour, and confirm it has no
   Build Tower action. Press B and verify no placement mode starts.
-- [ ] Switch to Hunter player 1; only human Hunter actions appear, with no
+- [x] Switch to Hunter player 1; only human Hunter actions appear, with no
   construction control.
 - [ ] Select an owned Tower: "Tower kills" starts at zero and increases only
   when that particular tower scores the lethal hit, not another Tower.
-- [ ] Select the Builder: "Total kills" starts at zero and includes the kills
+- [x] Select the Builder: "Total kills" starts at zero and includes the kills
   from all that player's towers, even destroyed towers.
-- [ ] Destroy a Tower with kills, then select its Builder: the total stays.
+- [x] Destroy a Tower with kills, then select its Builder: the total stays.
   A killing arrow that was in flight when the Tower died must still be credited.
-- [ ] In a guest match, verify the assigned player's Builder lifetime total
+- [x] In a guest match, verify the assigned player's Builder lifetime total
   and selected Tower count match the host after snapshots and deltas.
   Another player's tower kill totals must not be sent or displayed.
-- [ ] Verify that ending or canceling construction clears the progress display.
+- [x] Verify that ending or canceling construction clears the progress display.
 
 ## Headless/automated checks
 

@@ -10,4 +10,4 @@
 - [ ] 1.8 Verify two physical Windows PCs first, then concurrent Builder orders and human Hunter group AttackMove with up to eight human participants.
 - [x] 1.9 Pair outbound host and guest connections with role-specific lobby credentials, preserve the existing authoritative session protocol through a frame relay, and verify a gameplay command across three processes.
 - [x] 1.10 Admit a bounded set of provisioned relay pairs concurrently, support lobby cancellation, and isolate each pair's forwarding and disconnect lifetime.
-- [x] 1.11 Provide a runnable one-match relay command, close stalled admissions at completion, and verify independent pairs through the service boundary.
+- [x] 1.11 Provide a runnable persistent relay command, close stalled admissions at shutdown, and verify independent rooms through the service boundary.

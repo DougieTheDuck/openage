@@ -7,22 +7,13 @@
 #include <thread>
 
 #include "network/relay.h"
+#include "network/relay_service.h"
 #include "network/replication.h"
 #include "testing/testing.h"
 
 namespace openage::network::tests {
 
 namespace {
-
-std::string token_hex(const RelayToken &token) {
-	constexpr char alphabet[] = "0123456789abcdef";
-	std::string result;
-	for (const auto byte : token) {
-		result.push_back(alphabet[byte >> 4]);
-		result.push_back(alphabet[byte & 15]);
-	}
-	return result;
-}
 
 bool wait_for(RelayLobbyClient &client, const std::string &phase) {
 	for (size_t i = 0; i < 300; ++i) {
@@ -39,26 +30,19 @@ bool wait_for(RelayLobbyClient &client, const std::string &phase) {
 void lobby_relay_client() {
 	RelayLobbyClient invalid{};
 	RelayLobbyConfig bad{};
-	bad.match_id = 23;
-	bad.pair_id = 2;
 	bad.name = "Test";
+	bad.room_name = "Test Room";
+	bad.hosting = true;
 	bad.token_hex = "foo";
 	TESTTHROWS(invalid.connect(bad));
 	TESTEQUALS(invalid.status().phase, std::string{"menu"});
 
-	RelayPairCredentials credentials{};
-	credentials.match_id = 23;
-	credentials.player_id = 2;
-	for (size_t i = 0; i < RELAY_TOKEN_SIZE; ++i) {
-		credentials.host_token[i] = static_cast<uint8_t>(i + 1);
-		credentials.guest_token[i] = static_cast<uint8_t>(i + 101);
-	}
-
+	RelayRoomDirectory directory{4};
 	auto listener = TcpListener::listen("127.0.0.1", 0);
 	std::exception_ptr relay_error{};
 	std::jthread relay{[&]() {
 		try {
-			forward_relay_pair(accept_relay_pair(listener, credentials));
+			serve_relay_directory(listener, directory, 8);
 		}
 		catch (...) {
 			relay_error = std::current_exception();
@@ -70,14 +54,19 @@ void lobby_relay_client() {
 	RelayLobbyConfig conf{};
 	conf.address = "127.0.0.1";
 	conf.port = listener.get_port();
-	conf.match_id = credentials.match_id;
-	conf.pair_id = credentials.player_id;
 	conf.name = "HostPlayer";
-	conf.token_hex = token_hex(credentials.host_token);
+	conf.room_name = "Automated Test";
 	conf.hosting = true;
 	host.connect(conf);
+	TESTEQUALS(wait_for(host, "waiting"), true);
+
 	conf.name = "GuestPlayer";
-	conf.token_hex = token_hex(credentials.guest_token);
+	guest.refresh(conf);
+	TESTEQUALS(wait_for(guest, "menu"), true);
+	TESTEQUALS(guest.status().rooms.find("Automated Test") != std::string::npos, true);
+	conf.room_id = guest.status().suggested_room_id;
+	TESTEQUALS(conf.room_id != 0, true);
+	conf.name = "GuestPlayer";
 	conf.hosting = false;
 	guest.connect(conf);
 
@@ -134,6 +123,7 @@ void lobby_relay_client() {
 
 	guest.close();
 	TESTEQUALS(wait_for(host, "error"), true);
+	listener.close();
 	relay.join();
 	if (relay_error) std::rethrow_exception(relay_error);
 	host.close();

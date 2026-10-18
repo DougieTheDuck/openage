@@ -119,7 +119,7 @@ def tests_cpp():
     )
     yield (
         "openage::network::tests::relay_service",
-        "FVD one-match relay service with two concurrent guest pairs",
+        "FVD relay room discovery, private access and frame forwarding",
     )
     yield (
         "openage::network::tests::relay_process_worker",

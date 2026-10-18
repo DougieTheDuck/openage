@@ -22,12 +22,26 @@ The host can become Hunter, in which case it still runs the server.
 
 ## Lobby flow
 
-Host listens at an explicitly selected address/port; Windows direct-IP/LAN
-is enough. Joiners identify themselves and are accepted only if the game
-is compatible and capacity remains. List participants in the lobby.
+All players connect outbound to an explicitly selected relay address and port.
+The relay stays running across matches and owns a bounded directory of waiting rooms.
+A host supplies a room name and player name, receives a relay-generated room ID and remains connected while the room is advertised.
+A guest refreshes the directory and joins a listed room by ID.
+The first implementation pairs one host with one guest; extending a room to the required eight participants remains separate work.
+Joiners identify themselves and are accepted only if the game is compatible and capacity remains.
+List participants in the lobby.
 The host alone decides when to start; there is NO required ready-vote gate
 in the revised roadmap. At least two humans must be present at start.
 Broadcast assignment and game-start parameters once, consistently.
+
+The relay has two access modes.
+With no configured player tokens, room creation, listing and joining are public to anyone who knows the relay endpoint.
+With one or more configured tokens, every directory request must present a listed 256-bit bearer token.
+The host and guest of a private room must use different tokens.
+Tokens are reusable alpha identities rather than per-room credentials, while room IDs are discovery identifiers rather than secrets.
+The relay bounds pending rooms and concurrent connections in both modes.
+
+The authoritative game host remains a player process.
+After pairing, the relay only forwards complete protocol frames and does not run the simulation or assign gameplay roles.
 
 Only connected lobby participants get a controlled role or initial unit.
 The scenario's existing fixed eight-player local test setup must be
@@ -35,7 +49,8 @@ separated from network session creation.
 
 ## Open Decisions
 
-- Transport/protocol, version/asset handshake and how to choose port.
+- How a production deployment discovers the relay endpoint and protects bearer tokens in transit.
+- How room discovery and forwarding extend from the current two-player path to eight participants.
 - What happens if someone disconnects before Start or during role assignment.
 - Name rules and whether empty lobby slots display placeholders.
 

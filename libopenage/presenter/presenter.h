@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -221,6 +222,7 @@ protected:
 	std::string fvd_lobby_pressed{};
 	std::string fvd_lobby_local_error{};
 	bool fvd_lobby_hosting{false};
+	uint64_t fvd_lobby_suggested_room_id{0};
 	bool fvd_bootstrap_requested{false};
 	bool fvd_bootstrap_supplied{false};
 	/** Guest HUD source; local-only matches continue to read their simulation. */

@@ -19,6 +19,22 @@ IP address and port on Windows, with 2-8 total human participants to start.
 - **WHEN** a client with an incompatible required game/protocol version joins
 - **THEN** the client is rejected with a reason
 
+### Requirement: Relay rooms are discoverable
+
+The game SHALL let a host advertise a named room on a configured relay and let guests list and join waiting rooms without administrator-provisioned pair identifiers.
+
+#### Scenario: Public host advertises a room
+- **WHEN** a host creates a room on a relay with public access
+- **THEN** the relay returns a nonzero room ID and includes the room in subsequent listings
+
+#### Scenario: Guest joins a listed room
+- **WHEN** a guest joins an available room ID
+- **THEN** the relay removes the room from its listing and pairs the guest with its host
+
+#### Scenario: Private alpha restricts directory access
+- **WHEN** the relay starts with an authorized player-token list
+- **THEN** room creation, listing and joining reject tokens outside that list
+
 ### Requirement: The host initiates match start
 
 Only the lobby host SHALL initiate Start; a match SHALL have at least two
