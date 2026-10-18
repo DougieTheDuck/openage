@@ -93,9 +93,18 @@ void lobby_relay_client() {
 	host.request_start();
 	TESTEQUALS(wait_for(host, "assigned"), true);
 	TESTEQUALS(wait_for(guest, "assigned"), true);
-	TESTEQUALS(host.status().participants, guest.status().participants);
-	TESTEQUALS(host.status().participants.find("Hunter") != std::string::npos, true);
-	TESTEQUALS(host.status().participants.find("Builder") != std::string::npos, true);
+	TESTEQUALS(host.status().roles, guest.status().roles);
+	TESTEQUALS(host.status().roles.find("HostPlayer") != std::string::npos, true);
+	TESTEQUALS(host.status().roles.find("GuestPlayer") != std::string::npos, true);
+	TESTEQUALS(host.status().roles.find("HUNTER") != std::string::npos, true);
+	TESTEQUALS(host.status().roles.find("BUILDER") != std::string::npos, true);
+	TESTEQUALS(host.status().local_role != guest.status().local_role, true);
+	TESTEQUALS(host.status().local_role == "HUNTER" or host.status().local_role == "BUILDER", true);
+	TESTEQUALS(guest.status().local_role == "HUNTER" or guest.status().local_role == "BUILDER", true);
+	// The timer is monotonic; delayed CI scheduling may already have passed
+	// the five-second interval. Exact boundary checks live in lobby_test.
+	TESTEQUALS(host.status().role_seconds_remaining <= 5, true);
+	TESTEQUALS(guest.status().role_seconds_remaining <= 5, true);
 	TESTEQUALS(host.status().local_player_id != guest.status().local_player_id, true);
 	TESTEQUALS(host.status().remote_player_id, guest.status().local_player_id);
 	TESTEQUALS(guest.status().remote_player_id, host.status().local_player_id);
@@ -131,6 +140,8 @@ void lobby_relay_client() {
 	TESTEQUALS(replication->get_world_state()->players.size(), size_t{2});
 	TESTEQUALS(host.status().snapshot_revision, uint64_t{1});
 	TESTEQUALS(guest.status().snapshot_revision, uint64_t{1});
+	TESTEQUALS(host.status().roles, guest.status().roles);
+	TESTEQUALS(host.status().local_role != guest.status().local_role, true);
 
 	guest.close();
 	TESTEQUALS(wait_for(host, "error"), true);

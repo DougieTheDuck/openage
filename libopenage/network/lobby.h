@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <functional>
 #include <string>
 #include <vector>
@@ -65,5 +66,12 @@ void validate_start_match_against_roster(const ParticipantSnapshot &roster,
 /** Resolve a previously validated participant identity to its game slot. */
 gamestate::player_id_t player_for_participant(const StartMatch &start,
                                                uint64_t participant_id);
+
+/** Names and roles for a validated StartMatch, in original lobby order. */
+std::string describe_match_roles(const ParticipantSnapshot &roster,
+                                 const StartMatch &start);
+
+/** Five-second wall-clock reveal; excludes the instant at exactly 5 seconds. */
+uint8_t role_reveal_seconds_remaining(std::chrono::milliseconds elapsed);
 
 } // namespace openage::network

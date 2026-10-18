@@ -16,8 +16,13 @@ The menu asks for a relay DNS/address, port, match ID, pair ID, user name and
 one role-specific 32-byte bearer token encoded as 64 hex characters.
 It uses the existing relay admission and session handshake, then sends
 `PARTICIPANT_SNAPSHOT` from the host and `START_MATCH` after the host clicks
-Draw Roles. The roster and assignments shown come from validated network
-messages, not local placeholder role calculations. After the lottery the
+Start Game. The Hunter/Builder draw occurs at Start; the same validated
+`START_MATCH` drives each client's five-second role reveal. The reveal shows
+participant names, every role, and a prominent local Hunter/Builder designation.
+It is measured using each client's steady (wall) clock, so match synchronization
+and the paused simulation do not shorten or restart the five-second display.
+The roster and assignments come from validated network messages, not local
+placeholder role calculations. After the lottery the
 original accepted session (session ID and frame sequence numbers unchanged)
 is rebound exactly once from its provisional slot to the guest's **final**
 slot 1 or 2. Both peers validate that the assignments match the admitted
@@ -65,8 +70,12 @@ bin/run relay --listen 127.0.0.1 --port 32456 \
 Start `bin/run game` twice.
 In both lobby screens use address `127.0.0.1`, port `32456`, match ID `1`, and pair ID `2`.
 Choose different names, enter the first token in the Host client and the second token in the Join client, then select Host and Join respectively.
-The host can select Draw Roles after both clients appear.
-The expected endpoint is that both screens show the same Hunter/Builder assignment and reach the synchronized bootstrap state with world revision 1.
+The host can select **Start Game** after both clients appear.
+The host draws and broadcasts the roles exactly once; both screens display
+their assigned role and both participants' names/roles for five seconds.
+After the reveal, the lobby displays the current synchronization state. The
+expected network endpoint is synchronized bootstrap at world revision 1,
+not a playable online match.
 Closing either lobby closes both sides of the relay pair and the one-match relay process exits.
 
 Add one `--pair MATCH_ID PLAYER_ID HOST_TOKEN GUEST_TOKEN` argument for every guest when exercising the multi-pair relay service directly.
@@ -190,9 +199,9 @@ bin/run relay --listen 127.0.0.1 --port 32456 \
 Launch two copies of `bin/run game`. On the first choose Host and enter
 the host token; on the second choose Join and enter the guest token. Use
 address `127.0.0.1`, port `32456`, match ID `23`, pair ID `2` in both.
-Click **Draw Roles** on the host. The clients should agree about the
-Hunter/Builder allocation and reach **bootstrap** after transferring and
-acknowledging the initial world. This is a developer setup; no public room
+Click **Start Game** on the host. Both clients should see a five-second
+role reveal and agree about the Hunter/Builder allocation. They then show
+**bootstrap** after transferring and acknowledging the initial world. This is a developer setup; no public room
 directory or automatic relay provisioning exists yet.
 
 Focused automated check: `bin/run test openage::network::tests::lobby_relay_client`.
