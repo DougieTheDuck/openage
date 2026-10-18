@@ -108,6 +108,33 @@ Now, to run openage:
 - Open a CMD window in `<openage directory>\build\` and run `python -m openage main`
 - Execute`<openage directory>\build\run.exe` every time after that and enjoy!
 
+### Running the FVD relay
+
+The relay uses the same executable and runtime DLL environment as the game.
+Start it from the build directory, using the executable's configuration subdirectory if your generator creates one:
+
+```powershell
+Set-Location <openage directory>\build
+.\RelWithDebInfo\run.exe relay
+```
+
+If Windows exits with `0xC0000135` (DLL not found), ensure that the configured Python installation and the directories containing `openage.dll`, `nyan.dll` and their native dependencies are on the terminal's `PATH` before launching the executable.
+Python's DLL search options cannot fix dependencies that Windows must load before the embedded interpreter starts.
+Use the same environment setup as your working game launch.
+
+For this checkout's local MSVC setup, run these commands from the repository root:
+
+```powershell
+. .\deps\msvc-env.ps1
+Set-Location .bin\msvc-vcpkg
+.\RelWithDebInfo\run.exe relay
+```
+
+The relay listens on all interfaces on TCP port `32456` by default.
+Append `--listen 127.0.0.1` to restrict it to local clients, or `--help` to list its options.
+Keep the terminal open and stop the service with Ctrl+C.
+See the [two-player relay check](../code/network/README.md#manual-two-player-relay-check) for connecting game clients and the current multiplayer limitations.
+
 ## Packaging
 
 - Install [NSIS](https://sourceforge.net/projects/nsis/files/latest/download).
