@@ -10,6 +10,10 @@
 #include "assets/mod_manager.h"
 #include "config.h"
 #include "event/event_loop.h"
+#include "gamestate/api/ability.h"
+#include "gamestate/api/animation.h"
+#include "gamestate/api/property.h"
+#include "gamestate/api/types.h"
 #include "gamestate/component/api/live.h"
 #include "gamestate/component/api/move.h"
 #include "gamestate/component/internal/commands/build_tower.h"
@@ -81,6 +85,25 @@ void fvd_scenario() {
 	auto terrain = std::make_shared<TerrainFactory>();
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
+
+	// The guest's replicated units do not all exist locally (Horses spawn
+	// only on the authoritative host). Resolve the same namespaced sprite
+	// references used by Idle::idle for all four FVD entity definitions.
+	for (const std::string definition : {
+	         "fvd.data.entities.Builder", "fvd.data.entities.Horse",
+	         "fvd.data.entities.Tower", "fvd.data.entities.Foundation"}) {
+		const auto idle = state->get_db_view()->get_object(definition + ".Idle");
+		const auto animated = api::APIAbility::get_property(
+			idle, api::ability_property_t::ANIMATED);
+		const auto animations = api::APIAbilityProperty::get_animations(animated);
+		const auto paths = api::APIAnimation::get_animation_paths(animations);
+		TESTEQUALS(paths.size(), size_t{1});
+		const auto sprite = root / "assets" / "converted" / paths.front();
+		TESTEQUALS(sprite.is_file(), true);
+		const auto parsed = renderer::resources::parser::parse_sprite_file(sprite);
+		TESTEQUALS(parsed.get_texture_count(), size_t{1});
+	}
+
 	auto fvd = state->get_fvd();
 	TESTEQUALS(fvd->get_player_count(), 8);
 	TESTEQUALS(fvd->get_centre(), (coord::phys3{64, 64, 0}));

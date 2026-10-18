@@ -30,7 +30,14 @@ snapshot and acknowledge its revision.
 
 After the five-second role reveal the dialog automatically disappears.
 The **host** resumes authoritative simulation and sends world deltas at about
-4 Hz. The **guest** displays replicated units and sends Move, AttackMove and
+4 Hz.
+Guest Builders, Horses, Towers and unfinished Foundations use exactly the same
+nyan-resolved Idle sprite animations as host entities. The guest does not
+derive graphics filenames from untrusted network messages or load raw
+animation attributes directly (doing so produced red-X placeholder sprites).
+Movement currently updates at snapshot/delta cadence; interpolation is future
+work. Player-specific recolouring is also deferred.
+ The **guest** displays replicated units and sends Move, AttackMove and
 BuildTower intents; the host checks player ownership and sends an acceptance
 or rejection. Online number-key role switching is disabled. **F10** leaves the
 match. After leaving, the engine recreates the world at time zero before

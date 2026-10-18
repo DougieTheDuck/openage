@@ -20,6 +20,10 @@
 #include <vector>
 
 #include "error/error.h"
+#include "gamestate/api/ability.h"
+#include "gamestate/api/animation.h"
+#include "gamestate/api/property.h"
+#include "gamestate/api/types.h"
 #include "gamestate/fvd.h"
 #include "gamestate/game.h"
 #include "gamestate/game_entity.h"
@@ -330,6 +334,7 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		this->fvd_guest_visual_revision = 0;
 		for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
 		this->fvd_guest_entities.clear();
+		this->fvd_guest_sprite_paths.clear();
 		if (this->fvd_lobby_hosting and this->time_loop) {
 			this->time_loop->get_clock()->pause();
 		}
@@ -374,6 +379,7 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	this->fvd_guest_visual_revision = 0;
 	for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
 	this->fvd_guest_entities.clear();
+	this->fvd_guest_sprite_paths.clear();
 	if (this->fvd_lobby_hosting and this->time_loop) {
 		this->time_loop->get_clock()->pause();
 	}
@@ -590,26 +596,46 @@ void Presenter::refresh_fvd_guest_visuals() {
 	}
 	std::unordered_set<gamestate::entity_id_t> present;
 	for (const auto &entity : world->entities) {
-		std::string path;
-		if (entity.definition == "fvd.data.entities.Builder")
-			path = "../../../fvd/graphics/builder.sprite";
-		else if (entity.definition == "fvd.data.entities.Horse")
-			path = "../../../fvd/graphics/horse.sprite";
-		else if (entity.definition == "fvd.data.entities.Tower")
-			path = "../../../fvd/graphics/tower.sprite";
-		else if (entity.definition == "fvd.data.entities.Foundation")
-			path = "../../../fvd/graphics/foundation.sprite";
-		else
+		// Only render known FVD types; do not accept arbitrary sprite
+		// filenames supplied in network messages.
+		if (entity.definition != "fvd.data.entities.Builder"
+		    and entity.definition != "fvd.data.entities.Horse"
+		    and entity.definition != "fvd.data.entities.Tower"
+		    and entity.definition != "fvd.data.entities.Foundation") {
 			continue;
+		}
+		auto path = this->fvd_guest_sprite_paths.find(entity.definition);
+		if (path == this->fvd_guest_sprite_paths.end()) {
+			// The host resolves Animation.sprite relative to the nyan
+			// namespace of its Idle ability. The raw ../../../fvd/... file
+			// attribute was mistakenly passed directly to AssetManager on
+			// the guest, causing red-X placeholder sprites.
+			auto view = this->simulation->get_game()->get_state()->get_db_view();
+			const auto idle = view->get_object(entity.definition + ".Idle");
+			const auto animated = gamestate::api::APIAbility::get_property(
+				idle, gamestate::api::ability_property_t::ANIMATED);
+			const auto animations = gamestate::api::APIAbilityProperty::get_animations(animated);
+			const auto paths = gamestate::api::APIAnimation::get_animation_paths(animations);
+			if (paths.empty()) {
+				throw Error{MSG(err) << "FVD replica has no idle animation: " << entity.definition};
+			}
+			const auto resolved = this->root_dir / "assets" / "converted" / paths.front();
+			if (not resolved.is_file()) {
+				throw Error{MSG(err) << "FVD replica sprite not found: " << resolved};
+			}
+			path = this->fvd_guest_sprite_paths.emplace(entity.definition, paths.front()).first;
+			log::log(INFO << "FVD guest sprite " << entity.definition << " -> " << paths.front());
+		}
+
 		present.insert(entity.entity_id);
 		auto &visual = this->fvd_guest_entities[entity.entity_id];
 		if (not visual) {
 			visual = std::make_shared<renderer::world::RenderEntity>();
 			this->world_renderer->add_render_entity(visual);
 		}
-		// Render clock stays at zero on guest. Replace the displayed
-		// authoritative position on every accepted network revision.
-		visual->update(entity.entity_id, entity.position, path, time::TIME_ZERO);
+		// Render on the paused guest clock using the same resolved animation
+		// as the host and positions from authenticated world replication.
+		visual->update(entity.entity_id, entity.position, path->second, time::TIME_ZERO);
 	}
 	for (auto it = this->fvd_guest_entities.begin();
 	     it != this->fvd_guest_entities.end();) {
