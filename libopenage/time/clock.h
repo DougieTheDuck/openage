@@ -107,6 +107,12 @@ public:
 	 */
 	void resume();
 
+	/**
+	 * Return a paused match clock to simulated time zero without replacing
+	 * the Clock object shared by renderer and simulation threads.
+	 */
+	void reset_paused();
+
 private:
 	/**
 	 * Status of the clock (init, running, stopped, ...).

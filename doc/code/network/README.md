@@ -505,3 +505,20 @@ Failure to enqueue a connection lifecycle event is fatal to the host session bec
 Guest commands now include target-specific focus attacks and queued
 construction; SnapshotRequest automatically recovers missing world revisions
 without disconnecting. Host still validates ownership and target IDs.
+
+### Rematching without restarting the client
+
+After a live match, press **F10** to leave. The client closes its active relay
+session, pauses and resets the shared game clock to time zero, clears old
+world and terrain render objects, and asks the owning simulation thread to
+rebuild the game, event loop, and entity factories. The graphics thread then
+reattaches a fresh render factory. The lobby becomes available for Host/Join
+only after this reset completes. A second room should start at revision 1
+with fresh Builders and a full 20-second Hunter spawn countdown. Reconnects,
+new rooms, and rematches should not inherit any previous entity IDs or orders.
+The Windows two-client rematch still requires manual validation.
+
+The guest HUD reads its current Builder queue, construction phase, health,
+score, and Hunter countdown from the latest recipient-authoritative state.
+When precise construction progress cannot be reconstructed from the wire
+snapshot, it displays the phase instead of an invented percentage.

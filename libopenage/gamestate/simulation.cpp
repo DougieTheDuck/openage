@@ -57,6 +57,41 @@ GameSimulation::GameSimulation(const util::Path &root_dir,
 void GameSimulation::run() {
 	this->start();
 	while (this->running) {
+		bool reset = false;
+		{
+			std::lock_guard reset_lock{this->reset_mutex};
+			reset = std::exchange(this->reset_requested, false);
+		}
+		if (reset) {
+			if (this->time_loop->get_clock()->get_state() != time::ClockState::PAUSED
+			    or this->time_loop->get_clock()->get_time() != time::TIME_ZERO) {
+				throw Error{MSG(err) << "Cannot recreate FVD match without paused time zero"};
+			}
+			{
+				std::unique_lock game_lock{this->mutex};
+				// GameState and the event loop are owned exclusively by this
+				// thread. The presenter clears GPU draw calls beforehand and
+				// reattaches renderer resources after the replacement is ready.
+				this->event_loop = std::make_shared<openage::event::EventLoop>();
+				this->entity_factory = std::make_shared<gamestate::EntityFactory>();
+				this->terrain_factory = std::make_shared<gamestate::TerrainFactory>();
+				this->spawner = std::make_shared<gamestate::event::Spawner>(this->event_loop);
+				this->commander = std::make_shared<gamestate::event::Commander>(this->event_loop);
+				this->init_event_handlers();
+				this->game = std::make_shared<gamestate::Game>(
+					this->event_loop, this->mod_manager,
+					this->entity_factory, this->terrain_factory);
+				if (auto fvd = this->game->get_state()->get_fvd()) {
+					fvd->start_hunter_wave(
+						this->game->get_state(), time::TIME_ZERO);
+				}
+			}
+			{
+				std::lock_guard reset_lock{this->reset_mutex};
+				this->reset_completed = true;
+			}
+			continue;
+		}
 		time::time_t current_time = this->time_loop->get_clock()->get_time();
 		// Only the simulation owner thread may submit authenticated network
 		// commands into the mutable game event loop.
@@ -238,6 +273,23 @@ bool GameSimulation::submit_network_command(
 	if (this->network_commands.size() >= 256) return false;
 	this->network_commands.push_back({std::move(command), std::move(callback)});
 	return true;
+}
+
+void GameSimulation::request_match_reset() {
+	if (this->time_loop->get_clock()->get_state() != time::ClockState::PAUSED
+	    or this->time_loop->get_clock()->get_time() != time::TIME_ZERO) {
+		throw Error{MSG(err) << "FVD match reset requires a paused clock at zero"};
+	}
+	std::lock_guard lock{this->reset_mutex};
+	if (this->reset_requested or this->reset_completed) {
+		throw Error{MSG(err) << "FVD match reset already pending"};
+	}
+	this->reset_requested = true;
+}
+
+bool GameSimulation::consume_match_reset_completed() {
+	std::lock_guard lock{this->reset_mutex};
+	return std::exchange(this->reset_completed, false);
 }
 
 void GameSimulation::cancel_network_bootstrap() {

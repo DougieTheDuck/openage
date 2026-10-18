@@ -108,3 +108,10 @@ Online guest commands now include right-click Builder focus attacks for
 Horses, right-click prioritization of queued Foundations, and Shift+clicked
 construction queues. The host validates the target and owner. Guest replication
 recovers world-revision gaps with full authenticated snapshots.
+
+After playing, press **F10** to leave and return to a freshly reset FVD
+world. The engine now clears renderer state and recreates the event and game
+simulation at time zero, rather than requiring a process restart for the next
+room. This restart path has not yet been tested on Windows clients. Builder
+construction phase/queue and Hunter spawn countdown on the guest HUD now
+use the host's replicated state.

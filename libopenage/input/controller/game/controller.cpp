@@ -499,7 +499,8 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 							});
 						if (found != replica.entities.end()) {
 							if (horses and found->owner_id != owner
-							    and found->definition == "fvd.data.entities.Builder") {
+							    and (found->definition == "fvd.data.entities.Builder"
+							         or found->definition == "fvd.data.entities.Tower")) {
 								intent.kind = network::CommandKind::FOCUS_ATTACK;
 								intent.target_entity = *hit;
 							}

@@ -18,4 +18,5 @@
 - [ ] 1.14b Complete authenticated live-session disconnect policy and recoverable transient transport errors.
 
 - [x] 1.15a Add host-validated guest focus-target attacks, Shift+queued tower builds, and queued-foundation prioritization on the authenticated intent wire format.
-- [ ] 1.15b Finish online HUD parity and clean match restart after F10.
+- [x] 1.15b Show recipient-authoritative queued sites, construction phase, and hunter countdown in the guest HUD; F10 resets the game/event/entity state, resets the paused clock to zero and reattaches cleared world/terrain render stages for clean rematches. Physical Windows rematch verification is outstanding.
+- [ ] 1.16 Finish live-session disconnect policy, command-result session-generation guards, special-order HUD polish, and full integration tests on Windows.
