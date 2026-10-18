@@ -159,6 +159,12 @@ function(add_cython_modules)
 				OUTPUT_NAME "${OUTPUTNAME}"
 			)
 
+			if(MSVC)
+				# TODO: Remove when Cython stops emitting unused function references
+				# such as (void) __Pyx_PyDict_NextRef, which MSVC diagnoses as C4551.
+				target_compile_options("${TARGETNAME}" PRIVATE /wd4551)
+			endif()
+
 			if (STANDALONE_NEXT)
 				set(PRETTY_MODULE_PROPERTIES "${PRETTY_MODULE_PROPERTIES} [standalone]")
 			else()

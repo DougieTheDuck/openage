@@ -111,6 +111,10 @@ The [python module](/buildsystem/python.cmake) is similar to the cpp module. It 
  - `add_pxds` adds any additional `.pxd` or `.pxi` files.
  - `add_py_modules` adds pure-Python modules; note that you also must declare `.py` files that were declared in `add_cython_modules`.
 
+On MSVC, C4551 is disabled only for Cython-generated targets because Cython emits intentional unused function references such as `(void) __Pyx_PyDict_NextRef`.
+The engine's handwritten C++ targets retain this diagnostic.
+Missing optional Doxygen support is reported as a configuration status message; it does not prevent building or running the engine.
+
 codegen
 -------
 

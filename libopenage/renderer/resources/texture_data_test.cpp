@@ -7,8 +7,13 @@
 #include <utility>
 #include <vector>
 
+#include "pyinterface/pyobject.h"
+#include "renderer/resources/palette_info.h"
+#include "renderer/resources/parser/parse_texture.h"
 #include "renderer/resources/texture_info.h"
+#include "renderer/resources/texture_subinfo.h"
 #include "testing/testing.h"
+#include "util/path.h"
 
 
 namespace openage::renderer::resources::tests {
@@ -39,6 +44,45 @@ void alpha_mask() {
 	}
 	TESTEQUALS(mask.is_opaque(width, 0), false);
 	TESTEQUALS(mask.is_opaque(0, height), false);
+}
+
+void texture_metadata() {
+	auto temporary = py::import("tempfile").getattr("TemporaryDirectory").call();
+	auto directory = py::import("openage.util.fslike.directory")
+	                     .getattr("Directory").call(temporary.getattr("name"));
+	util::Path root{directory};
+	auto path = root / "test.texture";
+	auto parse = [&](const std::string &attributes) {
+		auto file = path.open_w();
+		file.write("version 1\nimagefile \"test.png\"\npxformat rgba8\n" + attributes);
+		file.close();
+		return parser::parse_texture_file(path);
+	};
+
+	auto texture = parse("size 16 16\nsubtex -1 -2 4 8 -3 2\n");
+	TESTEQUALS(texture.get_subtex_count(), size_t{1});
+	const auto &subtexture = texture.get_subtex_info(0);
+	TESTEQUALS(subtexture.get_pos()[0], -1);
+	TESTEQUALS(subtexture.get_pos()[1], -2);
+	TESTEQUALS(subtexture.get_size()[0], uint32_t{4});
+	TESTEQUALS(subtexture.get_size()[1], uint32_t{8});
+	TESTEQUALS(subtexture.get_anchor_pos()[0], -3);
+	TESTEQUALS(subtexture.get_anchor_pos()[1], 2);
+	TESTTHROWS(parse("size 4294967296 16\n"));
+	TESTTHROWS(parse("size 16 4294967296\n"));
+	TESTTHROWS(parse("size 16 16\nsubtex 0 0 4294967296 8 0 0\n"));
+	TESTTHROWS(parse("size 16 16\nsubtex 0 0 4 4294967296 0 0\n"));
+	TESTTHROWS(parse("size -1 16\n"));
+	TESTTHROWS(parse("size 16 16\nsubtex 0 0 -1 8 0 0\n"));
+}
+
+void palette_colors() {
+	PaletteInfo palette{std::vector<uint8_t>{0, 64, 128, 255}};
+	auto color = palette.get_color(0);
+	TESTEQUALS(color[0], 0.0f);
+	TESTEQUALS(color[1], 0.25f);
+	TESTEQUALS(color[2], 0.5f);
+	TESTEQUALS(color[3], 255.0f / 256.0f);
 }
 
 } // namespace openage::renderer::resources::tests

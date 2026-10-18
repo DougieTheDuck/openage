@@ -61,6 +61,18 @@
 
 namespace openage::presenter {
 
+namespace {
+
+std::shared_ptr<QQmlPropertyMap> create_property_map() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 11, 0)
+	return std::shared_ptr<QQmlPropertyMap>{QQmlPropertyMap::create()};
+#else
+	return std::make_shared<QQmlPropertyMap>();
+#endif
+}
+
+} // namespace
+
 Presenter::Presenter(const util::Path &root_dir,
                      const std::shared_ptr<gamestate::GameSimulation> &simulation,
                      const std::shared_ptr<time::TimeLoop> &time_loop) :
@@ -775,7 +787,7 @@ void Presenter::init_input() {
 		this->game_controller = game_controller;
 		input_ctx->set_game_bindings(engine_context);
 		if (fvd and this->gui) {
-			this->fvd_hud_state = std::make_shared<QQmlPropertyMap>();
+			this->fvd_hud_state = create_property_map();
 			this->fvd_hud_state->insert("controlled", static_cast<int>(game_controller->get_controlled()));
 			this->fvd_hud_state->insert("selection", QString{"No unit selected"});
 			this->fvd_hud_state->insert("isTower", false);
@@ -798,7 +810,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
 			if (this->fvd_lobby_enabled) {
-				this->fvd_lobby_state = std::make_shared<QQmlPropertyMap>();
+				this->fvd_lobby_state = create_property_map();
 				for (const auto &[key, value] : {
 					std::pair{"address", "127.0.0.1"},
 					std::pair{"port", "32456"},

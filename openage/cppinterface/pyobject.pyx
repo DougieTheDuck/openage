@@ -81,7 +81,7 @@ cdef int len_impl(PyObject *ptr) except * with gil:
     return len(<object> ptr)
 
 
-cdef cppbool callable_impl(PyObject *ptr) except * with gil:
+cdef cppbool callable_impl(PyObject *ptr) except? False with gil:
     return callable(<object> ptr)
 
 
@@ -102,7 +102,7 @@ cdef void calln_impl(PyObjectRef *result_ref, PyObject *func,
     result_ref.set_ref(<PyObject *> result_obj)
 
 
-cdef cppbool hasattr_impl(PyObject *ptr, string name) except * with gil:
+cdef cppbool hasattr_impl(PyObject *ptr, string name) except? False with gil:
     return hasattr(<object> ptr, name.decode())
 
 
@@ -118,11 +118,11 @@ cdef void setattr_impl(PyObject *ptr, string name, PyObject *attr) except * with
         <object> attr)
 
 
-cdef cppbool isinstance_impl(PyObject *ptr, PyObject *typeptr) except * with gil:
+cdef cppbool isinstance_impl(PyObject *ptr, PyObject *typeptr) except? False with gil:
     return isinstance(<object> ptr, <object> typeptr)
 
 
-cdef cppbool to_bool_impl(PyObject *ptr) except * with gil:
+cdef cppbool to_bool_impl(PyObject *ptr) except? False with gil:
     return bool(<object> ptr)
 
 
@@ -137,7 +137,7 @@ cdef void dir_impl(PyObject *ptr, Func1[void, string] callback) except * with gi
         callback.call(name.encode())
 
 
-cdef cppbool equals_impl(PyObject *ptr, PyObject *other) except * with gil:
+cdef cppbool equals_impl(PyObject *ptr, PyObject *other) except? False with gil:
     return (<object> ptr) == (<object> other)
 
 
@@ -155,7 +155,7 @@ cdef void get_impl(PyObject *ptr, PyObjectRef *result_ref, PyObject *key) except
     result_ref.set_ref(<PyObject *> result_obj)
 
 
-cdef cppbool in_impl(PyObject *ptr, PyObject *container) except * with gil:
+cdef cppbool in_impl(PyObject *ptr, PyObject *container) except? False with gil:
     return (<object> ptr) in (<object> container)
 
 

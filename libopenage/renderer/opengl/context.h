@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include <QObject>
@@ -134,7 +135,7 @@ public:
 	 *
 	 * @throw Error if no binding point is available.
 	 */
-	size_t get_uniform_buffer_binding();
+	uint32_t get_uniform_buffer_binding();
 
 	/**
 	 * Free a buffer binding point, indicating that newly created buffers can use it.

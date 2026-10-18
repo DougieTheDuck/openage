@@ -133,6 +133,8 @@ def tests_cpp():
     yield "openage::renderer::tests::font"
     yield "openage::renderer::tests::font_manager"
     yield "openage::renderer::resources::tests::alpha_mask"
+    yield "openage::renderer::resources::tests::texture_metadata"
+    yield "openage::renderer::resources::tests::palette_colors"
     yield "openage::rng::tests::run"
     yield "openage::util::tests::constinit_vector"
     yield "openage::util::tests::enum_"

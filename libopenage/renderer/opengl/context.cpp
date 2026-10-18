@@ -236,8 +236,8 @@ void GlContext::set_current_program(const std::shared_ptr<GlShaderProgram> &prog
 	this->last_program = prog;
 }
 
-size_t GlContext::get_uniform_buffer_binding() {
-	for (size_t i = 1; i < this->specs.max_uniform_buffer_bindings; ++i) {
+uint32_t GlContext::get_uniform_buffer_binding() {
+	for (uint32_t i = 1; i < this->specs.max_uniform_buffer_bindings; ++i) {
 		if (not this->uniform_buffer_bindings[i]) {
 			this->uniform_buffer_bindings[i] = true;
 			return i;

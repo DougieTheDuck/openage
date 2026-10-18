@@ -134,7 +134,12 @@ public:
 	ChildType &operator<<(const T &t) {
 		if (this->should_format()) {
 			this->ensure_stream_obj();
-			this->stream_ptr->stream << t;
+			if constexpr (std::is_enum_v<T>) {
+				this->stream_ptr->stream << static_cast<std::underlying_type_t<T>>(t);
+			}
+			else {
+				this->stream_ptr->stream << t;
+			}
 		}
 		return this->child_type_ref();
 	}

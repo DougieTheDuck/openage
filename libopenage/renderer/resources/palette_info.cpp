@@ -7,10 +7,10 @@ namespace openage::renderer::resources {
 PaletteInfo::PaletteInfo(const std::vector<uint8_t> &colors) :
 	colors{} {
 	for (size_t i = 0; i < colors.size(); i += 4) {
-		this->colors.emplace_back(colors[i] / 256.0,
-		                          colors[i + 1] / 256.0,
-		                          colors[i + 2] / 256.0,
-		                          colors[i + 3] / 256.0);
+		this->colors.emplace_back(colors[i] / 256.0f,
+		                          colors[i + 1] / 256.0f,
+		                          colors[i + 2] / 256.0f,
+		                          colors[i + 3] / 256.0f);
 	}
 }
 

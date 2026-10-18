@@ -166,7 +166,7 @@ cdef size_t file_read_to(PyObject *filelike, void *buf, ssize_t max) except * wi
     return count
 
 
-cdef bool file_readable(PyObject *filelike) except * with gil:
+cdef bool file_readable(PyObject *filelike) except? False with gil:
     return (<object> filelike).readable()
 
 
@@ -174,7 +174,7 @@ cdef void file_write(PyObject *filelike, const string &data) except * with gil:
     (<object> filelike).write(data)
 
 
-cdef bool file_writable(PyObject *filelike) except * with gil:
+cdef bool file_writable(PyObject *filelike) except? False with gil:
     return (<object> filelike).writable()
 
 
@@ -183,7 +183,7 @@ cdef void file_seek(PyObject *filelike, ssize_t offset, int how) except * with g
     (<object> filelike).seek(offset, how)
 
 
-cdef bool file_seekable(PyObject *filelike) except * with gil:
+cdef bool file_seekable(PyObject *filelike) except? False with gil:
     return (<object> filelike).seekable()
 
 

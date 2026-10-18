@@ -3,6 +3,7 @@
 #include "parse_texture.h"
 
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,6 +23,14 @@
 
 
 namespace openage::renderer::resources::parser {
+
+static uint32_t parse_dimension(const std::string &value) {
+	auto dimension = std::stoull(value);
+	if (value.front() == '-' or dimension > std::numeric_limits<uint32_t>::max()) {
+		throw Error{MSG(err) << "Texture dimension is outside the unsigned 32-bit range: " << value};
+	}
+	return static_cast<uint32_t>(dimension);
+}
 
 /// Tries to guess the alignment of image rows based on image parameters. Kinda
 /// black magic and might not actually work.
@@ -70,8 +79,8 @@ std::string parse_imagefile(const std::vector<std::string> &args) {
 SizeData parse_size(const std::vector<std::string> &args) {
 	SizeData size;
 
-	size.width = std::stoul(args[1]);
-	size.height = std::stoul(args[2]);
+	size.width = parse_dimension(args[1]);
+	size.height = parse_dimension(args[2]);
 
 	return size;
 }
@@ -131,8 +140,8 @@ SubtextureData parse_subtex(const std::vector<std::string> &args) {
 
 	subtex.xpos = std::stoi(args[1]);
 	subtex.ypos = std::stoi(args[2]);
-	subtex.xsize = std::stoul(args[3]);
-	subtex.ysize = std::stoul(args[4]);
+	subtex.xsize = parse_dimension(args[3]);
+	subtex.ysize = parse_dimension(args[4]);
 	subtex.xanchor = std::stoi(args[5]);
 	subtex.yanchor = std::stoi(args[6]);
 

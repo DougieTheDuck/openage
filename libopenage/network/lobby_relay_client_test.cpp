@@ -207,7 +207,7 @@ void lobby_relay_client() {
 	TESTEQUALS(submitted.size(), size_t{1});
 	TESTEQUALS(submitted[0].identity.player_id, initial.local_player_id);
 	TESTEQUALS(submitted[0].intent.kind == CommandKind::MOVE, true);
-	TESTEQUALS(submitted[0].intent.entity_ids, movement.entity_ids);
+	TESTEQUALS(submitted[0].intent.entity_ids == movement.entity_ids, true);
 	TESTEQUALS(submitted[0].intent.command_id, uint64_t{1});
 	CommandResult answer{};
 	answer.command_id = submitted[0].intent.command_id;

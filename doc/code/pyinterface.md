@@ -6,6 +6,9 @@ and the library `libopenage.so`, which contains all C++ code.
 
 Cython is used for glue code.
 
+Boolean callbacks returning C++ `bool` use `except? False` so their exception return value is representable as a boolean.
+The `?` preserves ordinary `False` results: they indicate an exception only when Python's error indicator is also set.
+
 
 Cython crash course
 -------------------

@@ -127,6 +127,25 @@ void pyobject() {
 		dict.get("strformat").call(py::str("stuff: {}"), 1337).str(),
 		py::str("stuff: {}").getattr("format").call(1337).str()
 	);
+
+	TESTNOEXCEPT(dict.exec(
+		"class FailingPredicates:\n"
+		"    def __bool__(self):\n"
+		"        raise RuntimeError('bool failed')\n"
+		"    def __eq__(self, other):\n"
+		"        raise RuntimeError('equality failed')\n"
+		"    def __contains__(self, item):\n"
+		"        raise RuntimeError('membership failed')\n"
+		"    def __getattr__(self, name):\n"
+		"        raise RuntimeError('attribute lookup failed')\n"
+	));
+	auto failing = dict.eval("FailingPredicates()");
+	TESTTHROWS(failing.to_bool());
+	TESTTHROWS(failing.equals(py::None));
+	TESTTHROWS(py::None.in(failing));
+	TESTTHROWS(failing.hasattr("missing"));
+	TESTTHROWS(failing.isinstance(py::integer(0)));
+	TESTEQUALS(py::False.to_bool(), false);
 }
 
 

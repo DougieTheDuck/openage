@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <cstddef>
+#include <cstdint>
 
 #include "renderer/resources/texture_info.h"
 
@@ -20,8 +20,8 @@ namespace renderer::resources::parser {
  * Definition according to doc/media/openage/texture_format_spec.md.
  */
 struct SizeData {
-	size_t width;
-	size_t height;
+	uint32_t width;
+	uint32_t height;
 };
 
 struct PixelFormatData {
@@ -30,12 +30,12 @@ struct PixelFormatData {
 };
 
 struct SubtextureData {
-	size_t xpos;
-	size_t ypos;
-	size_t xsize;
-	size_t ysize;
-	int xanchor;
-	int yanchor;
+	int32_t xpos;
+	int32_t ypos;
+	uint32_t xsize;
+	uint32_t ysize;
+	int32_t xanchor;
+	int32_t yanchor;
 };
 
 /**

@@ -47,7 +47,7 @@ function(doxygen_configure)
 			COMMAND false
 			VERBATIM
 		)
-		message(WARNING "doxygen couldn't be found, you won't be able to generate docs")
+		message(STATUS "Optional dependency Doxygen not found; documentation generation is unavailable")
 	endif()
 endfunction()
 

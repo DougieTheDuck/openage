@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "coord/declarations.h"
 #include "pathfinding/types.h"
 
 
@@ -199,7 +200,7 @@ private:
 	 *
 	 * @return Field coordinates of the LOS corners.
 	 */
-	std::vector<std::pair<int, int>> get_los_corners(const std::shared_ptr<CostField> &cost_field,
+	std::vector<std::pair<coord::tile_t, coord::tile_t>> get_los_corners(const std::shared_ptr<CostField> &cost_field,
 	                                                 const coord::tile_delta &target,
 	                                                 const coord::tile_delta &blocker);
 
@@ -218,8 +219,8 @@ private:
 	 * @return Cell indices of the LOS line.
 	 */
 	std::vector<size_t> bresenhams_line(const coord::tile_delta &target,
-	                                    int corner_x,
-	                                    int corner_y);
+	                                    coord::tile_t corner_x,
+	                                    coord::tile_t corner_y);
 
 	/**
 	 * Side length of the field.

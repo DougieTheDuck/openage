@@ -487,10 +487,10 @@ void IntegrationField::update_neighbor(size_t idx,
 	}
 }
 
-std::vector<std::pair<int, int>> IntegrationField::get_los_corners(const std::shared_ptr<CostField> &cost_field,
+std::vector<std::pair<coord::tile_t, coord::tile_t>> IntegrationField::get_los_corners(const std::shared_ptr<CostField> &cost_field,
                                                                    const coord::tile_delta &target,
                                                                    const coord::tile_delta &blocker) {
-	std::vector<std::pair<int, int>> corners;
+	std::vector<std::pair<coord::tile_t, coord::tile_t>> corners;
 
 	// Get the cost of the blocking cell's neighbors
 
@@ -500,10 +500,10 @@ std::vector<std::pair<int, int>> IntegrationField::get_los_corners(const std::sh
 	auto bottom_cost = COST_IMPASSABLE;
 	auto right_cost = COST_IMPASSABLE;
 
-	std::pair<int, int> top_left{blocker.ne, blocker.se};
-	std::pair<int, int> top_right{blocker.ne + 1, blocker.se};
-	std::pair<int, int> bottom_left{blocker.ne, blocker.se + 1};
-	std::pair<int, int> bottom_right{blocker.ne + 1, blocker.se + 1};
+	std::pair<coord::tile_t, coord::tile_t> top_left{blocker.ne, blocker.se};
+	std::pair<coord::tile_t, coord::tile_t> top_right{blocker.ne + 1, blocker.se};
+	std::pair<coord::tile_t, coord::tile_t> bottom_left{blocker.ne, blocker.se + 1};
+	std::pair<coord::tile_t, coord::tile_t> bottom_right{blocker.ne + 1, blocker.se + 1};
 
 	// Get neighbor costs (if they exist)
 	if (blocker.se > 0) {
@@ -623,8 +623,8 @@ std::vector<std::pair<int, int>> IntegrationField::get_los_corners(const std::sh
 }
 
 std::vector<size_t> IntegrationField::bresenhams_line(const coord::tile_delta &target,
-                                                      int corner_x,
-                                                      int corner_y) {
+                                                      coord::tile_t corner_x,
+                                                      coord::tile_t corner_y) {
 	std::vector<size_t> cells;
 
 	// cell coordinates
@@ -633,7 +633,7 @@ std::vector<size_t> IntegrationField::bresenhams_line(const coord::tile_delta &t
 	auto cell_y = corner_y;
 
 	// field edge boundary
-	int boundary = this->size;
+	auto boundary = static_cast<coord::tile_t>(this->size);
 
 	// target coordinates
 	// offset by 0.5 to get the center of the cell

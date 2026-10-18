@@ -106,6 +106,9 @@ Width of the image in pixels.
 **height**<br>
 Height of the image in pixels.
 
+Image dimensions and subtexture sizes must fit in an unsigned 32-bit integer.
+Values outside this range are rejected instead of being truncated.
+
 
 #### Example
 

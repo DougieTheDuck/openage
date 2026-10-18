@@ -222,17 +222,17 @@ cdef cpppath_to_pypath(const Path_cpp &path):
 
 
 cdef bool fs_is_file(PyObject *fslike,
-                     const vector[string]& parts) except * with gil:
+                     const vector[string]& parts) except? False with gil:
     return (<object> fslike).is_file(parts)
 
 
 cdef bool fs_is_dir(PyObject *fslike,
-                    const vector[string]& parts) except * with gil:
+                    const vector[string]& parts) except? False with gil:
     return (<object> fslike).is_dir(parts)
 
 
 cdef bool fs_writable(PyObject *fslike,
-                      const vector[string]& parts) except * with gil:
+                      const vector[string]& parts) except? False with gil:
     return (<object> fslike).writable(parts)
 
 
@@ -240,7 +240,7 @@ cdef vector[string] fs_list(PyObject *fslike, const vector[string]& parts) excep
     return (<object> fslike).list(parts)
 
 
-cdef bool fs_mkdirs(PyObject *fslike, const vector[string]& parts) except * with gil:
+cdef bool fs_mkdirs(PyObject *fslike, const vector[string]& parts) except? False with gil:
     return (<object> fslike).mkdirs(parts)
 
 
@@ -341,20 +341,20 @@ cdef PyObj fs_get_native_path(PyObject *fslike,
 
 cdef bool fs_rename(PyObject *fslike,
                     const vector[string]& parts,
-                    const vector[string]& target_parts) except * with gil:
+                    const vector[string]& target_parts) except? False with gil:
 
     return (<object> fslike).rename(parts, target_parts)
 
 
-cdef bool fs_rmdir(PyObject *fslike, const vector[string]& parts) except * with gil:
+cdef bool fs_rmdir(PyObject *fslike, const vector[string]& parts) except? False with gil:
     return (<object> fslike).rmdir(parts)
 
 
-cdef bool fs_touch(PyObject *fslike, const vector[string]& parts) except * with gil:
+cdef bool fs_touch(PyObject *fslike, const vector[string]& parts) except? False with gil:
     return (<object> fslike).touch(parts)
 
 
-cdef bool fs_unlink(PyObject *fslike, const vector[string]& parts) except * with gil:
+cdef bool fs_unlink(PyObject *fslike, const vector[string]& parts) except? False with gil:
     return (<object> fslike).unlink(parts)
 
 
@@ -366,7 +366,7 @@ cdef uint64_t fs_get_filesize(PyObject *fslike, const vector[string]& parts) exc
     return (<object> fslike).filesize(parts)
 
 
-cdef bool fs_is_fslike_directory(PyObject *fslike) except * with gil:
+cdef bool fs_is_fslike_directory(PyObject *fslike) except? False with gil:
     return isinstance(<object> fslike, Directory)
 
 
