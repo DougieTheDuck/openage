@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <limits>
 #include <utility>
 
@@ -17,6 +18,8 @@
 namespace openage::network {
 
 namespace {
+
+constexpr size_t MAX_INFLIGHT_COMMANDS = 256;
 
 uint8_t hex_digit(char ch) {
 	if (ch >= '0' and ch <= '9') return static_cast<uint8_t>(ch - '0');
@@ -104,6 +107,11 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->hosting = settings.hosting;
 		this->pending_host_snapshot.reset();
 		this->pending_host_update.reset();
+		this->pending_guest_commands.clear();
+		this->incoming_host_commands.clear();
+		this->pending_command_results.clear();
+		this->guest_command_results.clear();
+		this->next_guest_command_id = 1;
 		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
 		this->roles_assigned_at.reset();
@@ -166,6 +174,57 @@ void RelayLobbyClient::provide_host_update(WorldState world) {
 	this->pending_host_update = std::move(world);
 }
 
+bool RelayLobbyClient::reveal_finished_locked() const {
+	if (not this->roles_assigned_at) return false;
+	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now() - *this->roles_assigned_at);
+	return role_reveal_seconds_remaining(elapsed) == 0;
+}
+
+bool RelayLobbyClient::send_guest_command(CommandIntent intent) {
+	std::lock_guard lock{this->mutex};
+	if (this->hosting or not this->current.connected
+	    or (this->current.phase != "bootstrap" and this->current.phase != "streaming")
+	    or not this->reveal_finished_locked()
+	    or this->pending_guest_commands.size() >= MAX_INFLIGHT_COMMANDS) {
+		return false;
+	}
+	intent.command_id = this->next_guest_command_id++;
+	this->pending_guest_commands.push_back(std::move(intent));
+	return true;
+}
+
+std::vector<AuthenticatedCommand> RelayLobbyClient::take_host_commands() {
+	std::lock_guard lock{this->mutex};
+	std::vector<AuthenticatedCommand> drained;
+	drained.reserve(this->incoming_host_commands.size());
+	while (not this->incoming_host_commands.empty()) {
+		drained.push_back(std::move(this->incoming_host_commands.front()));
+		this->incoming_host_commands.pop_front();
+	}
+	return drained;
+}
+
+void RelayLobbyClient::send_command_result(CommandResult result) {
+	std::lock_guard lock{this->mutex};
+	if (this->stopping or not this->hosting or not this->current.connected) return;
+	if (this->pending_command_results.size() >= MAX_INFLIGHT_COMMANDS) {
+		throw Error{MSG(err) << "FVD command-result queue capacity exceeded"};
+	}
+	this->pending_command_results.push_back(std::move(result));
+}
+
+std::vector<CommandResult> RelayLobbyClient::take_command_results() {
+	std::lock_guard lock{this->mutex};
+	std::vector<CommandResult> drained;
+	drained.reserve(this->guest_command_results.size());
+	while (not this->guest_command_results.empty()) {
+		drained.push_back(std::move(this->guest_command_results.front()));
+		this->guest_command_results.pop_front();
+	}
+	return drained;
+}
+
 std::shared_ptr<ReplicationTracker> RelayLobbyClient::get_replication() const {
 	std::lock_guard lock{this->mutex};
 	return this->guest_replication;
@@ -180,6 +239,10 @@ RelayLobbyStatus RelayLobbyClient::status() const {
 		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
 			std::chrono::steady_clock::now() - *this->roles_assigned_at);
 		result.role_seconds_remaining = role_reveal_seconds_remaining(elapsed);
+		if (result.role_seconds_remaining == 0
+		    and (result.phase == "bootstrap" or result.phase == "streaming")) {
+			result.phase = "playing";
+		}
 	}
 	return result;
 }
@@ -197,8 +260,8 @@ void RelayLobbyClient::publish_stream_revision(uint64_t revision, bool local_hos
 	std::lock_guard lock{this->mutex};
 	this->current.phase = "streaming";
 	this->current.message = local_host
-		? "Sending authoritative world deltas. Gameplay controls are not connected yet."
-		: "Receiving authoritative world deltas. Guest rendering and controls are not connected yet.";
+		? "Host-authoritative world updates active."
+		: "Receiving authoritative match state from host.";
 	this->current.snapshot_revision = revision;
 }
 
@@ -217,6 +280,11 @@ void RelayLobbyClient::close() {
 		this->connection.reset();
 		this->pending_host_snapshot.reset();
 		this->pending_host_update.reset();
+		this->pending_guest_commands.clear();
+		this->incoming_host_commands.clear();
+		this->pending_command_results.clear();
+		this->guest_command_results.clear();
+		this->next_guest_command_id = 1;
 		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
 		this->roles_assigned_at.reset();
@@ -349,12 +417,38 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 								MessageType::WORLD_DELTA, encode_world_delta(delta)));
 							this->publish_stream_revision(revision, true);
 						}
-						else {
-							if (not socket->peer_connected()) {
-								throw Error{MSG(err) << "Relay guest disconnected during world replication"};
+						// Host owns session sequence numbers. Poll guest intents
+						// on this same worker; never decode them on a render thread.
+						for (size_t i = 0; i < 32; ++i) {
+							auto frame = socket->try_receive_frame();
+							if (not frame) break;
+							accepted->validate_incoming(*frame);
+							if (frame->message_type != MessageType::COMMAND_INTENT) {
+								throw Error{MSG(err) << "Unexpected guest match message"};
 							}
-							std::this_thread::sleep_for(std::chrono::milliseconds{20});
+							AuthenticatedCommand incoming{
+								accepted->get_identity(), decode_command_intent(frame->payload)};
+							std::lock_guard lock{this->mutex};
+							if (this->incoming_host_commands.size() >= MAX_INFLIGHT_COMMANDS) {
+								throw Error{MSG(err) << "Guest command queue exceeded capacity"};
+							}
+							this->incoming_host_commands.push_back(std::move(incoming));
 						}
+						{
+							std::deque<CommandResult> outgoing;
+							{
+								std::lock_guard lock{this->mutex};
+								outgoing.swap(this->pending_command_results);
+							}
+							for (auto &result : outgoing) {
+								socket->send_frame(accepted->make_frame(
+									MessageType::COMMAND_RESULT, encode_command_result(result)));
+							}
+						}
+						if (not socket->is_open() or not socket->peer_connected()) {
+							throw Error{MSG(err) << "Relay guest disconnected during gameplay"};
+						}
+						std::this_thread::sleep_for(std::chrono::milliseconds{20});
 					}
 					break;
 				}
@@ -430,7 +524,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			}
 			this->publish(RelayLobbyStatus{
 				.phase = "bootstrap",
-				.message = "Initial world received. Live gameplay networking is not connected yet.",
+				.message = "Authoritative world synchronized; waiting for role reveal.",
 				.participants = people,
 				.connected = true,
 				.local_player_id = guest_player,
@@ -440,12 +534,38 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				.local_role = guest_role,
 			});
 			while (not this->stopping) {
-				auto update_frame = socket->receive_frame();
+				// Queue client intents only through the authenticated session.
+				// This worker alone allocates outgoing sequence numbers.
+				{
+					std::deque<CommandIntent> outbound;
+					{
+						std::lock_guard lock{this->mutex};
+						outbound.swap(this->pending_guest_commands);
+					}
+					for (auto &intent : outbound) {
+						socket->send_frame(session.make_frame(
+							MessageType::COMMAND_INTENT, encode_command_intent(intent)));
+					}
+				}
+				auto update_frame = socket->try_receive_frame();
 				if (not update_frame) {
-					if (this->stopping) break;
-					throw Error{MSG(err) << "Authoritative host disconnected during world replication"};
+					if (not socket->is_open() or not socket->peer_connected()) {
+						if (this->stopping) break;
+						throw Error{MSG(err) << "Authoritative host disconnected during gameplay"};
+					}
+					std::this_thread::sleep_for(std::chrono::milliseconds{20});
+					continue;
 				}
 				session.validate_incoming(*update_frame);
+				if (update_frame->message_type == MessageType::COMMAND_RESULT) {
+					auto result = decode_command_result(update_frame->payload);
+					std::lock_guard lock{this->mutex};
+					if (this->guest_command_results.size() >= MAX_INFLIGHT_COMMANDS) {
+						this->guest_command_results.pop_front();
+					}
+					this->guest_command_results.push_back(std::move(result));
+					continue;
+				}
 				if (update_frame->message_type == MessageType::WORLD_DELTA) {
 					auto delta = decode_world_delta(update_frame->payload);
 					if (tracker->accept_delta(delta) != DeltaDisposition::APPLY) {

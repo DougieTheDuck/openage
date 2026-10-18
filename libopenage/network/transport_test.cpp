@@ -45,6 +45,9 @@ void transport() {
 
 	auto client = TcpConnection::connect("127.0.0.1", listener.get_port());
 	TESTEQUALS(client.is_open(), true);
+	// Polling must not block or confuse "no frame yet" with disconnect.
+	TESTEQUALS(client.try_receive_frame().has_value(), false);
+	TESTEQUALS(client.is_open(), true);
 	TESTEQUALS(client.peer_connected(), true);
 
 	Frame command{};

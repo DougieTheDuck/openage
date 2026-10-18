@@ -6,7 +6,9 @@ Item {
     id: menu
     anchors.fill: parent
     property var lobby: typeof fvdLobby === "undefined" ? null : fvdLobby
-    visible: lobby !== null && lobby.enabled
+    // Once a synchronized session enters gameplay, the entire overlay
+    // disappears. The FVD HUD and world renderer remain visible beneath it.
+    visible: lobby !== null && lobby.enabled && phase !== "playing"
     z: 100
 
     readonly property string phase: lobby ? lobby.phase : "menu"
@@ -16,7 +18,8 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#f0121e1a"
+        // Keep the world visible around the five-second role reveal.
+        color: menu.revealingRoles ? "#88121e1a" : "#f0121e1a"
     }
 
     Rectangle {

@@ -13,6 +13,7 @@
 #include <QVariant>
 #include <cmath>
 #include <iostream>
+#include <unordered_set>
 #include <stdexcept>
 #include <utility>
 #include <string>
@@ -21,6 +22,7 @@
 #include "error/error.h"
 #include "gamestate/fvd.h"
 #include "gamestate/game.h"
+#include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
 #include "gamestate/simulation.h"
 #include "input/controller/camera/binding_context.h"
@@ -306,6 +308,16 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	if (not this->fvd_lobby_state or not this->fvd_lobby_client) return;
 	if (action == "disconnect") {
 		this->fvd_lobby_local_error.clear();
+		this->fvd_gameplay_active = false;
+		this->fvd_assigned_player = 0;
+		this->fvd_replication.reset();
+		this->fvd_guest_visuals_initialized = false;
+		this->fvd_guest_visual_revision = 0;
+		for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
+		this->fvd_guest_entities.clear();
+		if (this->fvd_lobby_hosting and this->time_loop) {
+			this->time_loop->get_clock()->pause();
+		}
 		this->fvd_bootstrap_requested = false;
 		this->fvd_bootstrap_supplied = false;
 		this->fvd_update_requested = false;
@@ -316,6 +328,10 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 			this->simulation->cancel_network_bootstrap();
 		}
 		this->fvd_lobby_client->close();
+		if (this->game_controller) {
+			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
+			if (fvd) this->game_controller->reset_online_player_slots(fvd->get_player_count());
+		}
 		return;
 	}
 	if (action == "start") {
@@ -324,6 +340,16 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	}
 	if (action != "host" and action != "join" and action != "refresh") return;
 	this->fvd_lobby_local_error.clear();
+	this->fvd_gameplay_active = false;
+	this->fvd_assigned_player = 0;
+	this->fvd_replication.reset();
+	this->fvd_guest_visuals_initialized = false;
+	this->fvd_guest_visual_revision = 0;
+	for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
+	this->fvd_guest_entities.clear();
+	if (this->fvd_lobby_hosting and this->time_loop) {
+		this->time_loop->get_clock()->pause();
+	}
 	this->fvd_bootstrap_requested = false;
 	this->fvd_bootstrap_supplied = false;
 	this->fvd_update_requested = false;
@@ -331,6 +357,10 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	this->fvd_last_update_request = {};
 	if (this->simulation) {
 		this->simulation->cancel_network_bootstrap();
+	}
+	if (this->game_controller) {
+		auto fvd = this->simulation->get_game()->get_state()->get_fvd();
+		if (fvd) this->game_controller->reset_online_player_slots(fvd->get_player_count());
 	}
 	try {
 		auto val = [&](const char *name) {
@@ -398,12 +428,64 @@ void Presenter::refresh_fvd_lobby_state() {
 			this->fvd_lobby_local_error = error.what();
 		}
 	}
-	// Live host captures are sampled on the simulation thread and queued on
-	// the existing authenticated relay connection. No gameplay commands or
-	// independent guest simulation are enabled yet; keep the overlay visible.
+	// Lock the local controller to the one player chosen by StartMatch.
+	if (state.local_player_id != 0 and this->game_controller
+	    and state.local_player_id != this->fvd_assigned_player) {
+		this->game_controller->lock_to_online_player(state.local_player_id);
+		this->fvd_assigned_player = state.local_player_id;
+	}
+	if (not this->fvd_lobby_hosting and not this->fvd_replication) {
+		this->fvd_replication = this->fvd_lobby_client->get_replication();
+	}
+	const bool ready_to_play = state.phase == "playing" and this->fvd_assigned_player != 0
+		&& (this->fvd_lobby_hosting or (this->fvd_replication
+			&& this->fvd_replication->has_state()));
+	if (ready_to_play and not this->fvd_gameplay_active) {
+		this->fvd_gameplay_active = true;
+		if (this->fvd_lobby_hosting and this->time_loop) {
+			// Only the authority advances game rules.
+			this->time_loop->get_clock()->resume();
+		}
+	}
+	if ((state.phase == "error" or state.phase == "menu")
+	    and this->fvd_gameplay_active) {
+		this->fvd_gameplay_active = false;
+		if (this->fvd_lobby_hosting and this->time_loop) {
+			this->time_loop->get_clock()->pause();
+		}
+	}
+	if (this->fvd_gameplay_active and this->fvd_lobby_hosting) {
+		for (auto &command : this->fvd_lobby_client->take_host_commands()) {
+			auto command_id = command.intent.command_id;
+			auto reply = [this, command_id](bool accepted) {
+				network::CommandResult result{};
+				result.command_id = command_id;
+				result.status = accepted ? network::CommandStatus::ACCEPTED
+				                         : network::CommandStatus::REJECTED;
+				result.world_revision = this->fvd_lobby_client->status().snapshot_revision;
+				result.simulation_time = this->time_loop->get_clock()->get_time();
+				if (not accepted) result.reason = "Host rejected command (ownership or target)";
+				this->fvd_lobby_client->send_command_result(std::move(result));
+			};
+			if (not this->simulation->submit_network_command(
+				std::move(command), reply)) reply(false);
+		}
+	}
+	if (this->fvd_gameplay_active and not this->fvd_lobby_hosting) {
+		for (const auto &decision : this->fvd_lobby_client->take_command_results()) {
+			if (decision.status == network::CommandStatus::REJECTED) {
+				log::log(WARN << "FVD host rejected command #"
+				              << decision.command_id << ": " << decision.reason);
+			}
+		}
+	}
+	// Capture live authoritative world states on the simulation owner thread;
+	// the relay worker transmits recipient deltas while the host simulation
+	// is running. Guest simulation remains paused, using replicated visuals.
 	if (this->simulation and this->fvd_lobby_hosting
 	    and this->fvd_bootstrap_supplied
-	    and (state.phase == "bootstrap" or state.phase == "streaming")
+	    and (state.phase == "bootstrap" or state.phase == "streaming"
+	     or state.phase == "playing")
 	    and state.role_seconds_remaining == 0 and state.remote_player_id != 0) {
 		try {
 			if (this->fvd_update_requested) {
@@ -451,13 +533,69 @@ void Presenter::refresh_fvd_lobby_state() {
 	update("worldRevision", static_cast<qulonglong>(state.snapshot_revision));
 }
 
+void Presenter::refresh_fvd_guest_visuals() {
+	if (not this->fvd_lobby_enabled or this->fvd_lobby_hosting
+	    or not this->fvd_replication or not this->world_renderer) return;
+	auto world = this->fvd_replication->get_world_state();
+	if (not world or world->world_revision == this->fvd_guest_visual_revision) return;
+
+	// The guest's paused local simulation loads terrain/assets only.
+	// Turn off its independent units before creating authoritative proxies.
+	if (not this->fvd_guest_visuals_initialized) {
+		for (const auto &[id, entity] :
+		     this->simulation->get_game()->get_state()->get_game_entities()) {
+			if (auto visual = entity->get_render_entity()) visual->deactivate(0);
+		}
+		this->fvd_guest_visuals_initialized = true;
+	}
+	std::unordered_set<gamestate::entity_id_t> present;
+	for (const auto &entity : world->entities) {
+		std::string path;
+		if (entity.definition == "fvd.data.entities.Builder")
+			path = "../../../fvd/graphics/builder.sprite";
+		else if (entity.definition == "fvd.data.entities.Horse")
+			path = "../../../fvd/graphics/horse.sprite";
+		else if (entity.definition == "fvd.data.entities.Tower")
+			path = "../../../fvd/graphics/tower.sprite";
+		else if (entity.definition == "fvd.data.entities.Foundation")
+			path = "../../../fvd/graphics/foundation.sprite";
+		else
+			continue;
+		present.insert(entity.entity_id);
+		auto &visual = this->fvd_guest_entities[entity.entity_id];
+		if (not visual) {
+			visual = std::make_shared<renderer::world::RenderEntity>();
+			this->world_renderer->add_render_entity(visual);
+		}
+		// Render clock stays at zero on guest. Replace the displayed
+		// authoritative position on every accepted network revision.
+		visual->update(entity.entity_id, entity.position, path, time::TIME_ZERO);
+	}
+	for (auto it = this->fvd_guest_entities.begin();
+	     it != this->fvd_guest_entities.end();) {
+		if (not present.contains(it->first)) {
+			it->second->deactivate(0);
+			it = this->fvd_guest_entities.erase(it);
+		}
+		else ++it;
+	}
+	this->fvd_guest_visual_revision = world->world_revision;
+}
+
 void Presenter::init_input() {
 	log::log(INFO << "Presenter: Initializing input subsystem...");
 
 	this->input_manager = std::make_shared<input::InputManager>();
 
 	this->window->add_key_callback([&](const QKeyEvent &ev) {
-		if (this->fvd_lobby_enabled) {
+		// Hidden multiplayer lobby can be reopened without leaving the
+		// current process. A restarted match still needs fresh simulation.
+		if (this->fvd_gameplay_active and ev.type() == QEvent::KeyRelease
+		    and ev.key() == Qt::Key_F10) {
+			this->handle_fvd_lobby_action("disconnect");
+			return;
+		}
+		if (this->fvd_lobby_enabled and not this->fvd_gameplay_active) {
 			// GuiRendererImpl already forwards every key to its QQuickWindow.
 			// Forwarding here too makes each character appear twice in TextInput.
 			// Do not dispatch lobby keystrokes to gameplay bindings either.
@@ -466,7 +604,7 @@ void Presenter::init_input() {
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_button_callback([&](const QMouseEvent &ev) {
-		if (this->fvd_lobby_enabled) {
+		if (this->fvd_lobby_enabled and not this->fvd_gameplay_active) {
 			// GuiRendererImpl forwards mouse buttons to QQuickWindow already.
 			// Only perform presenter-owned button hit testing once here.
 			if (ev.button() == Qt::LeftButton) {
@@ -518,7 +656,7 @@ void Presenter::init_input() {
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_move_callback([&](const QMouseEvent &ev) {
-		if (this->fvd_lobby_enabled) {
+		if (this->fvd_lobby_enabled and not this->fvd_gameplay_active) {
 			if (this->gui) {
 				this->gui->get_input_handler()->process(
 					std::shared_ptr<QEvent>{ev.clone()});
@@ -540,7 +678,7 @@ void Presenter::init_input() {
 		}
 	});
 	this->window->add_mouse_wheel_callback([&](const QWheelEvent &ev) {
-		if (this->fvd_lobby_enabled) {
+		if (this->fvd_lobby_enabled and not this->fvd_gameplay_active) {
 			// Scroll forwarding is also owned by GuiRendererImpl.
 			return;
 		}
@@ -615,7 +753,24 @@ void Presenter::init_input() {
 						}
 						callback(std::nullopt);
 					});
-			});
+			},
+			[this](network::CommandIntent intent) {
+				if (not this->fvd_lobby_enabled or this->fvd_lobby_hosting)
+					return false; // Authority uses local simulation controls.
+				if (this->fvd_gameplay_active and this->fvd_lobby_client) {
+					if (not this->fvd_lobby_client->send_guest_command(std::move(intent))) {
+						log::log(WARN << "FVD guest command queue rejected an input");
+					}
+				}
+				return true; // Never issue guest orders to local simulation.
+			},
+			[this]() -> std::optional<network::WorldState> {
+				if (this->fvd_lobby_hosting or not this->fvd_gameplay_active
+				    or not this->fvd_lobby_client) return std::nullopt;
+				auto tracker = this->fvd_lobby_client->get_replication();
+				return tracker ? tracker->get_world_state() : std::nullopt;
+			},
+			this->fvd_lobby_enabled);
 		this->input_manager->set_game_controller(game_controller);
 		this->game_controller = game_controller;
 		input_ctx->set_game_bindings(engine_context);
@@ -726,6 +881,7 @@ void Presenter::init_final_render_pass() {
 
 void Presenter::render() {
 	this->refresh_fvd_lobby_state();
+	this->refresh_fvd_guest_visuals();
 	// TODO: Pass current time to update() instead of fetching it in renderer
 	{
 		util::StallProfiler profile{"render.camera_update"};
@@ -774,6 +930,25 @@ void Presenter::render() {
 				             .arg(static_cast<qlonglong>(current))
 				             .arg(selected.render_entity->get_max_health());
 			}
+			// Guest render entities are lightweight proxies; health is supplied
+			// by the authoritative state rather than the paused local world.
+			if (this->fvd_replication and selected.ids.size() == 1) {
+				auto replicated = this->fvd_replication->get_world_state();
+				if (replicated) {
+					auto id = selected.ids.front();
+					auto entity = std::find_if(
+						replicated->entities.begin(), replicated->entities.end(),
+						[id](const network::EntityState &entry) {
+							return entry.entity_id == id;
+						});
+					if (entity != replicated->entities.end()
+					    and entity->health and entity->maximum_health) {
+						health = QString{"%1 / %2"}
+						             .arg(static_cast<qlonglong>(*entity->health))
+						             .arg(static_cast<qlonglong>(*entity->maximum_health));
+					}
+				}
+			}
 			this->fvd_hud_state->insert("controlled", static_cast<int>(controlled));
 			this->fvd_hud_state->insert("selection", selection_label);
 			this->fvd_hud_state->insert("isTower", tower);
@@ -783,13 +958,14 @@ void Presenter::render() {
 			this->fvd_hud_state->insert("attacking", this->game_controller->is_attack_move_active());
 			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 			if (fvd) {
-				const auto now = this->time_loop->get_clock()->get_time();
+				auto now = this->time_loop->get_clock()->get_time();
 				std::vector<gamestate::FVD::ArrowTrail> arrows{};
 				if (this->fvd_replication) {
 					// Replicate each launch once. The guest animates the flight and
 					// hides it at impact_time without an arrow removal packet.
 					auto replicated = this->fvd_replication->get_world_state();
 					if (replicated) {
+						now = replicated->simulation_time;
 						arrows.reserve(replicated->arrows.size());
 						for (const auto &arrow : replicated->arrows) {
 							if (not network::arrow_visible_at(arrow, now)) {
@@ -870,9 +1046,37 @@ void Presenter::render() {
 					auto state = this->simulation->get_game()->get_state();
 					auto mouse = this->placement_cursor->to_phys3(this->camera);
 					auto site = mouse.to_tile();
-					valid = fvd->can_place_tower(
-						state, static_cast<gamestate::player_id_t>(controlled),
-						selected.ids, mouse, now);
+					auto replica = this->fvd_replication
+						? this->fvd_replication->get_world_state() : std::nullopt;
+					if (replica) {
+						// Cosmetic preview against the latest authoritative
+						// occupied/reserved cells. The host still makes the
+						// final decision when the build request arrives.
+						valid = true;
+						for (const auto &tile : fvd->get_tower_footprint(site)) {
+							if (tile.ne < 0 or tile.se < 0
+							    or tile.ne >= replica->map_size
+							    or tile.se >= replica->map_size
+							    or std::any_of(replica->reservations.begin(),
+							                   replica->reservations.end(),
+							                   [&](const network::TileReservation &reserved) {
+								                   return reserved.tile == tile;
+							                   })
+							    or std::any_of(replica->entities.begin(),
+							                   replica->entities.end(),
+							                   [&](const network::EntityState &entry) {
+								                   return entry.position.to_tile() == tile;
+							                   })) {
+								valid = false;
+								break;
+							}
+						}
+					}
+					else {
+						valid = fvd->can_place_tower(
+							state, static_cast<gamestate::player_id_t>(controlled),
+							selected.ids, mouse, now);
+					}
 					const Eigen::Matrix4f camera_matrix =
 						this->camera->get_projection_matrix() * this->camera->get_view_matrix();
 					const auto viewport = this->camera->get_viewport_size();

@@ -91,6 +91,18 @@ void tower_placement_mode() {
 	TESTEQUALS(controller.set_selected_if_current(
 		invalidated_generation, {101}, SelectionKind::HORSE), false);
 	TESTEQUALS(deferred_ran, true);
+
+	// Online role draw locks the faction despite the solo test shortcuts.
+	controller.lock_to_online_player(1);
+	TESTEQUALS(controller.get_controlled(), size_t{1});
+	controller.set_control(2);
+	TESTEQUALS(controller.get_controlled(), size_t{1});
+	controller.set_selected({101}, SelectionKind::HORSE);
+	TESTEQUALS(controller.begin_attack_move(), true);
+	controller.reset_online_player_slots(8);
+	TESTEQUALS(controller.is_attack_move_active(), false);
+	controller.set_control(2);
+	TESTEQUALS(controller.get_controlled(), size_t{2});
 }
 
 } // namespace openage::input::game::tests

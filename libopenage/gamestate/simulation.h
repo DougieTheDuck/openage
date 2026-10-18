@@ -3,10 +3,13 @@
 #pragma once
 
 #include <shared_mutex>
+#include <deque>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <cstdint>
 #include "network/messages.h"
+#include "network/command_mailbox.h"
 
 #include "util/path.h"
 
@@ -158,6 +161,10 @@ public:
 	void request_network_update(gamestate::player_id_t recipient, uint64_t revision);
 	std::optional<network::WorldState> take_network_update();
 
+	/** Enqueue guest input for owner-thread authentication and execution. */
+	bool submit_network_command(network::AuthenticatedCommand command,
+	                            std::function<void(bool)> result_callback);
+
 	/** Invalidate any pending/ready captures when the user leaves the lobby. */
 	void cancel_network_bootstrap();
 
@@ -241,6 +248,12 @@ private:
 	};
 	std::optional<UpdateRequest> update_requested{};
 	std::optional<network::WorldState> update_ready{};
+	std::mutex network_command_mutex;
+	struct NetworkCommandRequest {
+		network::AuthenticatedCommand command;
+		std::function<void(bool)> callback;
+	};
+	std::deque<NetworkCommandRequest> network_commands{};
 };
 
 } // namespace gamestate

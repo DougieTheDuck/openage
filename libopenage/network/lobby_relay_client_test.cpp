@@ -181,6 +181,51 @@ void lobby_relay_client() {
 	TESTEQUALS(replication->get_revision(), uint64_t{4});
 	TESTEQUALS(replication->get_local_kills().value(), uint64_t{10});
 
+	// The role reveal must finish on both peers before human orders are sent.
+	bool host_ready = false;
+	bool guest_ready = false;
+	for (size_t attempt = 0; attempt < 700; ++attempt) {
+		host_ready = host.status().phase == "playing";
+		guest_ready = guest.status().phase == "playing";
+		if (host_ready and guest_ready) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(host_ready, true);
+	TESTEQUALS(guest_ready, true);
+	CommandIntent movement{};
+	movement.kind = CommandKind::MOVE;
+	movement.entity_ids = {42};
+	movement.target = {17, 18, 0};
+	TESTEQUALS(host.send_guest_command(movement), false);
+	TESTEQUALS(guest.send_guest_command(movement), true);
+	std::vector<AuthenticatedCommand> submitted{};
+	for (size_t attempt = 0; attempt < 300; ++attempt) {
+		submitted = host.take_host_commands();
+		if (not submitted.empty()) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(submitted.size(), size_t{1});
+	TESTEQUALS(submitted[0].identity.player_id, initial.local_player_id);
+	TESTEQUALS(submitted[0].intent.kind == CommandKind::MOVE, true);
+	TESTEQUALS(submitted[0].intent.entity_ids, movement.entity_ids);
+	TESTEQUALS(submitted[0].intent.command_id, uint64_t{1});
+	CommandResult answer{};
+	answer.command_id = submitted[0].intent.command_id;
+	answer.status = CommandStatus::REJECTED;
+	answer.world_revision = 4;
+	answer.reason = "unauthorized unit";
+	host.send_command_result(answer);
+	std::vector<CommandResult> decisions{};
+	for (size_t attempt = 0; attempt < 300; ++attempt) {
+		decisions = guest.take_command_results();
+		if (not decisions.empty()) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(decisions.size(), size_t{1});
+	TESTEQUALS(decisions[0].command_id, answer.command_id);
+	TESTEQUALS(decisions[0].status == CommandStatus::REJECTED, true);
+	TESTEQUALS(decisions[0].reason, answer.reason);
+
 	guest.close();
 	TESTEQUALS(wait_for(host, "error"), true);
 	listener.close();

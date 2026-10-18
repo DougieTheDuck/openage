@@ -28,14 +28,15 @@ the match is paused and is not extended by world synchronization. Both peers
 then bind the guest to the final player slot, transfer an authoritative initial
 snapshot and acknowledge its revision.
 
-**The current screen is a synchronized bootstrap plus authoritative world
-delta streaming, not yet playable online gameplay**. After the five-second
-reveal the host captures the paused simulation world at roughly 4 Hz, sends
-incremental deltas over the authenticated relay session, and the guest
-reconstructs the host's world. The overlay shows an increasing world revision,
-rather than starting two independently simulated games. Guest world rendering,
-player command forwarding, match-clock start, and recovery snapshots remain
-to be implemented. See the relay developer test in the networking documentation.
+After the five-second role reveal the dialog automatically disappears.
+The **host** resumes authoritative simulation and sends world deltas at about
+4 Hz. The **guest** displays replicated units and sends Move, AttackMove and
+BuildTower intents; the host checks player ownership and sends an acceptance
+or rejection. Online number-key role switching is disabled. **F10** leaves the
+match. Restart both clients for a fresh match world after disconnecting.
+Two-player public rooms remain the supported online configuration; guest
+focus-target attacks, queued towers, advanced construction prioritization,
+recovery snapshots and final multiplayer HUD polish are pending.
 
 In a Windows development build, run `.\RelWithDebInfo\run.exe game --modpacks fvd` from the build directory with the runtime dependency paths configured.
 Selected Builders display their current health above the unit.

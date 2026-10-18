@@ -49,14 +49,15 @@ Session IDs now survive the final role rebinding, and the initial world
 snapshot/acknowledgement runs through that same relay connection. The host can
 now queue complete recipient-specific state captures; the relay worker computes
 and sends versioned `WORLD_DELTA` frames based on the last **transmitted**
-state, and the guest validates/applies them using `ReplicationTracker`. The
-presenter requests simulation-thread captures about four times per second
-after the five-second reveal. The current simulation is still **paused**, so
-this proves a live, revisioned transport path rather than running gameplay.
-**Input command forwarding, recovery-snapshot requests, authoritative live
-disconnect handling and guest world rendering/input controls remain pending.**
-The UI shows the advancing network world revision instead of pretending a
-playable match has started.
+state, and the guest validates/applies them using `ReplicationTracker`. After the five-second reveal, the host resumes its simulation and the
+presenter requests simulation-thread captures about four times per second.
+The guest draws replicated Builder/Horse/Tower/Foundation sprite proxies,
+uses only its assigned faction, and sends basic Move, AttackMove and BuildTower
+intents to the host for simulation-side validation. Host decisions return as
+`COMMAND_RESULT` messages. The full-screen role dialog disappears after
+the reveal; F10 disconnects and returns to the lobby. **Two players only**,
+and guest focus-attack, foundation prioritization, queued building, snapshot
+recovery, and complete online HUD parity remain unfinished.
 The initial FVD scenario still creates all eight configured players; only
 two of them correspond to admitted lobby participants, so dynamic scenario
 initialization and unused-slot removal are also required before real matches.
@@ -80,9 +81,13 @@ On the first client, enter a game name and select **Host Game**.
 On the second client, select **Refresh Games** and then **Join Room** to use the first result, or enter another displayed room ID before joining.
 The host selects **Start Game** after both clients appear. The authoritative
 Hunter/Builder draw is revealed to both participants for five seconds; both
-screens then reach synchronized bootstrap at world revision 1. They should
-subsequently show **WORLD STATE STREAMING** and increasing revisions while
-the simulation remains paused (live gameplay handoff is the next milestone).
+screens then reach synchronized bootstrap at world revision 1. After
+the five-second reveal the dialog closes and the host-authoritative simulation
+starts. Both players should see the same units; the first Hunter horses begin
+spawning 20 simulation seconds later. Select the assigned Builder to move or
+build (B then click), or as Hunter select horses and press A then click to
+attack-move. Press F10 to disconnect. Restart both game clients for a clean
+rematch; the current process does not reset the simulated match world.
 The relay remains available for later rooms after either client disconnects.
 
 For a private alpha, start the relay with one repeatable `--player-token TOKEN_64_HEX` option per authorized player.

@@ -8,8 +8,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 #include "coord/pixel.h"
+#include "gamestate/types.h"
 #include "presenter/hud_mouse_capture.h"
 #include <vector>
 
@@ -81,6 +83,7 @@ class TerrainRenderStage;
 
 namespace world {
 class WorldRenderStage;
+class RenderEntity;
 }
 
 namespace resources {
@@ -185,6 +188,7 @@ protected:
 	std::string fvd_lobby_action_at(const QPointF &position) const;
 	void handle_fvd_lobby_action(const std::string &action);
 	void refresh_fvd_lobby_state();
+	void refresh_fvd_guest_visuals();
 
 	// TODO: remove and move into our config/settings system
 	util::Path root_dir;
@@ -218,6 +222,8 @@ protected:
 	/** Qt bridge for FVD player HUD state and build-button actions. */
 	std::shared_ptr<QQmlPropertyMap> fvd_hud_state;
 	bool fvd_lobby_enabled{false};
+	bool fvd_gameplay_active{false};
+	gamestate::player_id_t fvd_assigned_player{0};
 	std::shared_ptr<QQmlPropertyMap> fvd_lobby_state;
 	std::unique_ptr<network::RelayLobbyClient> fvd_lobby_client;
 	std::string fvd_lobby_pressed{};
@@ -226,6 +232,10 @@ protected:
 	uint64_t fvd_lobby_suggested_room_id{0};
 	bool fvd_bootstrap_requested{false};
 	bool fvd_bootstrap_supplied{false};
+	bool fvd_guest_visuals_initialized{false};
+	uint64_t fvd_guest_visual_revision{0};
+	std::unordered_map<gamestate::entity_id_t,
+		std::shared_ptr<renderer::world::RenderEntity>> fvd_guest_entities{};
 	bool fvd_update_requested{false};
 	uint64_t fvd_next_world_revision{2};
 	std::chrono::steady_clock::time_point fvd_last_update_request{};

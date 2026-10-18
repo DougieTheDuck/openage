@@ -52,6 +52,14 @@ public:
 	 */
 	std::optional<Frame> receive_frame();
 
+	/**
+	 * Read one complete frame if its bytes are immediately available.
+	 * Does not block on an incomplete frame or consume a partial frame;
+	 * returns nullopt on EWOULDBLOCK. Check is_open() for clean EOF.
+	 * Must not be called concurrently with receive_frame().
+	 */
+	std::optional<Frame> try_receive_frame();
+
 	/** Close the connection. Calling this more than once has no effect. */
 	void close();
 

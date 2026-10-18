@@ -5,6 +5,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
+#include <vector>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -12,6 +14,7 @@
 #include <thread>
 
 #include "network/messages.h"
+#include "network/command_mailbox.h"
 #include "network/transport.h"
 
 namespace openage::network {
@@ -57,9 +60,11 @@ struct RelayLobbyStatus {
  * Match start rebinds the authenticated player slot and exchanges the
  * authoritative initial snapshot with a versioned acknowledgement. Subsequent
  * complete host captures are encoded as WORLD_DELTA packets for the guest's
- * ReplicationTracker. Simulation capture scheduling, gameplay input, and
- * guest-side world rendering are not yet wired into the GUI handoff; the
- * match clock remains paused until those paths are connected.
+ * ReplicationTracker. After the five-second reveal the host resumes its
+ * simulation, and the guest sends authenticated COMMAND_INTENT frames over
+ * this same relay connection. GUI rendering consumes host state instead of
+ * advancing a separate guest simulation. Online gameplay currently supports
+ * two peers and the basic Move, AttackMove, and BuildTower intents.
  */
 class RelayLobbyClient {
 public:
@@ -83,6 +88,18 @@ public:
 	 */
 	void provide_host_update(WorldState world);
 
+	/** Queue one locally authored intent. Only guests send intents over TCP. */
+	bool send_guest_command(CommandIntent intent);
+
+	/** Drain remote intents paired with the immutable accepted guest identity. */
+	std::vector<AuthenticatedCommand> take_host_commands();
+
+	/** Queue one authoritative decision for delivery to the guest. */
+	void send_command_result(CommandResult result);
+
+	/** Consume command decisions (or rejections) on the guest presenter. */
+	std::vector<CommandResult> take_command_results();
+
 	/** Guest's validated authoritative bootstrap state (once received). */
 	std::shared_ptr<ReplicationTracker> get_replication() const;
 
@@ -94,12 +111,18 @@ private:
 	void run_refresh(RelayLobbyConfig settings);
 	void publish(RelayLobbyStatus next);
 	void publish_stream_revision(uint64_t revision, bool local_host);
+	bool reveal_finished_locked() const;
 
 	mutable std::mutex mutex;
 	RelayLobbyStatus current{};
 	std::shared_ptr<TcpConnection> connection{};
 	std::optional<WorldState> pending_host_snapshot{};
 	std::optional<WorldState> pending_host_update{};
+	std::deque<CommandIntent> pending_guest_commands{};
+	std::deque<AuthenticatedCommand> incoming_host_commands{};
+	std::deque<CommandResult> pending_command_results{};
+	std::deque<CommandResult> guest_command_results{};
+	uint64_t next_guest_command_id{1};
 	/** Largest revision submitted, including an update in flight. */
 	uint64_t last_host_offered_revision{0};
 	std::shared_ptr<ReplicationTracker> guest_replication{};

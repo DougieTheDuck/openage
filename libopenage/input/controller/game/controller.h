@@ -14,6 +14,7 @@
 #include "curve/discrete.h"
 #include "gamestate/types.h"
 #include "input/event.h"
+#include "network/messages.h"
 
 
 namespace openage {
@@ -72,6 +73,12 @@ public:
 	 * @param faction_id ID of the new active faction.
 	 */
 	void set_control(size_t faction_id);
+
+	/** Fix the one lobby-assigned faction and disable solo role switching. */
+	void lock_to_online_player(size_t faction_id);
+
+	/** Restore available FVD factions when returning to the lobby. */
+	void reset_online_player_slots(size_t player_count);
 
 	/**
 	 * Get the ID of the faction actively controlled by the controller.
@@ -222,7 +229,10 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
                     const std::shared_ptr<renderer::camera::Camera> &camera,
 	                const std::function<void(
 		                const coord::input &,
-		                const std::function<void(std::optional<gamestate::entity_id_t>)> &)> &pick_entity);
+		                const std::function<void(std::optional<gamestate::entity_id_t>)> &)> &pick_entity,
+                    const std::function<bool(network::CommandIntent)> &send_guest_command = {},
+                    const std::function<std::optional<network::WorldState>()> &guest_world = {},
+                    bool online_lobby = false);
 
 } // namespace input::game
 } // namespace openage

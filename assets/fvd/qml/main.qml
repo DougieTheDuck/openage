@@ -6,6 +6,7 @@ Item {
 	id: root
 
 	property var hud: typeof fvdHud === "undefined" ? null : fvdHud
+	property var lobby: typeof fvdLobby === "undefined" ? null : fvdLobby
 	readonly property bool hunter: hud !== null && hud.controlled === 1
 	readonly property bool placing: hud !== null && hud.placing
 	readonly property bool placementValid: hud !== null && hud.placementValid
@@ -19,6 +20,18 @@ Item {
 	readonly property bool attacking: hud !== null && hud.attacking
 	readonly property int hunterCountdown: hud === null ? 0 : hud.hunterCountdown
 	readonly property var arrowStreaks: hud === null ? [] : hud.arrowStreaks
+
+	Text {
+		anchors.top: parent.top
+		anchors.right: parent.right
+		anchors.margins: 13
+		z: 10
+		visible: root.lobby !== null && root.lobby.phase === "playing"
+		text: "F10 — LEAVE MATCH"
+		color: "#dce9df"
+		font.pixelSize: 13
+		font.bold: true
+	}
 
 	// Tile-accurate 2D build preview, using the same camera projection as
 	// world sprites. Mouse input still passes through to the game.

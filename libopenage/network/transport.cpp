@@ -376,6 +376,57 @@ std::optional<Frame> TcpConnection::receive_frame() {
 	}
 }
 
+std::optional<Frame> TcpConnection::try_receive_frame() {
+	if (not this->pending_frames.empty()) {
+		auto frame = std::move(this->pending_frames.front());
+		this->pending_frames.pop_front();
+		return frame;
+	}
+	std::shared_lock socket_lock{this->socket_lifetime_mutex};
+	auto handle = this->socket_handle.load();
+	if (handle == INVALID_SOCKET_HANDLE) {
+		return std::nullopt;
+	}
+	std::array<uint8_t, 4096> buffer{};
+	while (this->socket_handle.load() == handle) {
+		auto count = ::recv(to_native(handle), reinterpret_cast<char *>(buffer.data()),
+		                    static_cast<int>(buffer.size()), 0);
+		if (count > 0) {
+			for (auto &frame : this->parser.push(buffer.data(), static_cast<size_t>(count))) {
+				this->pending_frames.push_back(std::move(frame));
+			}
+			if (not this->pending_frames.empty()) {
+				auto frame = std::move(this->pending_frames.front());
+				this->pending_frames.pop_front();
+				return frame;
+			}
+			continue; // A partial frame may have another chunk ready.
+		}
+		if (count == 0) {
+			socket_lock.unlock();
+			this->close();
+			if (this->parser.buffered_size() > 0) {
+				throw Error{MSG(err) << "TCP peer closed with an incomplete FVD frame"};
+			}
+			return std::nullopt;
+		}
+		if (interrupted_socket_call()) {
+			continue;
+		}
+		if (would_block_socket_call()) {
+			return std::nullopt;
+		}
+		if (this->socket_handle.load() != handle) {
+			return std::nullopt;
+		}
+		auto error = last_socket_error();
+		socket_lock.unlock();
+		this->close();
+		throw Error{MSG(err) << "Could not receive FVD TCP frame: " << error};
+	}
+	return std::nullopt;
+}
+
 void TcpConnection::close() {
 	auto socket_handle = this->socket_handle.exchange(INVALID_SOCKET_HANDLE);
 	if (socket_handle == INVALID_SOCKET_HANDLE) {

@@ -58,6 +58,18 @@ void GameSimulation::run() {
 	this->start();
 	while (this->running) {
 		time::time_t current_time = this->time_loop->get_clock()->get_time();
+		// Only the simulation owner thread may submit authenticated network
+		// commands into the mutable game event loop.
+		std::deque<NetworkCommandRequest> incoming;
+		{
+			std::lock_guard lock{this->network_command_mutex};
+			incoming.swap(this->network_commands);
+		}
+		for (auto &request : incoming) {
+			network::submit_authenticated_command(
+				request.command, this->event_loop, this->commander,
+				this->game->get_state(), current_time, std::move(request.callback));
+		}
 		this->event_loop->reach_time(current_time, this->game->get_state());
 		// Capture only on the simulation owner thread: entity and event state
 		// must not be enumerated concurrently from the Qt/render thread.
@@ -219,6 +231,15 @@ std::optional<network::WorldState> GameSimulation::take_network_update() {
 	return std::exchange(this->update_ready, std::nullopt);
 }
 
+bool GameSimulation::submit_network_command(
+	network::AuthenticatedCommand command, std::function<void(bool)> callback) {
+	if (not callback) return false;
+	std::lock_guard lock{this->network_command_mutex};
+	if (this->network_commands.size() >= 256) return false;
+	this->network_commands.push_back({std::move(command), std::move(callback)});
+	return true;
+}
+
 void GameSimulation::cancel_network_bootstrap() {
 	std::lock_guard lock{this->bootstrap_mutex};
 	++this->bootstrap_generation;
@@ -226,6 +247,10 @@ void GameSimulation::cancel_network_bootstrap() {
 	this->bootstrap_ready.reset();
 	this->update_requested.reset();
 	this->update_ready.reset();
+	// Commands are validated against the guest session and must not survive
+	// leaving the current match.
+	std::lock_guard commands_lock{this->network_command_mutex};
+	this->network_commands.clear();
 }
 
 void GameSimulation::set_modpacks(const std::vector<std::string> &modpacks) {
