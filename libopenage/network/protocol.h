@@ -16,7 +16,7 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 /**
  * Current protocol version.
  */
-constexpr uint16_t PROTOCOL_MAJOR = 6;
+constexpr uint16_t PROTOCOL_MAJOR = 7;
 constexpr uint16_t PROTOCOL_MINOR = 1;
 
 /** Oldest protocol minor version compatible with this implementation. */
@@ -58,6 +58,7 @@ enum class MessageType : uint16_t {
 	RELAY_CONNECT = 14,
 	RELAY_READY = 15,
 	RELAY_REJECT = 16,
+	MATCH_READY = 17,
 };
 
 /** Whether a message type is defined by this protocol version. */

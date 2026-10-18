@@ -14,10 +14,22 @@ local gameplay and `run test` uses the existing test runner.
 
 The menu asks for a relay DNS/address, port, match ID, pair ID, user name and
 one role-specific 32-byte bearer token encoded as 64 hex characters.
-It uses `connect_relay` and the existing session handshake, then sends
+It uses the existing relay admission and session handshake, then sends
 `PARTICIPANT_SNAPSHOT` from the host and `START_MATCH` after the host clicks
 Draw Roles. The roster and assignments shown come from validated network
-messages, not local placeholder role calculations. Failed admission and
+messages, not local placeholder role calculations. After the lottery the
+original accepted session (session ID and frame sequence numbers unchanged)
+is rebound exactly once from its provisional slot to the guest's **final**
+slot 1 or 2. Both peers validate that the assignments match the admitted
+roster, not merely the advertised host ID.
+
+The simulation thread then captures an authoritative `WORLD_SNAPSHOT` for
+that final guest slot at simulation time zero. The host sends it over the
+already-authenticated relay connection; the guest validates it using a
+`ReplicationTracker` and returns `MATCH_READY` (the 16-byte player ID and
+world revision acknowledgement). Only after matching that acknowledgement
+does the host indicate **bootstrap synchronized**. Cancellation invalidates
+outstanding simulation snapshot requests to prevent stale cross-match results. Failed admission and
 handshakes report their errors in the menu; socket work is on a separate thread.
 Gameplay inputs are suppressed behind the overlay.
 
@@ -25,11 +37,16 @@ Gameplay inputs are suppressed behind the overlay.
 pre-provision one pair with `run relay --pair ...`. The screen currently
 supports **one guest per host**, not an automatic searchable room or dynamic
 provisioning. There is no embedded relay server or hardcoded public relay.
-The host/game-player handshake identity still needs to be separated from
-pre-match participant identity and the authoritative simulation network loop
-wired into StartMatch. Consequently, role assignment intentionally stays
-on the lobby screen with the simulation paused. It does not launch two
-independent local worlds or misrepresent them as synchronized multiplayer.
+Session IDs now survive the final role rebinding, and the initial world
+snapshot/acknowledgement runs through that same relay connection. **Continuous
+deltas, command forwarding, authoritative disconnect handling and guest
+rendering/input controls have NOT yet been wired to the running match**, so the
+UI remains in the lobby with the simulation paused even after bootstrap.
+The initial FVD scenario still creates all eight configured players; only
+two of them correspond to admitted lobby participants, so dynamic scenario
+initialization and unused-slot removal are also required before real matches.
+It does not launch two independent local worlds or misrepresent them as
+synchronized multiplayer.
 The provisional asset handshake digest must be replaced by a manifest digest
 before Internet deployment; the existing TCP relay has no encryption.
 
@@ -140,6 +157,27 @@ the current authoritative revision; it must never optimistically apply
 the rejected command.
 Gameplay code can add command behavior and replicated records without reading sockets, framing bytes or maintaining connection counters.
 Network code can change connection management without changing horse, projectile, damage or building simulation.
+
+## Relay lobby developer test
+
+Run the dedicated relay service separately, with the *same* IDs and different
+randomly generated 32-byte host and guest tokens (64 hex characters each):
+
+```sh
+bin/run relay --listen 127.0.0.1 --port 32456 \
+  --pair 23 2 HOST_TOKEN_64_HEX GUEST_TOKEN_64_HEX
+```
+
+Launch two copies of `bin/run game`. On the first choose Host and enter
+the host token; on the second choose Join and enter the guest token. Use
+address `127.0.0.1`, port `32456`, match ID `23`, pair ID `2` in both.
+Click **Draw Roles** on the host. The clients should agree about the
+Hunter/Builder allocation and reach **bootstrap** after transferring and
+acknowledging the initial world. This is a developer setup; no public room
+directory or automatic relay provisioning exists yet.
+
+Focused automated check: `bin/run test openage::network::tests::lobby_relay_client`.
+Local non-network gameplay: `bin/run game --solo`.
 
 ## Frame format
 
@@ -257,6 +295,8 @@ incompatible with version 4 clients.
 Protocol major version 6 removes arrow tombstones: clients expire replicated
 projectiles locally from their launch/impact timestamps. Version 5 peers are
 incompatible with the shortened delta payload.
+Protocol major version 7 adds `MATCH_READY` and strict, one-time role
+rebinding after `START_MATCH`. Earlier versions are incompatible.
 Protocol minor version 1 supports optional relay admission within the same protocol major version.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
 

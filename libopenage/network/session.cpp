@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "error/error.h"
+#include "network/lobby.h"
 
 namespace openage::network {
 
@@ -55,6 +56,15 @@ ConnectionSession::ConnectionSession(SessionIdentity identity,
 
 const SessionIdentity &ConnectionSession::get_identity() const {
 	return this->identity;
+}
+
+void ConnectionSession::bind_match_player(const StartMatch &start, uint64_t participant_id) {
+	if (this->match_player_bound) {
+		throw Error{MSG(err) << "FVD session is already bound to its match player slot"};
+	}
+	const auto assigned = player_for_participant(start, participant_id);
+	this->identity.player_id = assigned;
+	this->match_player_bound = true;
 }
 
 const ProtocolVersion &ConnectionSession::get_protocol_version() const {

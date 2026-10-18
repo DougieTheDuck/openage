@@ -100,6 +100,10 @@ void lobby() {
 		TESTEQUALS(calls, size_t{1});
 		TESTEQUALS(started.lobby_revision, uint64_t{3});
 		TESTEQUALS(started.assignments.size(), size_t{2});
+		auto prior_roster = two.snapshot();
+		prior_roster.revision -= 1;
+		validate_start_match_against_roster(prior_roster, started);
+
 		TESTEQUALS(hunter_of(started), (ticket == 0 ? uint64_t{11} : uint64_t{22}));
 		TESTEQUALS(started.assignments[ticket == 0 ? 0 : 1].player_id,
 		           gamestate::player_id_t{1});
@@ -179,6 +183,16 @@ void lobby() {
 	TESTEQUALS(decoded_start.assignments.at(0).role == PlayerRole::HUNTER, true);
 	TESTEQUALS(decoded_start.assignments.at(1).player_id,
 	           gamestate::player_id_t{2});
+	validate_start_match_against_roster(snapshot, decoded_start);
+	TESTEQUALS(player_for_participant(decoded_start, 11), gamestate::player_id_t{1});
+	TESTEQUALS(player_for_participant(decoded_start, 22), gamestate::player_id_t{2});
+	TESTTHROWS(player_for_participant(decoded_start, 555));
+	auto substituted = decoded_start;
+	substituted.assignments.at(1).participant_id = 99;
+	TESTTHROWS(validate_start_match_against_roster(snapshot, substituted));
+	auto stale_start = decoded_start;
+	stale_start.lobby_revision += 1;
+	TESTTHROWS(validate_start_match_against_roster(snapshot, stale_start));
 
 	auto bad_start = successful;
 	bad_start.assignments.at(1).player_id = 1;

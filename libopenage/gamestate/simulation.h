@@ -3,6 +3,10 @@
 #pragma once
 
 #include <shared_mutex>
+#include <mutex>
+#include <optional>
+#include <cstdint>
+#include "network/messages.h"
 
 #include "util/path.h"
 
@@ -137,6 +141,19 @@ public:
 	void set_modpacks(const std::vector<std::string> &modpacks);
 
 	/**
+	 * Request an authoritative initial FVD snapshot, captured by the
+	 * simulation thread after completing its event loop at time zero.
+	 * The lobby must remain paused while this request is processed.
+	 */
+	void request_network_bootstrap(gamestate::player_id_t recipient);
+
+	/** Retrieve the completed bootstrap snapshot, if ready. */
+	std::optional<network::WorldState> take_network_bootstrap();
+
+	/** Invalidate a pending/ready capture when the user leaves the lobby. */
+	void cancel_network_bootstrap();
+
+	/**
 	 * current simulation state variable.
 	 * to be set to false to stop the simulation loop.
 	 */
@@ -200,6 +217,15 @@ private:
 	 * Mutex for thread-safe access to the simulation.
 	 */
 	std::shared_mutex mutex;
+
+	std::mutex bootstrap_mutex;
+	struct BootstrapRequest {
+		gamestate::player_id_t recipient;
+		uint64_t generation;
+	};
+	uint64_t bootstrap_generation{0};
+	std::optional<BootstrapRequest> bootstrap_requested{};
+	std::optional<network::WorldState> bootstrap_ready{};
 };
 
 } // namespace gamestate

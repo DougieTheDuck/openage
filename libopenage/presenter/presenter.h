@@ -220,6 +220,9 @@ protected:
 	std::unique_ptr<network::RelayLobbyClient> fvd_lobby_client;
 	std::string fvd_lobby_pressed{};
 	std::string fvd_lobby_local_error{};
+	bool fvd_lobby_hosting{false};
+	bool fvd_bootstrap_requested{false};
+	bool fvd_bootstrap_supplied{false};
 	/** Guest HUD source; local-only matches continue to read their simulation. */
 	std::shared_ptr<network::ReplicationTracker> fvd_replication;
 	/** Most recent screen cursor coordinate, owned by the presenter thread. */

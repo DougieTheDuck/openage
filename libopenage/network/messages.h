@@ -250,6 +250,15 @@ std::vector<uint8_t> encode_server_reject(const ServerReject &reject);
 /** Decode and validate a ServerReject payload. */
 ServerReject decode_server_reject(const std::vector<uint8_t> &payload);
 
+/** Guest receipt of the first authoritative snapshot after StartMatch. */
+struct MatchReady {
+	gamestate::player_id_t player_id{0};
+	uint64_t snapshot_revision{0};
+};
+
+std::vector<uint8_t> encode_match_ready(const MatchReady &ready);
+MatchReady decode_match_ready(const std::vector<uint8_t> &payload);
+
 /** Encode/decode complete pre-start lobby participant snapshots. */
 std::vector<uint8_t> encode_participant_snapshot(const ParticipantSnapshot &snapshot);
 ParticipantSnapshot decode_participant_snapshot(const std::vector<uint8_t> &payload);

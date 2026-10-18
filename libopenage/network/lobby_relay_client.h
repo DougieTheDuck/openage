@@ -6,12 +6,16 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include "network/messages.h"
 #include <string>
 #include <thread>
 
 #include "network/transport.h"
 
 namespace openage::network {
+
+class ReplicationTracker;
 
 /**
  * One pre-provisioned relay pair (host + one guest). The relay's credentials
@@ -33,14 +37,19 @@ struct RelayLobbyStatus {
 	std::string participants{};
 	bool can_start{false};
 	bool connected{false};
+	gamestate::player_id_t local_player_id{0};
+	gamestate::player_id_t remote_player_id{0};
+	uint64_t snapshot_revision{0};
 };
 
 /**
  * Background relay transport for the pre-match screen. Only the worker
  * touches its ConnectionSession, preserving sequence ordering.
  *
- * The match-level command/replication handoff is not implemented here;
- * START_MATCH intentionally leaves the game paused until that exists.
+ * Match start rebinds the authenticated player slot and exchanges the
+ * authoritative initial snapshot with a versioned acknowledgement. Continuous
+ * gameplay replication, input commands and client rendering are separate work
+ * and the match clock stays paused until those paths are connected.
  */
 class RelayLobbyClient {
 public:
@@ -51,6 +60,13 @@ public:
 
 	void connect(RelayLobbyConfig settings);
 	void request_start();
+
+	/** Supply a snapshot captured on the host simulation thread. */
+	void provide_host_snapshot(WorldState snapshot);
+
+	/** Guest's validated authoritative bootstrap state (once received). */
+	std::shared_ptr<ReplicationTracker> get_replication() const;
+
 	RelayLobbyStatus status() const;
 	void close();
 
@@ -61,6 +77,9 @@ private:
 	mutable std::mutex mutex;
 	RelayLobbyStatus current{};
 	std::shared_ptr<TcpConnection> connection{};
+	std::optional<WorldState> pending_host_snapshot{};
+	std::shared_ptr<ReplicationTracker> guest_replication{};
+	bool hosting{false};
 	std::thread worker{};
 	std::atomic<bool> stopping{false};
 	std::atomic<bool> start_requested{false};

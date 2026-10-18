@@ -10,6 +10,8 @@
 
 namespace openage::network {
 
+struct StartMatch;
+
 /** Immutable identity assigned to one accepted match connection. */
 struct SessionIdentity {
 	uint64_t session_id{0};
@@ -33,6 +35,13 @@ public:
 	/** Get the host-assigned connection identity. */
 	const SessionIdentity &get_identity() const;
 
+	/**
+	 * Commit this accepted connection's final player slot after StartMatch.
+	 * Keeps the session ID and both frame sequence counters unchanged.
+	 * This is permitted exactly once, and only for an assigned participant.
+	 */
+	void bind_match_player(const StartMatch &start, uint64_t participant_id);
+
 	/** Get the protocol version negotiated during the handshake. */
 	const ProtocolVersion &get_protocol_version() const;
 
@@ -54,7 +63,8 @@ public:
 	void validate_incoming(const Frame &frame);
 
 private:
-	const SessionIdentity identity;
+	SessionIdentity identity;
+	bool match_player_bound{false};
 	const ProtocolVersion protocol_version;
 	uint64_t next_incoming_sequence;
 	uint64_t next_outgoing_sequence;

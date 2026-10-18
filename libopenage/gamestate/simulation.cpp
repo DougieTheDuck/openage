@@ -2,6 +2,9 @@
 
 #include "simulation.h"
 
+#include <utility>
+#include "error/error.h"
+
 #include <chrono>
 #include <thread>
 
@@ -19,6 +22,8 @@
 
 // TODO
 #include "gamestate/fvd.h"
+#include "network/command_bridge.h"
+#include "network/match_connection_state.h"
 #include "gamestate/game.h"
 #include "gamestate/game_state.h"
 
@@ -54,6 +59,26 @@ void GameSimulation::run() {
 	while (this->running) {
 		time::time_t current_time = this->time_loop->get_clock()->get_time();
 		this->event_loop->reach_time(current_time, this->game->get_state());
+		// Capture only on the simulation owner thread: entity and event state
+		// must not be enumerated concurrently from the Qt/render thread.
+		std::optional<BootstrapRequest> bootstrap{};
+		{
+			std::lock_guard lock{this->bootstrap_mutex};
+			bootstrap = std::exchange(this->bootstrap_requested, std::nullopt);
+		}
+		if (bootstrap) {
+			auto fvd = this->game->get_state()->get_fvd();
+			if (not fvd) {
+				throw Error{MSG(err) << "Network bootstrap requires an FVD scenario"};
+			}
+			network::MatchConnectionState connections{fvd->get_player_count()};
+			auto world = network::capture_fvd_state(
+				this->game->get_state(), connections, current_time, 0, 1, bootstrap->recipient);
+			std::lock_guard lock{this->bootstrap_mutex};
+			if (bootstrap->generation == this->bootstrap_generation) {
+				this->bootstrap_ready = std::move(world);
+			}
+		}
 		if (this->time_loop->get_clock()->get_state() != time::ClockState::RUNNING) {
 			std::this_thread::sleep_for(std::chrono::milliseconds{10});
 		}
@@ -134,6 +159,32 @@ void GameSimulation::attach_renderer(const std::shared_ptr<renderer::RenderFacto
 	this->game->attach_renderer(render_factory);
 	this->entity_factory->attach_renderer(render_factory);
 	this->terrain_factory->attach_renderer(render_factory);
+}
+
+void GameSimulation::request_network_bootstrap(player_id_t recipient) {
+	if (recipient == 0 or recipient > network::MAX_STATE_PLAYERS) {
+		throw Error{MSG(err) << "Invalid FVD bootstrap recipient"};
+	}
+	if (this->time_loop->get_clock()->get_state() != time::ClockState::PAUSED) {
+		throw Error{MSG(err) << "FVD bootstrap requires a paused authoritative simulation"};
+	}
+	std::lock_guard lock{this->bootstrap_mutex};
+	if (this->bootstrap_requested or this->bootstrap_ready) {
+		throw Error{MSG(err) << "FVD bootstrap capture already pending"};
+	}
+	this->bootstrap_requested = BootstrapRequest{recipient, this->bootstrap_generation};
+}
+
+std::optional<network::WorldState> GameSimulation::take_network_bootstrap() {
+	std::lock_guard lock{this->bootstrap_mutex};
+	return std::exchange(this->bootstrap_ready, std::nullopt);
+}
+
+void GameSimulation::cancel_network_bootstrap() {
+	std::lock_guard lock{this->bootstrap_mutex};
+	++this->bootstrap_generation;
+	this->bootstrap_requested.reset();
+	this->bootstrap_ready.reset();
 }
 
 void GameSimulation::set_modpacks(const std::vector<std::string> &modpacks) {

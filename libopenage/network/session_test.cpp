@@ -2,6 +2,8 @@
 
 #include "session.h"
 
+#include "network/lobby.h"
+
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -82,6 +84,25 @@ void session() {
 	auto third = incoming;
 	third.sequence = 3;
 	connection.validate_incoming(third);
+
+	// A lobby handshake uses a provisional player ID. StartMatch rebinds
+	// it exactly once, without replacing session IDs or frame sequences.
+	StartMatch start{};
+	start.lobby_revision = 3;
+	start.host_participant_id = 11;
+	start.assignments = {
+		{11, 2, PlayerRole::BUILDER},
+		{22, 1, PlayerRole::HUNTER}};
+	ConnectionSession lobby_session{{99, 2}};
+	auto lobby_frame = lobby_session.make_frame(MessageType::PARTICIPANT_SNAPSHOT);
+	TESTEQUALS(lobby_frame.sequence, uint64_t{1});
+	TESTTHROWS(lobby_session.bind_match_player(start, 999));
+	TESTEQUALS(lobby_session.get_identity().player_id, gamestate::player_id_t{2});
+	lobby_session.bind_match_player(start, 22);
+	TESTEQUALS(lobby_session.get_identity().player_id, gamestate::player_id_t{1});
+	TESTEQUALS(lobby_session.get_identity().session_id, uint64_t{99});
+	TESTEQUALS(lobby_session.make_frame(MessageType::WORLD_SNAPSHOT).sequence, uint64_t{2});
+	TESTTHROWS(lobby_session.bind_match_player(start, 11));
 }
 
 } // namespace openage::network::tests

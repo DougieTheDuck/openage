@@ -7,6 +7,7 @@
 #include <thread>
 
 #include "network/relay.h"
+#include "network/replication.h"
 #include "testing/testing.h"
 
 namespace openage::network::tests {
@@ -95,6 +96,42 @@ void lobby_relay_client() {
 	TESTEQUALS(host.status().participants, guest.status().participants);
 	TESTEQUALS(host.status().participants.find("Hunter") != std::string::npos, true);
 	TESTEQUALS(host.status().participants.find("Builder") != std::string::npos, true);
+	TESTEQUALS(host.status().local_player_id != guest.status().local_player_id, true);
+	TESTEQUALS(host.status().remote_player_id, guest.status().local_player_id);
+	TESTEQUALS(guest.status().remote_player_id, host.status().local_player_id);
+	TESTEQUALS(host.status().local_player_id + guest.status().local_player_id,
+	           gamestate::player_id_t{3});
+	TESTEQUALS(guest.get_replication() == nullptr, true);
+
+	WorldState initial{};
+	initial.map_size = 128;
+	initial.world_revision = 1;
+	initial.local_player_id = guest.status().local_player_id;
+	initial.local_kill_count = 7;
+	initial.players = {
+		{1, PlayerRole::HUNTER, true},
+		{2, PlayerRole::BUILDER, true},
+	};
+	auto wrong_recipient = initial;
+	wrong_recipient.local_player_id = host.status().local_player_id;
+	TESTTHROWS(host.provide_host_snapshot(wrong_recipient));
+	auto wrong_base = initial;
+	wrong_base.base_revision = 3;
+	TESTTHROWS(host.provide_host_snapshot(wrong_base));
+
+	host.provide_host_snapshot(initial);
+	TESTTHROWS(host.provide_host_snapshot(initial));
+	TESTEQUALS(wait_for(guest, "bootstrap"), true);
+	TESTEQUALS(wait_for(host, "bootstrap"), true);
+	auto replication = guest.get_replication();
+	TESTEQUALS(replication != nullptr, true);
+	TESTEQUALS(replication->get_local_player_id(), initial.local_player_id);
+	TESTEQUALS(replication->get_revision(), uint64_t{1});
+	TESTEQUALS(replication->get_local_kills().value(), uint64_t{7});
+	TESTEQUALS(replication->get_world_state()->players.size(), size_t{2});
+	TESTEQUALS(host.status().snapshot_revision, uint64_t{1});
+	TESTEQUALS(guest.status().snapshot_revision, uint64_t{1});
+
 	host.close();
 	guest.close();
 	relay.join();

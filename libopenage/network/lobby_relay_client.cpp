@@ -9,6 +9,7 @@
 
 #include "network/handshake.h"
 #include "network/lobby.h"
+#include "network/replication.h"
 #include "network/relay.h"
 
 namespace openage::network {
@@ -76,6 +77,12 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 	validate_config(settings);
 	this->stopping = false;
 	this->start_requested = false;
+	{
+		std::lock_guard lock{this->mutex};
+		this->hosting = settings.hosting;
+		this->pending_host_snapshot.reset();
+		this->guest_replication.reset();
+	}
 	this->publish({"connecting", "Connecting to provisioned relay...", {}, false, false});
 	this->worker = std::thread{[this, settings = std::move(settings)]() {
 		this->run(settings);
@@ -87,6 +94,23 @@ void RelayLobbyClient::request_start() {
 	if (this->current.can_start and this->current.connected) {
 		this->start_requested = true;
 	}
+}
+
+void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
+	std::lock_guard lock{this->mutex};
+	if (not this->hosting or this->current.phase != "assigned"
+	    or this->current.remote_player_id == 0
+	    or snapshot.local_player_id != this->current.remote_player_id
+	    or snapshot.base_revision != 0 or snapshot.world_revision == 0
+	    or this->pending_host_snapshot) {
+		throw std::invalid_argument{"Invalid or duplicate FVD host bootstrap snapshot"};
+	}
+	this->pending_host_snapshot = std::move(snapshot);
+}
+
+std::shared_ptr<ReplicationTracker> RelayLobbyClient::get_replication() const {
+	std::lock_guard lock{this->mutex};
+	return this->guest_replication;
 }
 
 RelayLobbyStatus RelayLobbyClient::status() const {
@@ -112,6 +136,9 @@ void RelayLobbyClient::close() {
 	{
 		std::lock_guard lock{this->mutex};
 		this->connection.reset();
+		this->pending_host_snapshot.reset();
+		this->guest_replication.reset();
+		this->hosting = false;
 		this->current = {};
 	}
 }
@@ -144,9 +171,10 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			}
 			HostLobby lobby{1, settings.name};
 			lobby.join(2, guest_name);
+			const auto roster = lobby.snapshot();
 			socket->send_frame(accepted->make_frame(
 				MessageType::PARTICIPANT_SNAPSHOT,
-				encode_participant_snapshot(lobby.snapshot())));
+				encode_participant_snapshot(roster)));
 			this->publish({"lobby", "Guest connected. Host may draw roles.", 
 				settings.name + " (host)\n" + guest_name + " (guest)", true, true});
 			while (not this->stopping and not this->start_requested) {
@@ -154,11 +182,51 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			}
 			if (this->stopping) return;
 			auto assignment = lobby.start();
+			validate_start_match_against_roster(roster, assignment);
 			socket->send_frame(accepted->make_frame(
 				MessageType::START_MATCH, encode_start_match(assignment)));
+			// The handshake's temporary slot 2 is not the role lottery result.
+			// Preserve the accepted session ID and sequence numbers.
+			accepted->bind_match_player(assignment, 2);
+			const auto guest_player = accepted->get_identity().player_id;
+			const auto host_player = player_for_participant(assignment, 1);
 			this->publish({"assigned",
-				"Roles assigned. Gameplay synchronization is not connected yet.",
-				assignment_text(assignment), false, true});
+				"Roles assigned; preparing the authoritative initial world.",
+				assignment_text(assignment), false, true,
+				host_player, guest_player, 0});
+			while (not this->stopping) {
+				std::optional<WorldState> snapshot;
+				{
+					std::lock_guard lock{this->mutex};
+					if (this->pending_host_snapshot) {
+						snapshot = std::move(this->pending_host_snapshot);
+						this->pending_host_snapshot.reset();
+					}
+				}
+				if (snapshot) {
+					socket->send_frame(accepted->make_frame(
+						MessageType::WORLD_SNAPSHOT, encode_world_state(*snapshot)));
+					auto ready_frame = socket->receive_frame();
+					if (not ready_frame) {
+						throw std::runtime_error{"Guest disconnected before initial world acknowledgement"};
+					}
+					accepted->validate_incoming(*ready_frame);
+					if (ready_frame->message_type != MessageType::MATCH_READY) {
+						throw std::runtime_error{"Expected initial world acknowledgement"};
+					}
+					const auto ready = decode_match_ready(ready_frame->payload);
+					if (ready.player_id != guest_player
+					    or ready.snapshot_revision != snapshot->world_revision) {
+						throw std::runtime_error{"Guest acknowledged the wrong player or world revision"};
+					}
+					this->publish({"bootstrap",
+						"Initial world acknowledged. Gameplay renderer/commands are not connected yet.",
+						assignment_text(assignment), false, true,
+						host_player, guest_player, snapshot->world_revision});
+					break;
+				}
+				std::this_thread::sleep_for(std::chrono::milliseconds{20});
+			}
 		}
 		else {
 			auto session = client_handshake(*socket, {
@@ -184,13 +252,34 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				throw std::runtime_error{"Expected the match start assignment"};
 			}
 			const auto assigned = decode_start_match(frame->payload);
-			if (assigned.host_participant_id != roster.host_participant_id
-			    or assigned.lobby_revision <= roster.revision) {
-				throw std::runtime_error{"Match assignment does not follow this lobby"};
-			}
+			validate_start_match_against_roster(roster, assigned);
+			session.bind_match_player(assigned, 2);
+			const auto guest_player = session.get_identity().player_id;
+			const auto host_player = player_for_participant(assigned, 1);
 			this->publish({"assigned",
-				"Roles assigned. Gameplay synchronization is not connected yet.",
-				assignment_text(assigned), false, true});
+				"Roles assigned; waiting for initial authoritative world.",
+				assignment_text(assigned), false, true,
+				guest_player, host_player, 0});
+			frame = socket->receive_frame();
+			if (not frame) throw std::runtime_error{"Host disconnected before initial world"};
+			session.validate_incoming(*frame);
+			if (frame->message_type != MessageType::WORLD_SNAPSHOT) {
+				throw std::runtime_error{"Expected an authoritative world snapshot"};
+			}
+			auto tracker = std::make_shared<ReplicationTracker>(guest_player);
+			tracker->accept_snapshot(decode_world_state(frame->payload));
+			const auto revision = tracker->get_revision();
+			socket->send_frame(session.make_frame(
+				MessageType::MATCH_READY,
+				encode_match_ready({guest_player, revision})));
+			{
+				std::lock_guard lock{this->mutex};
+				this->guest_replication = std::move(tracker);
+			}
+			this->publish({"bootstrap",
+				"Initial world received. Gameplay renderer/commands are not connected yet.",
+				assignment_text(assigned), false, true,
+				guest_player, host_player, revision});
 		}
 		// Keep the relay pair open to allow both clients to inspect the
 		// assignment, until the menu is closed or the transport drops.

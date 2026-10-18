@@ -303,6 +303,12 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	if (not this->fvd_lobby_state or not this->fvd_lobby_client) return;
 	if (action == "disconnect") {
 		this->fvd_lobby_local_error.clear();
+		this->fvd_bootstrap_requested = false;
+		this->fvd_bootstrap_supplied = false;
+		this->fvd_lobby_hosting = false;
+		if (this->simulation) {
+			this->simulation->cancel_network_bootstrap();
+		}
 		this->fvd_lobby_client->close();
 		return;
 	}
@@ -312,6 +318,11 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	}
 	if (action != "host" and action != "join") return;
 	this->fvd_lobby_local_error.clear();
+	this->fvd_bootstrap_requested = false;
+	this->fvd_bootstrap_supplied = false;
+	if (this->simulation) {
+		this->simulation->cancel_network_bootstrap();
+	}
 	try {
 		auto val = [&](const char *name) {
 			return this->fvd_lobby_state->value(name).toString().trimmed();
@@ -334,6 +345,7 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		config.token_hex = val("token").toStdString();
 		config.name = val("name").toStdString();
 		config.hosting = action == "host";
+		this->fvd_lobby_hosting = config.hosting;
 		this->fvd_lobby_client->connect(std::move(config));
 	}
 	catch (const std::exception &error) {
@@ -345,6 +357,28 @@ void Presenter::refresh_fvd_lobby_state() {
 	if (not this->fvd_lobby_enabled or not this->fvd_lobby_state
 	    or not this->fvd_lobby_client) return;
 	const auto state = this->fvd_lobby_client->status();
+	// Snapshot capture belongs to the simulation thread. The presenter only
+	// requests it and passes the immutable result to the relay worker.
+	if (state.phase == "assigned" and this->simulation and not this->fvd_bootstrap_supplied) {
+		try {
+			if (this->fvd_lobby_hosting and state.remote_player_id != 0
+			    and not this->fvd_bootstrap_requested) {
+				this->simulation->request_network_bootstrap(state.remote_player_id);
+				this->fvd_bootstrap_requested = true;
+			}
+			if (this->fvd_bootstrap_requested) {
+				auto world = this->simulation->take_network_bootstrap();
+				if (world) {
+					this->fvd_lobby_client->provide_host_snapshot(std::move(*world));
+					this->fvd_bootstrap_supplied = true;
+					this->fvd_bootstrap_requested = false;
+				}
+			}
+		}
+		catch (const std::exception &error) {
+			this->fvd_lobby_local_error = error.what();
+		}
+	}
 	auto update = [&](const char *key, const QVariant &value) {
 		if (this->fvd_lobby_state->value(key) != value) {
 			this->fvd_lobby_state->insert(key, value);

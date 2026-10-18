@@ -58,4 +58,12 @@ private:
 void validate_participant_snapshot(const ParticipantSnapshot &snapshot);
 void validate_start_match(const StartMatch &start);
 
+/** Ensure StartMatch exactly matches the observed roster, not a substituted guest. */
+void validate_start_match_against_roster(const ParticipantSnapshot &roster,
+                                         const StartMatch &start);
+
+/** Resolve a previously validated participant identity to its game slot. */
+gamestate::player_id_t player_for_participant(const StartMatch &start,
+                                               uint64_t participant_id);
+
 } // namespace openage::network

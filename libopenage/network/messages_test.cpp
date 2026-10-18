@@ -49,6 +49,20 @@ void messages() {
 	trailing_accept.push_back(0);
 	TESTTHROWS(decode_server_accept(trailing_accept));
 
+	MatchReady ready{2, 12};
+	auto ready_bytes = encode_match_ready(ready);
+	auto ready_roundtrip = decode_match_ready(ready_bytes);
+	TESTEQUALS(ready_roundtrip.player_id, gamestate::player_id_t{2});
+	TESTEQUALS(ready_roundtrip.snapshot_revision, uint64_t{12});
+	TESTTHROWS(encode_match_ready({0, 12}));
+	TESTTHROWS(encode_match_ready({2, 0}));
+	auto ready_short = ready_bytes;
+	ready_short.pop_back();
+	TESTTHROWS(decode_match_ready(ready_short));
+	auto ready_trailing = ready_bytes;
+	ready_trailing.push_back(0);
+	TESTTHROWS(decode_match_ready(ready_trailing));
+
 	ServerReject reject{"gameplay asset manifest does not match host"};
 	TESTEQUALS(decode_server_reject(encode_server_reject(reject)).reason,
 	           reject.reason);

@@ -98,6 +98,37 @@ void validate_start_match(const StartMatch &start) {
 	}
 }
 
+void validate_start_match_against_roster(const ParticipantSnapshot &roster,
+                                         const StartMatch &start) {
+	validate_participant_snapshot(roster);
+	validate_start_match(start);
+	if (start.host_participant_id != roster.host_participant_id
+	    or start.lobby_revision != roster.revision + 1
+	    or start.assignments.size() != roster.participants.size()) {
+		throw Error{MSG(err) << "FVD match assignments do not follow the latest lobby roster"};
+	}
+	std::unordered_set<uint64_t> roster_ids;
+	for (const auto &participant : roster.participants) {
+		roster_ids.insert(participant.participant_id);
+	}
+	for (const auto &assignment : start.assignments) {
+		if (not roster_ids.contains(assignment.participant_id)) {
+			throw Error{MSG(err) << "FVD match contains a participant not admitted to the lobby"};
+		}
+	}
+}
+
+gamestate::player_id_t player_for_participant(const StartMatch &start,
+                                               uint64_t participant_id) {
+	validate_start_match(start);
+	for (const auto &assignment : start.assignments) {
+		if (assignment.participant_id == participant_id) {
+			return assignment.player_id;
+		}
+	}
+	throw Error{MSG(err) << "FVD match has no assignment for participant " << participant_id};
+}
+
 HostLobby::HostLobby(uint64_t host_id, std::string host_name) {
 	this->current = {1, host_id, {{host_id, std::move(host_name), true}}};
 	validate_participant_snapshot(this->current);

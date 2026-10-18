@@ -241,6 +241,30 @@ ServerReject decode_server_reject(const std::vector<uint8_t> &payload) {
 	return reject;
 }
 
+std::vector<uint8_t> encode_match_ready(const MatchReady &ready) {
+	if (ready.player_id == 0 or ready.player_id > MAX_STATE_PLAYERS
+	    or ready.snapshot_revision == 0) {
+		throw Error{MSG(err) << "FVD ready acknowledgement requires a player and revision"};
+	}
+	std::vector<uint8_t> output{};
+	append_u64(output, ready.player_id);
+	append_u64(output, ready.snapshot_revision);
+	return output;
+}
+
+MatchReady decode_match_ready(const std::vector<uint8_t> &payload) {
+	PayloadReader reader{payload};
+	MatchReady ready{};
+	ready.player_id = reader.u64();
+	ready.snapshot_revision = reader.u64();
+	reader.finish();
+	if (ready.player_id == 0 or ready.player_id > MAX_STATE_PLAYERS
+	    or ready.snapshot_revision == 0) {
+		throw Error{MSG(err) << "Invalid FVD match-ready acknowledgement"};
+	}
+	return ready;
+}
+
 std::vector<uint8_t> encode_participant_snapshot(const ParticipantSnapshot &snapshot) {
 	validate_participant_snapshot(snapshot);
 	std::vector<uint8_t> bytes;
