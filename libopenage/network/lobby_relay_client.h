@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -41,6 +42,12 @@ struct RelayLobbyStatus {
 	uint64_t snapshot_revision{0};
 	std::string rooms{};
 	uint64_t suggested_room_id{0};
+	/** The same name/role assignments on every peer, established by StartMatch. */
+	std::string roles{};
+	/** Role assigned to this client by the host, not chosen locally. */
+	std::string local_role{};
+	/** Seconds remaining in the five-second role reveal. */
+	uint8_t role_seconds_remaining{0};
 };
 
 /**
@@ -83,6 +90,7 @@ private:
 	std::optional<WorldState> pending_host_snapshot{};
 	std::shared_ptr<ReplicationTracker> guest_replication{};
 	bool hosting{false};
+	std::optional<std::chrono::steady_clock::time_point> roles_assigned_at{};
 	std::thread worker{};
 	std::atomic<bool> stopping{false};
 	std::atomic<bool> start_requested{false};

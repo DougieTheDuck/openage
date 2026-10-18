@@ -54,15 +54,13 @@ AssetDigest provisional_gameplay_digest() {
 	return digest;
 }
 
-std::string assignment_text(const StartMatch &start) {
-	std::string text{};
-	for (const auto &entry : start.assignments) {
-		if (not text.empty()) text += "\n";
-		text += "Participant " + std::to_string(entry.participant_id)
-		     + "  —  " + (entry.role == PlayerRole::HUNTER ? "Hunter" : "Builder")
-		     + " (slot " + std::to_string(entry.player_id) + ")";
+std::string local_role_name(const StartMatch &start, gamestate::player_id_t local_player) {
+	for (const auto &assignment : start.assignments) {
+		if (assignment.player_id == local_player) {
+			return assignment.role == PlayerRole::HUNTER ? "HUNTER" : "BUILDER";
+		}
 	}
-	return text;
+	throw Error{MSG(err) << "No FVD role assigned to local player"};
 }
 
 void validate_endpoint(const RelayLobbyConfig &cfg) {
@@ -121,6 +119,7 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->hosting = settings.hosting;
 		this->pending_host_snapshot.reset();
 		this->guest_replication.reset();
+		this->roles_assigned_at.reset();
 	}
 	this->publish({"connecting",
 	               settings.hosting ? "Creating relay room..." : "Joining relay room...",
@@ -166,11 +165,22 @@ std::shared_ptr<ReplicationTracker> RelayLobbyClient::get_replication() const {
 
 RelayLobbyStatus RelayLobbyClient::status() const {
 	std::lock_guard lock{this->mutex};
-	return this->current;
+	auto result = this->current;
+	if (this->roles_assigned_at
+	    and (result.phase == "assigned" or result.phase == "bootstrap")) {
+		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - *this->roles_assigned_at);
+		result.role_seconds_remaining = role_reveal_seconds_remaining(elapsed);
+	}
+	return result;
 }
 
 void RelayLobbyClient::publish(RelayLobbyStatus next) {
 	std::lock_guard lock{this->mutex};
+	if (next.phase == "assigned" and not this->roles_assigned_at) {
+		// Start exactly once per lobby at the receipt/publication of START_MATCH.
+		this->roles_assigned_at = std::chrono::steady_clock::now();
+	}
 	this->current = std::move(next);
 }
 
@@ -189,6 +199,7 @@ void RelayLobbyClient::close() {
 		this->connection.reset();
 		this->pending_host_snapshot.reset();
 		this->guest_replication.reset();
+		this->roles_assigned_at.reset();
 		this->hosting = false;
 		this->current = {};
 	}
@@ -231,7 +242,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			socket->send_frame(accepted->make_frame(
 				MessageType::PARTICIPANT_SNAPSHOT,
 				encode_participant_snapshot(roster)));
-			this->publish({"lobby", "Guest connected. Host may draw roles.",
+			this->publish({"lobby", "Guest connected. Host may start the match.",
 				settings.name + " (host)\n" + guest_name + " (guest)", true, true});
 			while (not this->stopping and not this->start_requested) {
 				std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -246,10 +257,12 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			accepted->bind_match_player(assignment, 2);
 			const auto guest_player = accepted->get_identity().player_id;
 			const auto host_player = player_for_participant(assignment, 1);
+			const auto roles = describe_match_roles(roster, assignment);
+			const auto host_role = local_role_name(assignment, host_player);
 			this->publish({"assigned",
-				"Roles assigned; preparing the authoritative initial world.",
-				assignment_text(assignment), false, true,
-				host_player, guest_player, 0});
+				"Match start requested; synchronizing the initial world.",
+				roster.participants[0].name + " (host)\n" + guest_name + " (guest)",
+				false, true, host_player, guest_player, 0, roles, host_role});
 			while (not this->stopping) {
 				std::optional<WorldState> snapshot;
 				{
@@ -276,9 +289,10 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 						throw Error{MSG(err) << "Guest acknowledged the wrong player or world revision"};
 					}
 					this->publish({"bootstrap",
-						"Initial world acknowledged. Gameplay renderer/commands are not connected yet.",
-						assignment_text(assignment), false, true,
-						host_player, guest_player, snapshot->world_revision});
+						"Initial world acknowledged. Live gameplay networking is not connected yet.",
+						roster.participants[0].name + " (host)\n" + guest_name + " (guest)",
+						false, true, host_player, guest_player, snapshot->world_revision,
+						roles, host_role});
 					break;
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds{20});
@@ -319,10 +333,11 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			session.bind_match_player(assigned, 2);
 			const auto guest_player = session.get_identity().player_id;
 			const auto host_player = player_for_participant(assigned, 1);
+			const auto roles = describe_match_roles(roster, assigned);
+			const auto guest_role = local_role_name(assigned, guest_player);
 			this->publish({"assigned",
-				"Roles assigned; waiting for initial authoritative world.",
-				assignment_text(assigned), false, true,
-				guest_player, host_player, 0});
+				"Match start requested; waiting for authoritative initial world.",
+				people, false, true, guest_player, host_player, 0, roles, guest_role});
 			frame = socket->receive_frame();
 			if (not frame) {
 				throw Error{MSG(err) << "Host disconnected before initial world"};
@@ -342,9 +357,9 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				this->guest_replication = std::move(tracker);
 			}
 			this->publish({"bootstrap",
-				"Initial world received. Gameplay renderer/commands are not connected yet.",
-				assignment_text(assigned), false, true,
-				guest_player, host_player, revision});
+				"Initial world received. Live gameplay networking is not connected yet.",
+				people, false, true, guest_player, host_player, revision,
+				roles, guest_role});
 			if (not this->stopping) {
 				monitor_bootstrapped_connection(*socket, session, this->stopping);
 			}

@@ -17,8 +17,13 @@ A host supplies a game name and creates an advertised room whose nonzero ID come
 A guest refreshes the room list, enters one of those IDs and joins it.
 It uses the relay directory admission and existing session handshake, then sends
 `PARTICIPANT_SNAPSHOT` from the host and `START_MATCH` after the host clicks
-Draw Roles. The roster and assignments shown come from validated network
-messages, not local placeholder role calculations. After the lottery the
+Start Game. The Hunter/Builder draw occurs at Start; the same validated
+`START_MATCH` drives each client's five-second role reveal. The reveal shows
+participant names, every role, and a prominent local Hunter/Builder designation.
+It is measured using each client's steady (wall) clock, so match synchronization
+and the paused simulation do not shorten or restart the five-second display.
+The roster and assignments come from validated network messages, not local
+placeholder role calculations. After the lottery the
 original accepted session (session ID and frame sequence numbers unchanged)
 is rebound exactly once from its provisional slot to the guest's **final**
 slot 1 or 2. Both peers validate that the assignments match the admitted

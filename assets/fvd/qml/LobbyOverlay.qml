@@ -9,6 +9,11 @@ Item {
     visible: lobby !== null && lobby.enabled
     z: 100
 
+    readonly property string phase: lobby ? lobby.phase : "menu"
+    readonly property bool matchSetup: phase === "assigned" || phase === "bootstrap"
+    readonly property int revealSeconds: lobby ? lobby.roleSeconds : 0
+    readonly property bool revealingRoles: matchSetup && revealSeconds > 0
+
     Rectangle {
         anchors.fill: parent
         color: "#f0121e1a"
@@ -17,6 +22,7 @@ Item {
     Rectangle {
         id: panel
         objectName: "fvdLobbyPanel"
+        visible: !menu.matchSetup
         width: Math.min(parent.width - 32, 540)
         height: Math.min(parent.height - 32, settings.implicitHeight + 46)
         anchors.centerIn: parent
@@ -246,7 +252,7 @@ Item {
                         border.color: "#799883"
                         Text {
                             anchors.centerIn: parent
-                            text: "DRAW ROLES"; color: "white"; font.bold: true
+                            text: "START GAME"; color: "white"; font.bold: true
                         }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor }
                     }
@@ -267,8 +273,137 @@ Item {
                     color: "#b7b7ae"; font.pixelSize: 11
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
-                    text: "Local developer play: run game --solo\nRun relay with no token options for public games, or add one --player-token per alpha player."
+                    text: "Local developer play: run game --solo\nStart Game draws and broadcasts the roles, then synchronizes the initial world."
                 }
+            }
+        }
+    }
+
+    // Shown to every participant for five seconds after the same
+    // authoritative START_MATCH is received. C++ owns the monotonic timer;
+    // QML only displays it, so reloading the overlay cannot restart it.
+    Rectangle {
+        id: reveal
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 32, 580)
+        height: Math.min(parent.height - 32, 390)
+        radius: 12
+        color: "#f321322c"
+        border.width: 2
+        border.color: "#d4ad6e"
+        visible: menu.revealingRoles
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 30
+            spacing: 15
+
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "ROLES ASSIGNED"
+                color: "#f4dfad"
+                font.pixelSize: 23
+                font.bold: true
+            }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "YOU ARE THE"
+                color: "#d3e0d4"
+                font.pixelSize: 14
+            }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: menu.lobby ? menu.lobby.localRole : ""
+                color: menu.lobby && menu.lobby.localRole === "HUNTER"
+                    ? "#ffb877" : "#88dfb3"
+                font.pixelSize: 37
+                font.bold: true
+            }
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: "#5e7669"
+            }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: menu.lobby ? menu.lobby.roles : ""
+                color: "#ebf3e6"
+                font.pixelSize: 16
+                lineHeight: 1.6
+                wrapMode: Text.WordWrap
+            }
+            Item { width: 1; height: 4 }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "ROLE REVEAL  ·  " + menu.revealSeconds
+                color: "#b9cdbd"
+                font.pixelSize: 15
+                font.bold: true
+            }
+        }
+    }
+
+    // The existing network stack supports lobby + synchronized bootstrap,
+    // not live gameplay. Keep that boundary visible instead of silently
+    // resuming independent local simulations.
+    Rectangle {
+        id: prepared
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 32, 550)
+        height: 270
+        radius: 12
+        visible: menu.matchSetup && !menu.revealingRoles
+        color: "#f321322c"
+        border.width: 1
+        border.color: "#739888"
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 24
+            spacing: 14
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: menu.phase === "bootstrap" ? "MATCH SYNCHRONIZED" : "PREPARING MATCH"
+                color: "#e8e4c9"
+                font.bold: true
+                font.pixelSize: 22
+            }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "The five-second role reveal is complete."
+                color: "#e4f0e8"
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: menu.lobby ? menu.lobby.status : ""
+                color: "#c1d0c3"
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+            }
+            Rectangle {
+                objectName: "fvdLobbyEndButton"
+                width: 230; height: 38
+                anchors.horizontalCenter: parent.horizontalCenter
+                radius: 5
+                color: "#594b3d"
+                border.color: "#a69a79"
+                Text {
+                    anchors.centerIn: parent
+                    text: "LEAVE MATCH SETUP"
+                    font.bold: true
+                    color: "white"
+                }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor }
             }
         }
     }

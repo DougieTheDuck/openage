@@ -3,6 +3,7 @@
 #include "lobby.h"
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <random>
 #include <unordered_set>
@@ -127,6 +128,40 @@ gamestate::player_id_t player_for_participant(const StartMatch &start,
 		}
 	}
 	throw Error{MSG(err) << "FVD match has no assignment for participant " << participant_id};
+}
+
+std::string describe_match_roles(const ParticipantSnapshot &roster,
+                                 const StartMatch &start) {
+	validate_start_match_against_roster(roster, start);
+	std::string result;
+	for (const auto &participant : roster.participants) {
+		for (const auto &assignment : start.assignments) {
+			if (assignment.participant_id != participant.participant_id) {
+				continue;
+			}
+			if (not result.empty()) {
+				result += "\n";
+			}
+			result += participant.name;
+			result += " — ";
+			result += assignment.role == PlayerRole::HUNTER ? "HUNTER" : "BUILDER";
+			result += " (Player " + std::to_string(assignment.player_id) + ")";
+			break;
+		}
+	}
+	return result;
+}
+
+uint8_t role_reveal_seconds_remaining(std::chrono::milliseconds elapsed) {
+	constexpr int64_t reveal_ms = 5000;
+	const auto ms = elapsed.count();
+	if (ms >= reveal_ms) {
+		return 0;
+	}
+	if (ms <= 0) {
+		return 5;
+	}
+	return static_cast<uint8_t>((reveal_ms - ms + 999) / 1000);
 }
 
 HostLobby::HostLobby(uint64_t host_id, std::string host_name) {

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <limits>
 #include <string>
 #include <vector>
@@ -34,6 +35,17 @@ uint64_t hunter_of(const StartMatch &started) {
 } // namespace
 
 void lobby() {
+	using namespace std::chrono_literals;
+	TESTEQUALS(role_reveal_seconds_remaining(-20ms), uint8_t{5});
+	TESTEQUALS(role_reveal_seconds_remaining(0ms), uint8_t{5});
+	TESTEQUALS(role_reveal_seconds_remaining(1ms), uint8_t{5});
+	TESTEQUALS(role_reveal_seconds_remaining(999ms), uint8_t{5});
+	TESTEQUALS(role_reveal_seconds_remaining(1000ms), uint8_t{4});
+	TESTEQUALS(role_reveal_seconds_remaining(3999ms), uint8_t{2});
+	TESTEQUALS(role_reveal_seconds_remaining(4000ms), uint8_t{1});
+	TESTEQUALS(role_reveal_seconds_remaining(4999ms), uint8_t{1});
+	TESTEQUALS(role_reveal_seconds_remaining(5000ms), uint8_t{0});
+	TESTEQUALS(role_reveal_seconds_remaining(9000ms), uint8_t{0});
 	TESTTHROWS(HostLobby(0, "Host"));
 	TESTTHROWS(HostLobby(11, ""));
 	TESTTHROWS(HostLobby(11, std::string(MAX_PARTICIPANT_NAME_SIZE + 1, 'x')));
@@ -103,6 +115,11 @@ void lobby() {
 		auto prior_roster = two.snapshot();
 		prior_roster.revision -= 1;
 		validate_start_match_against_roster(prior_roster, started);
+		auto labels = describe_match_roles(prior_roster, started);
+		TESTEQUALS(labels.find("Host — ") != std::string::npos, true);
+		TESTEQUALS(labels.find("Guest — ") != std::string::npos, true);
+		TESTEQUALS(labels.find("HUNTER") != std::string::npos, true);
+		TESTEQUALS(labels.find("BUILDER") != std::string::npos, true);
 
 		TESTEQUALS(hunter_of(started), (ticket == 0 ? uint64_t{11} : uint64_t{22}));
 		TESTEQUALS(started.assignments[ticket == 0 ? 0 : 1].player_id,

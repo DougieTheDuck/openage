@@ -17,12 +17,20 @@ server cannot discover a room or mint credentials in the menu. See
 [pre-match networking](../../doc/code/network/README.md#startup-relay-lobby).
 
 The Host and Join buttons connect to the existing relay transport. Once both
-clients are connected, Host can draw the Hunter and Builder roles. Both peers
-then bind the guest to the final player slot, transfer an authoritative
-initial snapshot and acknowledge its revision. **The menu is a synchronized
-bootstrap, not a playable online match yet**: the simulation is paused at
-time zero and continuous command/replication/rendering handoff remains to be
-implemented. See the relay developer test in the networking documentation.
+clients are connected, the host clicks **Start Game** (there is no separate
+Draw Roles action). The host draws the weighted Hunter/Builder lottery once,
+broadcasts the same assignments to the guest, and each client shows a prominent
+**five-second role reveal**, including participant names and its own role.
+The reveal uses local monotonic time, not simulation time, so it works while
+the match is paused and is not extended by world synchronization. Both peers
+then bind the guest to the final player slot, transfer an authoritative initial
+snapshot and acknowledge its revision.
+
+**The current screen is a synchronized bootstrap, not yet playable online
+gameplay**: after the five-second reveal the menu displays the real bootstrap
+status instead of starting two independently simulated games. Continuous
+command/replication/rendering handoff remains to be implemented. See the
+relay developer test in the networking documentation.
 
 In a Windows development build, run `.\RelWithDebInfo\run.exe game --modpacks fvd` from the build directory with the runtime dependency paths configured.
 Selected Builders display their current health above the unit.

@@ -292,6 +292,7 @@ std::string Presenter::fvd_lobby_action_at(const QPointF &position) const {
 		std::pair{"fvdLobbyJoinButton", "join"},
 		std::pair{"fvdLobbyStartButton", "start"},
 		std::pair{"fvdLobbyBackButton", "disconnect"},
+		std::pair{"fvdLobbyEndButton", "disconnect"},
 	}) {
 		if (this->gui->contains_item(QString::fromUtf8(item), position)) {
 			return action;
@@ -408,6 +409,9 @@ void Presenter::refresh_fvd_lobby_state() {
 		                   : QString::number(state.suggested_room_id));
 	}
 	update("canStart", state.can_start);
+	update("roles", QString::fromStdString(state.roles));
+	update("localRole", QString::fromStdString(state.local_role));
+	update("roleSeconds", static_cast<int>(state.role_seconds_remaining));
 }
 
 void Presenter::init_input() {
@@ -624,6 +628,9 @@ void Presenter::init_input() {
 					this->fvd_lobby_state->insert(key, QString::fromUtf8(value));
 				}
 				this->fvd_lobby_state->insert("canStart", false);
+				this->fvd_lobby_state->insert("roles", QString{});
+				this->fvd_lobby_state->insert("localRole", QString{});
+				this->fvd_lobby_state->insert("roleSeconds", 0);
 				this->fvd_lobby_state->insert("enabled", true);
 				this->gui->set_context_property("fvdLobby", this->fvd_lobby_state.get());
 			}
