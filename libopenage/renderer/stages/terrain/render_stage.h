@@ -84,6 +84,9 @@ public:
 	                       const util::Vector2s chunk_size,
 	                       const coord::scene2_delta chunk_offset);
 
+	/** Discard terrain meshes from the previous match before rebuilding. */
+	void clear_entities();
+
 	/**
 	 * Update the terrain mesh and texture information.
 	 */
@@ -132,6 +135,9 @@ private:
 	 * 3D model of the terrain.
 	 */
 	std::shared_ptr<TerrainRenderModel> model;
+
+	/** Retained to create a fresh terrain model on match reset. */
+	std::shared_ptr<renderer::resources::AssetManager> asset_manager;
 
 	/**
 	 * Render pass for the terrain drawing.

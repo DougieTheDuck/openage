@@ -361,8 +361,10 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			}
 			const bool remote = guest_world and guest_world().has_value();
 			if (remote) {
-				if (send_guest_command and send_guest_command(network::CommandIntent{
-					0, network::CommandKind::BUILD_TOWER, selection.ids, mouse_pos})) {
+				network::CommandIntent intent{
+					0, network::CommandKind::BUILD_TOWER, selection.ids, mouse_pos};
+				intent.queue = append;
+				if (send_guest_command and send_guest_command(std::move(intent))) {
 					if (not append) controller->cancel_tower_placement();
 				}
 				return;
@@ -476,12 +478,49 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		auto mouse_pos = args.mouse.to_phys3(camera);
 		auto selection = controller->get_selection_details();
 		auto owner = static_cast<gamestate::player_id_t>(controller->get_controlled());
-		if (guest_world and guest_world().has_value()) {
-			if (send_guest_command and not selection.ids.empty()) {
-				send_guest_command(network::CommandIntent{
-					0, network::CommandKind::MOVE, selection.ids, mouse_pos});
+		if (guest_world) {
+			auto replica = guest_world();
+			if (replica) {
+				if (not send_guest_command or selection.ids.empty()) return;
+				const bool horses = owner == 1
+					&& (selection.kind == SelectionKind::HORSE
+					    or selection.kind == SelectionKind::GROUP_HORSES);
+				const bool builder = owner >= 2 and selection.kind == SelectionKind::BUILDER;
+				auto order = [send_guest_command, selection, mouse_pos,
+				              replica = std::move(*replica), owner, horses, builder](
+					std::optional<gamestate::entity_id_t> hit) {
+					network::CommandIntent intent{
+						0, network::CommandKind::MOVE, selection.ids, mouse_pos};
+					if (hit) {
+						auto found = std::find_if(
+							replica.entities.begin(), replica.entities.end(),
+							[hit](const network::EntityState &entry) {
+								return entry.entity_id == *hit;
+							});
+						if (found != replica.entities.end()) {
+							if (horses and found->owner_id != owner
+							    and (found->definition == "fvd.data.entities.Builder"
+							         or found->definition == "fvd.data.entities.Tower")) {
+								intent.kind = network::CommandKind::FOCUS_ATTACK;
+								intent.target_entity = *hit;
+							}
+							else if (builder and found->owner_id == owner
+							         and found->definition == "fvd.data.entities.Foundation") {
+								intent.kind = network::CommandKind::PRIORITIZE_FOUNDATION;
+								intent.target_entity = *hit;
+							}
+						}
+					}
+					send_guest_command(std::move(intent));
+				};
+				if (horses or builder) {
+					pick_entity(args.mouse, std::move(order));
+				}
+				else {
+					order(std::nullopt);
+				}
+				return;
 			}
-			return;
 		}
 
 		// The render-thread pick reports only an entity ID. Target

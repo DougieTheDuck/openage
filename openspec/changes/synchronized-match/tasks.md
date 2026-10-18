@@ -14,6 +14,9 @@
 
 - [x] 1.12 Carry recipient-specific `WORLD_DELTA` frames on the public-room lobby's existing authenticated host/guest session after `MATCH_READY`; queue bounded snapshots on the host, apply decoded revisions on the guest, and exercise skipped-capture revisions in the relay regression test. The presenter now samples the paused simulation after the five-second reveal.
 - [x] 1.13 After the five-second reveal, hide the lobby and resume the host-authoritative clock, forward guest Move/AttackMove/BuildTower `COMMAND_INTENT` and host `COMMAND_RESULT`, and render host `WorldState` sprites directly on the guest. Two-player integration still needs physical Windows testing.
-- [ ] 1.14 Add `SNAPSHOT_REQUEST` recovery, recipient-specific full re-sync and authenticated live-session disconnect policy.
+- [x] 1.14a Add `SNAPSHOT_REQUEST` recovery and recipient-specific full re-sync from the host's last transmitted delta baseline, with public-room regression coverage.
+- [ ] 1.14b Complete authenticated live-session disconnect policy and recoverable transient transport errors.
 
-- [ ] 1.15 Add host-validated guest focus-target attacks, Shift+queued tower builds, foundation prioritization, replicated HUD selection details, and clean match restart after F10.
+- [x] 1.15a Add host-validated guest focus-target attacks, Shift+queued tower builds, and queued-foundation prioritization on the authenticated intent wire format.
+- [x] 1.15b Show recipient-authoritative queued sites, construction phase, and hunter countdown in the guest HUD; F10 resets the game/event/entity state, resets the paused clock to zero and reattaches cleared world/terrain render stages for clean rematches. Physical Windows rematch verification is outstanding.
+- [ ] 1.16 Finish live-session disconnect policy, command-result session-generation guards, special-order HUD polish, and full integration tests on Windows.

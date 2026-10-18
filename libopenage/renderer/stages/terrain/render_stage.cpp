@@ -30,6 +30,7 @@ TerrainRenderStage::TerrainRenderStage(const std::shared_ptr<Window> &window,
 	camera{camera},
 	render_entity{nullptr},
 	model{std::make_shared<TerrainRenderModel>(asset_manager)},
+	asset_manager{asset_manager},
 	grid_enabled{false},
 	clock{clock} {
 	renderer::opengl::GlContext::check_error();
@@ -71,6 +72,14 @@ void TerrainRenderStage::add_render_entity(const std::shared_ptr<RenderEntity> e
 	this->render_entity = entity;
 	this->model->add_chunk(this->render_entity, chunk_size, chunk_offset);
 	this->update();
+}
+
+void TerrainRenderStage::clear_entities() {
+	std::unique_lock lock{this->mutex};
+	this->render_entity.reset();
+	this->model = std::make_shared<TerrainRenderModel>(this->asset_manager);
+	this->model->set_camera(this->camera);
+	this->render_pass->clear_renderables();
 }
 
 void TerrainRenderStage::update() {

@@ -112,6 +112,7 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->pending_command_results.clear();
 		this->guest_command_results.clear();
 		this->next_guest_command_id = 1;
+		this->guest_snapshot_requested = false;
 		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
 		this->roles_assigned_at.reset();
@@ -225,6 +226,16 @@ std::vector<CommandResult> RelayLobbyClient::take_command_results() {
 	return drained;
 }
 
+bool RelayLobbyClient::request_recovery_snapshot() {
+	std::lock_guard lock{this->mutex};
+	if (this->hosting or not this->current.connected
+	    or (this->current.phase != "bootstrap"
+	        and this->current.phase != "streaming")
+	    or not this->guest_replication) return false;
+	this->guest_snapshot_requested = true;
+	return true;
+}
+
 std::shared_ptr<ReplicationTracker> RelayLobbyClient::get_replication() const {
 	std::lock_guard lock{this->mutex};
 	return this->guest_replication;
@@ -285,6 +296,7 @@ void RelayLobbyClient::close() {
 		this->pending_command_results.clear();
 		this->guest_command_results.clear();
 		this->next_guest_command_id = 1;
+		this->guest_snapshot_requested = false;
 		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
 		this->roles_assigned_at.reset();
@@ -423,6 +435,16 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 							auto frame = socket->try_receive_frame();
 							if (not frame) break;
 							accepted->validate_incoming(*frame);
+							if (frame->message_type == MessageType::SNAPSHOT_REQUEST) {
+								const auto request = decode_snapshot_request(frame->payload);
+								const auto &latest = baseline.current_snapshot();
+								if (request.last_applied_revision > latest.world_revision) {
+									throw Error{MSG(err) << "Guest requests future FVD snapshot revision"};
+								}
+								socket->send_frame(accepted->make_frame(
+									MessageType::WORLD_SNAPSHOT, encode_world_state(latest)));
+								continue;
+							}
 							if (frame->message_type != MessageType::COMMAND_INTENT) {
 								throw Error{MSG(err) << "Unexpected guest match message"};
 							}
@@ -536,6 +558,16 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			while (not this->stopping) {
 				// Queue client intents only through the authenticated session.
 				// This worker alone allocates outgoing sequence numbers.
+				bool snapshot_request = false;
+				{
+					std::lock_guard lock{this->mutex};
+					snapshot_request = std::exchange(this->guest_snapshot_requested, false);
+				}
+				if (snapshot_request) {
+					socket->send_frame(session.make_frame(
+						MessageType::SNAPSHOT_REQUEST,
+						encode_snapshot_request(tracker->make_snapshot_request())));
+				}
 				{
 					std::deque<CommandIntent> outbound;
 					{
@@ -568,12 +600,22 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				}
 				if (update_frame->message_type == MessageType::WORLD_DELTA) {
 					auto delta = decode_world_delta(update_frame->payload);
-					if (tracker->accept_delta(delta) != DeltaDisposition::APPLY) {
-						throw Error{MSG(err) << "Non-contiguous FVD world delta; snapshot recovery is not connected"};
+					const auto disposition = tracker->accept_delta(delta);
+					if (disposition == DeltaDisposition::REQUEST_SNAPSHOT) {
+						socket->send_frame(session.make_frame(
+							MessageType::SNAPSHOT_REQUEST,
+							encode_snapshot_request(tracker->make_snapshot_request())));
+					}
+					if (disposition != DeltaDisposition::APPLY) {
+						// Ignore further stale deltas until the full snapshot
+						// reseeds the guest's validated world.
+						continue;
 					}
 				}
 				else if (update_frame->message_type == MessageType::WORLD_SNAPSHOT) {
 					tracker->accept_snapshot(decode_world_state(update_frame->payload));
+					std::lock_guard lock{this->mutex};
+					++this->current.snapshot_recoveries;
 				}
 				else {
 					throw Error{MSG(err) << "Unexpected FVD message "

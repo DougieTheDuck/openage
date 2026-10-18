@@ -181,6 +181,21 @@ void lobby_relay_client() {
 	TESTEQUALS(replication->get_revision(), uint64_t{4});
 	TESTEQUALS(replication->get_local_kills().value(), uint64_t{10});
 
+	// The same session must recover a full recipient-specific world from
+	// the host's most recently transmitted delta baseline.
+	TESTEQUALS(guest.request_recovery_snapshot(), true);
+	bool recovered = false;
+	for (size_t attempt = 0; attempt < 300; ++attempt) {
+		if (guest.status().snapshot_recoveries == 1) {
+			recovered = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(recovered, true);
+	TESTEQUALS(replication->get_revision(), uint64_t{4});
+	TESTEQUALS(replication->get_local_kills().value(), uint64_t{10});
+
 	// The role reveal must finish on both peers before human orders are sent.
 	bool host_ready = false;
 	bool guest_ready = false;

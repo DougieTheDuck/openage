@@ -165,6 +165,15 @@ public:
 	bool submit_network_command(network::AuthenticatedCommand command,
 	                            std::function<void(bool)> result_callback);
 
+	/**
+	 * Recreate the FVD game and its event/entity factories on the owning
+	 * simulation thread after the multiplayer clock has reset to paused zero.
+	 * The presenter must clear renderer stages before calling this, then
+	 * reattach a new render factory after consume_match_reset_completed().
+	 */
+	void request_match_reset();
+	bool consume_match_reset_completed();
+
 	/** Invalidate any pending/ready captures when the user leaves the lobby. */
 	void cancel_network_bootstrap();
 
@@ -254,6 +263,10 @@ private:
 		std::function<void(bool)> callback;
 	};
 	std::deque<NetworkCommandRequest> network_commands{};
+
+	std::mutex reset_mutex;
+	bool reset_requested{false};
+	bool reset_completed{false};
 };
 
 } // namespace gamestate

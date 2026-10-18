@@ -223,6 +223,7 @@ protected:
 	std::shared_ptr<QQmlPropertyMap> fvd_hud_state;
 	bool fvd_lobby_enabled{false};
 	bool fvd_gameplay_active{false};
+	bool fvd_reset_pending{false};
 	gamestate::player_id_t fvd_assigned_player{0};
 	std::shared_ptr<QQmlPropertyMap> fvd_lobby_state;
 	std::unique_ptr<network::RelayLobbyClient> fvd_lobby_client;

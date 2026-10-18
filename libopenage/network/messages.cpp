@@ -14,6 +14,8 @@ namespace openage::network {
 namespace {
 
 constexpr size_t COMMAND_PREFIX_SIZE = 16;
+constexpr uint16_t COMMAND_HAS_TARGET_ENTITY = 1 << 0;
+constexpr uint16_t COMMAND_APPEND_BUILD = 1 << 1;
 constexpr uint16_t PLAYER_CONNECTED = 1 << 0;
 constexpr uint16_t ENTITY_HAS_HEALTH = 1 << 0;
 constexpr uint16_t ENTITY_HAS_TOWER_KILLS = 1 << 1;
@@ -94,7 +96,7 @@ private:
 
 bool is_known_command_kind(uint16_t value) {
 	return value >= static_cast<uint16_t>(CommandKind::MOVE)
-	    && value <= static_cast<uint16_t>(CommandKind::BUILD_TOWER);
+	    && value <= static_cast<uint16_t>(CommandKind::PRIORITIZE_FOUNDATION);
 }
 
 bool is_known_command_status(uint16_t value) {
@@ -356,16 +358,28 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 		                     << static_cast<uint16_t>(intent.kind)};
 	}
 
+	if ((intent.kind == CommandKind::FOCUS_ATTACK
+	     or intent.kind == CommandKind::PRIORITIZE_FOUNDATION) != intent.target_entity.has_value()) {
+		throw Error{MSG(err) << "FVD targeted command requires exactly one target entity"};
+	}
+	if (intent.queue and intent.kind != CommandKind::BUILD_TOWER) {
+		throw Error{MSG(err) << "FVD queue flag applies only to tower construction"};
+	}
 	std::vector<uint8_t> output{};
-	output.reserve(COMMAND_PREFIX_SIZE + intent.entity_ids.size() * sizeof(uint64_t) + 24);
+	output.reserve(COMMAND_PREFIX_SIZE + intent.entity_ids.size() * sizeof(uint64_t) + 32);
 	append_u64(output, intent.command_id);
 	append_u16(output, static_cast<uint16_t>(intent.kind));
-	append_u16(output, 0);
+	const auto flags = (intent.target_entity ? COMMAND_HAS_TARGET_ENTITY : 0)
+	                 | (intent.queue ? COMMAND_APPEND_BUILD : 0);
+	append_u16(output, flags);
 	append_u32(output, static_cast<uint32_t>(intent.entity_ids.size()));
 	for (auto entity_id : intent.entity_ids) {
 		append_u64(output, entity_id);
 	}
 	append_position(output, intent.target);
+	if (intent.target_entity) {
+		append_u64(output, *intent.target_entity);
+	}
 	return output;
 }
 
@@ -378,9 +392,11 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 		throw Error{MSG(err) << "Unknown FVD command kind " << kind};
 	}
 	intent.kind = static_cast<CommandKind>(kind);
-	if (reader.u16() != 0) {
+	const auto flags = reader.u16();
+	if (flags & ~(COMMAND_HAS_TARGET_ENTITY | COMMAND_APPEND_BUILD)) {
 		throw Error{MSG(err) << "Unsupported FVD command payload flags"};
 	}
+	intent.queue = (flags & COMMAND_APPEND_BUILD) != 0;
 	auto entity_count = reader.u32();
 	if (entity_count > MAX_COMMAND_ENTITIES) {
 		throw Error{MSG(err) << "FVD command references more than "
@@ -391,6 +407,14 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 		intent.entity_ids.push_back(reader.u64());
 	}
 	intent.target = read_position(reader);
+	if (flags & COMMAND_HAS_TARGET_ENTITY) {
+		intent.target_entity = reader.u64();
+	}
+	if ((intent.kind == CommandKind::FOCUS_ATTACK
+	     or intent.kind == CommandKind::PRIORITIZE_FOUNDATION) != intent.target_entity.has_value()
+	    or (intent.queue and intent.kind != CommandKind::BUILD_TOWER)) {
+		throw Error{MSG(err) << "Invalid FVD targeted/queued command payload"};
+	}
 	reader.finish();
 	return intent;
 }

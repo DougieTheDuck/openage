@@ -318,7 +318,10 @@ std::string Presenter::fvd_lobby_action_at(const QPointF &position) const {
 
 void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	if (not this->fvd_lobby_state or not this->fvd_lobby_client) return;
+	if (this->fvd_reset_pending) return; // New match world is not ready yet.
 	if (action == "disconnect") {
+		const bool reset_match = this->fvd_gameplay_active
+			|| this->fvd_bootstrap_supplied || bool(this->fvd_replication);
 		this->fvd_lobby_local_error.clear();
 		this->fvd_gameplay_active = false;
 		this->fvd_assigned_player = 0;
@@ -343,6 +346,18 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		if (this->game_controller) {
 			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 			if (fvd) this->game_controller->reset_online_player_slots(fvd->get_player_count());
+		}
+		if (reset_match and this->simulation and this->time_loop) {
+			// Shutdown relay and clear the old render stages before the
+			// simulation owner thread builds a clean game at time zero.
+			auto clock = this->time_loop->get_clock();
+			clock->pause();
+			clock->reset_paused();
+			this->world_renderer->clear_entities();
+			this->terrain_renderer->clear_entities();
+			this->simulation->request_match_reset();
+			this->fvd_reset_pending = true;
+			this->fvd_lobby_local_error = "Preparing a fresh FVD match...";
 		}
 		return;
 	}
@@ -417,6 +432,19 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 void Presenter::refresh_fvd_lobby_state() {
 	if (not this->fvd_lobby_enabled or not this->fvd_lobby_state
 	    or not this->fvd_lobby_client) return;
+	if (this->fvd_reset_pending) {
+		if (not this->simulation->consume_match_reset_completed()) return;
+		// Only this GUI/render thread creates OpenGL resources. The game
+		// replacement was created separately on the simulation owner thread.
+		auto factory = std::make_shared<renderer::RenderFactory>(
+			this->terrain_renderer, this->world_renderer, this->hud_renderer);
+		this->simulation->attach_renderer(factory);
+		this->fvd_reset_pending = false;
+		this->fvd_lobby_local_error.clear();
+		this->fvd_lobby_suggested_room_id = 0;
+		this->game_controller->reset_online_player_slots(
+			this->simulation->get_game()->get_state()->get_fvd()->get_player_count());
+	}
 	const auto state = this->fvd_lobby_client->status();
 	// Snapshot capture belongs to the simulation thread. The presenter only
 	// requests it and passes the immutable result to the relay worker.
@@ -893,6 +921,7 @@ void Presenter::init_final_render_pass() {
 
 void Presenter::render() {
 	this->refresh_fvd_lobby_state();
+	if (this->fvd_reset_pending) return;
 	this->refresh_fvd_guest_visuals();
 	// TODO: Pass current time to update() instead of fetching it in renderer
 	{
@@ -1120,34 +1149,54 @@ void Presenter::render() {
 					this->fvd_hud_state->insert("placementFootprint", footprint);
 				}
 				this->fvd_hud_state->insert("placementValid", valid);
-				this->fvd_hud_state->insert("queuedTowers",
-					builder and selected.ids.size() == 1
-						? static_cast<int>(fvd->get_queued_build_count(selected.ids.front()))
-						: 0);
+				auto replica_for_hud = this->fvd_replication
+					? this->fvd_replication->get_world_state() : std::nullopt;
 				QString construction_status{};
 				int construction_percent = -1;
+				int queued_towers = 0;
 				if (builder and controlled >= 2 and selected.ids.size() == 1) {
-					const auto orders = fvd->get_construction_state();
-					const auto current = std::find_if(
-						orders.begin(), orders.end(),
-						[&](const auto &order) {
-							return order.builder_id == selected.ids.front()
-							       and order.owner == controlled;
-						});
-					if (current != orders.end()) {
-						if (current->phase == gamestate::FVDConstructionPhase::PLANNED) {
-							construction_status = QString{"Walking to tower site"};
+					if (replica_for_hud) {
+						auto builder_id = selected.ids.front();
+						for (const auto &order : replica_for_hud->constructions) {
+							if (order.builder_id != builder_id
+							    or order.owner_id != controlled) continue;
+							if (order.phase == network::ConstructionPhase::PLANNED) {
+								++queued_towers;
+								if (construction_status.isEmpty())
+									construction_status = QString{"Walking to tower site"};
+							}
+							else {
+								construction_status = QString{"Building tower"};
+							}
 						}
-						else {
-							construction_percent = current->progress_percent(now);
-							construction_status = QString{"Building: %1%"}.arg(construction_percent);
+					}
+					else {
+						queued_towers = static_cast<int>(
+							fvd->get_queued_build_count(selected.ids.front()));
+						const auto orders = fvd->get_construction_state();
+						const auto current = std::find_if(
+							orders.begin(), orders.end(),
+							[&](const auto &order) {
+								return order.builder_id == selected.ids.front()
+								       and order.owner == controlled;
+							});
+						if (current != orders.end()) {
+							if (current->phase == gamestate::FVDConstructionPhase::PLANNED) {
+								construction_status = QString{"Walking to tower site"};
+							}
+							else {
+								construction_percent = current->progress_percent(now);
+								construction_status = QString{"Building: %1%"}
+									.arg(construction_percent);
+							}
 						}
 					}
 				}
+				this->fvd_hud_state->insert("queuedTowers", queued_towers);
 				this->fvd_hud_state->insert("constructionStatus", construction_status);
 				this->fvd_hud_state->insert("constructionPercent", construction_percent);
 				auto countdown = fvd->get_hunter_spawn_countdown(
-					this->time_loop->get_clock()->get_time());
+					replica_for_hud ? replica_for_hud->simulation_time : now);
 				this->fvd_hud_state->insert("hunterCountdown",
 					countdown.value_or(0));
 				QString kills_label{};

@@ -79,6 +79,9 @@ public:
 	 */
 	void add_render_entity(const std::shared_ptr<RenderEntity> entity);
 
+	/** Drop the old match's units and GPU draw calls on the render thread. */
+	void clear_entities();
+
 	/**
 	 * Get the game entity under a window pixel.
 	 *

@@ -3,6 +3,7 @@
 #include "clock.h"
 
 #include <thread>
+#include <stdexcept>
 
 #include "log/log.h"
 
@@ -113,6 +114,18 @@ void Clock::pause() {
 	log::log(MSG(info) << "Clock paused at "
 	                   << this->sim_time << "ms (simulated) / "
 	                   << this->sim_real_time << "ms (real)");
+}
+
+void Clock::reset_paused() {
+	std::unique_lock lock{this->mutex};
+	if (this->state != ClockState::PAUSED) {
+		throw std::logic_error{"FVD match clock must be paused before resetting"};
+	}
+	const auto now = simclock_t::now();
+	this->start_time = now;
+	this->last_check = now;
+	this->sim_time = 0;
+	this->sim_real_time = 0;
 }
 
 void Clock::resume() {

@@ -59,6 +59,12 @@ void WorldRenderStage::add_render_entity(const std::shared_ptr<RenderEntity> ent
 	this->render_objects.push_back(world_object);
 }
 
+void WorldRenderStage::clear_entities() {
+	std::unique_lock lock{this->mutex};
+	this->render_objects.clear();
+	this->render_pass->clear_renderables();
+}
+
 void WorldRenderStage::pick_entity(
 	const coord::input &position,
 	const std::function<void(std::optional<uint32_t>)> &callback) {

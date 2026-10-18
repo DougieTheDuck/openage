@@ -358,4 +358,11 @@ bool WorldDeltaBaseline::initialized() const {
 	return this->previous.has_value();
 }
 
+const WorldState &WorldDeltaBaseline::current_snapshot() const {
+	if (not this->previous) {
+		throw Error{MSG(err) << "FVD delta baseline has no state to recover"};
+	}
+	return *this->previous;
+}
+
 } // namespace openage::network

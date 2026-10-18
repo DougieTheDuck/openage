@@ -44,6 +44,9 @@ public:
 	WorldDelta advance(WorldState complete);
 	bool initialized() const;
 
+	/** Latest full recipient world used as the outbound delta baseline. */
+	const WorldState &current_snapshot() const;
+
 private:
 	std::optional<WorldState> previous{};
 };

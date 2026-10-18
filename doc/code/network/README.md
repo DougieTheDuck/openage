@@ -55,9 +55,10 @@ The guest draws replicated Builder/Horse/Tower/Foundation sprite proxies,
 uses only its assigned faction, and sends basic Move, AttackMove and BuildTower
 intents to the host for simulation-side validation. Host decisions return as
 `COMMAND_RESULT` messages. The full-screen role dialog disappears after
-the reveal; F10 disconnects and returns to the lobby. **Two players only**,
-and guest focus-attack, foundation prioritization, queued building, snapshot
-recovery, and complete online HUD parity remain unfinished.
+the reveal; F10 disconnects and rebuilds the world for another room.
+**Two players only**. Guest focus attacks, foundation prioritization, queued
+tower orders, and snapshot recovery are implemented. Complete HUD parity,
+disconnect policy, and Internet transport security remain unfinished.
 The initial FVD scenario still creates all eight configured players; only
 two of them correspond to admitted lobby participants, so dynamic scenario
 initialization and unused-slot removal are also required before real matches.
@@ -86,8 +87,9 @@ the five-second reveal the dialog closes and the host-authoritative simulation
 starts. Both players should see the same units; the first Hunter horses begin
 spawning 20 simulation seconds later. Select the assigned Builder to move or
 build (B then click), or as Hunter select horses and press A then click to
-attack-move. Press F10 to disconnect. Restart both game clients for a clean
-rematch; the current process does not reset the simulated match world.
+attack-move. Press F10 to disconnect and allow the simulator and renderer
+to recreate a fresh time-zero match world before hosting the next room.
+The rematch lifecycle still requires physical Windows verification.
 The relay remains available for later rooms after either client disconnects.
 
 For a private alpha, start the relay with one repeatable `--player-token TOKEN_64_HEX` option per authorized player.
@@ -501,3 +503,24 @@ snapshots, deltas and recovery requests; restarting a match requires a new
 connection, fresh session and a new tracker. TCP EOF is not evidence of a
 successful host migration.
 Failure to enqueue a connection lifecycle event is fatal to the host session because continuing would conceal a disconnect from authoritative state.
+
+Guest commands now include target-specific focus attacks and queued
+construction; SnapshotRequest automatically recovers missing world revisions
+without disconnecting. Host still validates ownership and target IDs.
+
+### Rematching without restarting the client
+
+After a live match, press **F10** to leave. The client closes its active relay
+session, pauses and resets the shared game clock to time zero, clears old
+world and terrain render objects, and asks the owning simulation thread to
+rebuild the game, event loop, and entity factories. The graphics thread then
+reattaches a fresh render factory. The lobby becomes available for Host/Join
+only after this reset completes. A second room should start at revision 1
+with fresh Builders and a full 20-second Hunter spawn countdown. Reconnects,
+new rooms, and rematches should not inherit any previous entity IDs or orders.
+The Windows two-client rematch still requires manual validation.
+
+The guest HUD reads its current Builder queue, construction phase, health,
+score, and Hunter countdown from the latest recipient-authoritative state.
+When precise construction progress cannot be reconstructed from the wire
+snapshot, it displays the phase instead of an invented percentage.

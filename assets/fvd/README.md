@@ -33,10 +33,11 @@ The **host** resumes authoritative simulation and sends world deltas at about
 4 Hz. The **guest** displays replicated units and sends Move, AttackMove and
 BuildTower intents; the host checks player ownership and sends an acceptance
 or rejection. Online number-key role switching is disabled. **F10** leaves the
-match. Restart both clients for a fresh match world after disconnecting.
-Two-player public rooms remain the supported online configuration; guest
-focus-target attacks, queued towers, advanced construction prioritization,
-recovery snapshots and final multiplayer HUD polish are pending.
+match. After leaving, the engine recreates the world at time zero before
+you host or join the next room. Two-player public rooms remain the supported
+online configuration. Guest focus-target attacks, queued construction,
+foundation prioritization, and recovery snapshots are implemented; complete
+online HUD polish and disconnect/reconnect policy are still in progress.
 
 In a Windows development build, run `.\RelWithDebInfo\run.exe game --modpacks fvd` from the build directory with the runtime dependency paths configured.
 Selected Builders display their current health above the unit.
@@ -103,3 +104,15 @@ Right-clicking to move interrupts building, and invalid, unreachable, or abandon
 The bundled modpack lives outside `converted/`.
 Its relative graphic references are resolved from the renderer's converted asset directory back to this directory.
 For the engine and data format details, see [game simulation](../../doc/code/game_simulation/README.md) and [modpacks](../../doc/media/openage/modpacks.md).
+
+Online guest commands now include right-click Builder focus attacks for
+Horses, right-click prioritization of queued Foundations, and Shift+clicked
+construction queues. The host validates the target and owner. Guest replication
+recovers world-revision gaps with full authenticated snapshots.
+
+After playing, press **F10** to leave and return to a freshly reset FVD
+world. The engine now clears renderer state and recreates the event and game
+simulation at time zero, rather than requiring a process restart for the next
+room. This restart path has not yet been tested on Windows clients. Builder
+construction phase/queue and Hunter spawn countdown on the guest HUD now
+use the host's replicated state.
