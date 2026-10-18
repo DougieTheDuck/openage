@@ -28,11 +28,14 @@ the match is paused and is not extended by world synchronization. Both peers
 then bind the guest to the final player slot, transfer an authoritative initial
 snapshot and acknowledge its revision.
 
-**The current screen is a synchronized bootstrap, not yet playable online
-gameplay**: after the five-second reveal the menu displays the real bootstrap
-status instead of starting two independently simulated games. Continuous
-command/replication/rendering handoff remains to be implemented. See the
-relay developer test in the networking documentation.
+**The current screen is a synchronized bootstrap plus authoritative world
+delta streaming, not yet playable online gameplay**. After the five-second
+reveal the host captures the paused simulation world at roughly 4 Hz, sends
+incremental deltas over the authenticated relay session, and the guest
+reconstructs the host's world. The overlay shows an increasing world revision,
+rather than starting two independently simulated games. Guest world rendering,
+player command forwarding, match-clock start, and recovery snapshots remain
+to be implemented. See the relay developer test in the networking documentation.
 
 In a Windows development build, run `.\RelWithDebInfo\run.exe game --modpacks fvd` from the build directory with the runtime dependency paths configured.
 Selected Builders display their current health above the unit.

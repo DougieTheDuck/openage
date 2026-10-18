@@ -55,9 +55,11 @@ struct RelayLobbyStatus {
  * touches its ConnectionSession, preserving sequence ordering.
  *
  * Match start rebinds the authenticated player slot and exchanges the
- * authoritative initial snapshot with a versioned acknowledgement. Continuous
- * gameplay replication, input commands and client rendering are separate work
- * and the match clock stays paused until those paths are connected.
+ * authoritative initial snapshot with a versioned acknowledgement. Subsequent
+ * complete host captures are encoded as WORLD_DELTA packets for the guest's
+ * ReplicationTracker. Simulation capture scheduling, gameplay input, and
+ * guest-side world rendering are not yet wired into the GUI handoff; the
+ * match clock remains paused until those paths are connected.
  */
 class RelayLobbyClient {
 public:
@@ -73,6 +75,14 @@ public:
 	/** Supply a snapshot captured on the host simulation thread. */
 	void provide_host_snapshot(WorldState snapshot);
 
+	/**
+	 * Queue the newest complete recipient-specific authoritative world.
+	 * The relay worker calculates a delta against its last transmitted state.
+	 * A single pending slot prevents a slow guest from growing an unbounded
+	 * queue; skipped intermediate captures are folded into the next delta.
+	 */
+	void provide_host_update(WorldState world);
+
 	/** Guest's validated authoritative bootstrap state (once received). */
 	std::shared_ptr<ReplicationTracker> get_replication() const;
 
@@ -83,11 +93,15 @@ private:
 	void run(RelayLobbyConfig settings);
 	void run_refresh(RelayLobbyConfig settings);
 	void publish(RelayLobbyStatus next);
+	void publish_stream_revision(uint64_t revision, bool local_host);
 
 	mutable std::mutex mutex;
 	RelayLobbyStatus current{};
 	std::shared_ptr<TcpConnection> connection{};
 	std::optional<WorldState> pending_host_snapshot{};
+	std::optional<WorldState> pending_host_update{};
+	/** Largest revision submitted, including an update in flight. */
+	uint64_t last_host_offered_revision{0};
 	std::shared_ptr<ReplicationTracker> guest_replication{};
 	bool hosting{false};
 	std::optional<std::chrono::steady_clock::time_point> roles_assigned_at{};

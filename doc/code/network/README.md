@@ -46,10 +46,17 @@ On a fresh room-list request, the relay drops advertised rooms whose host TCP
 connection has closed, and refuses a join if its host has already disconnected.
 The UI's room list is refreshed by **Refresh Games**, not pushed in real time.
 Session IDs now survive the final role rebinding, and the initial world
-snapshot/acknowledgement runs through that same relay connection. **Continuous
-deltas, command forwarding, authoritative disconnect handling and guest
-rendering/input controls have NOT yet been wired to the running match**, so the
-UI remains in the lobby with the simulation paused even after bootstrap.
+snapshot/acknowledgement runs through that same relay connection. The host can
+now queue complete recipient-specific state captures; the relay worker computes
+and sends versioned `WORLD_DELTA` frames based on the last **transmitted**
+state, and the guest validates/applies them using `ReplicationTracker`. The
+presenter requests simulation-thread captures about four times per second
+after the five-second reveal. The current simulation is still **paused**, so
+this proves a live, revisioned transport path rather than running gameplay.
+**Input command forwarding, recovery-snapshot requests, authoritative live
+disconnect handling and guest world rendering/input controls remain pending.**
+The UI shows the advancing network world revision instead of pretending a
+playable match has started.
 The initial FVD scenario still creates all eight configured players; only
 two of them correspond to admitted lobby participants, so dynamic scenario
 initialization and unused-slot removal are also required before real matches.
@@ -73,7 +80,9 @@ On the first client, enter a game name and select **Host Game**.
 On the second client, select **Refresh Games** and then **Join Room** to use the first result, or enter another displayed room ID before joining.
 The host selects **Start Game** after both clients appear. The authoritative
 Hunter/Builder draw is revealed to both participants for five seconds; both
-screens then show synchronized bootstrap at world revision 1.
+screens then reach synchronized bootstrap at world revision 1. They should
+subsequently show **WORLD STATE STREAMING** and increasing revisions while
+the simulation remains paused (live gameplay handoff is the next milestone).
 The relay remains available for later rooms after either client disconnects.
 
 For a private alpha, start the relay with one repeatable `--player-token TOKEN_64_HEX` option per authorized player.

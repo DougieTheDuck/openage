@@ -57,6 +57,7 @@ std::unordered_map<gamestate::entity_id_t, uint64_t> local_tower_kills(
 } // namespace
 
 void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
+	std::lock_guard lock{this->tower_kills_mutex};
 	if (not this->host_connected) {
 		throw Error{MSG(err) << "FVD replication cannot resume after host disconnect"};
 	}
@@ -73,13 +74,10 @@ void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 	}
 
 	auto towers = local_tower_kills(snapshot);
-	{
-		std::lock_guard lock{this->tower_kills_mutex};
-		this->reconstructed_world = snapshot;
-		this->displayed_tower_kills = std::move(towers);
-		this->displayed_kills.store(snapshot.local_kill_count);
-		this->displayed_kills_valid.store(true);
-	}
+	this->reconstructed_world = snapshot;
+	this->displayed_tower_kills = std::move(towers);
+	this->displayed_kills.store(snapshot.local_kill_count);
+	this->displayed_kills_valid.store(true);
 	this->revision = snapshot.world_revision;
 	this->initialized = true;
 	this->awaiting_snapshot = false;
@@ -94,6 +92,7 @@ std::optional<WorldState> ReplicationTracker::get_world_state() const {
 }
 
 DeltaDisposition ReplicationTracker::accept_delta(const WorldDelta &delta) {
+	std::lock_guard lock{this->tower_kills_mutex};
 	if (not this->host_connected) {
 		throw Error{MSG(err) << "FVD replication cannot accept deltas after host disconnect"};
 	}
@@ -111,7 +110,6 @@ DeltaDisposition ReplicationTracker::accept_delta(const WorldDelta &delta) {
 		return DeltaDisposition::REQUEST_SNAPSHOT;
 	}
 
-	std::lock_guard lock{this->tower_kills_mutex};
 	auto next = apply_world_delta(this->reconstructed_world, delta);
 	auto towers = local_tower_kills(next);
 	this->reconstructed_world = std::move(next);
@@ -123,34 +121,37 @@ DeltaDisposition ReplicationTracker::accept_delta(const WorldDelta &delta) {
 }
 
 void ReplicationTracker::host_disconnected() {
+	std::lock_guard lock{this->tower_kills_mutex};
 	this->host_connected = false;
 	this->initialized = false;
 	this->awaiting_snapshot = false;
-	{
-		std::lock_guard lock{this->tower_kills_mutex};
-		this->displayed_kills_valid.store(false);
-		this->displayed_tower_kills.clear();
-		this->reconstructed_world = {};
-	}
+	this->displayed_kills_valid.store(false);
+	this->displayed_tower_kills.clear();
+	this->reconstructed_world = {};
 }
 
 bool ReplicationTracker::is_host_connected() const {
+	std::lock_guard lock{this->tower_kills_mutex};
 	return this->host_connected;
 }
 
 bool ReplicationTracker::has_state() const {
+	std::lock_guard lock{this->tower_kills_mutex};
 	return this->initialized;
 }
 
 bool ReplicationTracker::is_awaiting_snapshot() const {
+	std::lock_guard lock{this->tower_kills_mutex};
 	return this->awaiting_snapshot;
 }
 
 uint64_t ReplicationTracker::get_revision() const {
+	std::lock_guard lock{this->tower_kills_mutex};
 	return this->revision;
 }
 
 SnapshotRequest ReplicationTracker::make_snapshot_request() const {
+	std::lock_guard lock{this->tower_kills_mutex};
 	if (not this->host_connected) {
 		throw Error{MSG(err) << "FVD cannot request a snapshot after host disconnect"};
 	}

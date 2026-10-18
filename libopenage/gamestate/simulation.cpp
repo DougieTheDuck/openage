@@ -79,6 +79,28 @@ void GameSimulation::run() {
 				this->bootstrap_ready = std::move(world);
 			}
 		}
+		// Later authoritative captures use the same simulation-thread boundary
+		// as bootstrap, so entity/event data is never enumerated by the
+		// presenter or relay workers.
+		std::optional<UpdateRequest> update{};
+		{
+			std::lock_guard lock{this->bootstrap_mutex};
+			update = std::exchange(this->update_requested, std::nullopt);
+		}
+		if (update) {
+			auto fvd = this->game->get_state()->get_fvd();
+			if (not fvd) {
+				throw Error{MSG(err) << "Network update requires an FVD scenario"};
+			}
+			network::MatchConnectionState connections{fvd->get_player_count()};
+			auto world = network::capture_fvd_state(
+				this->game->get_state(), connections, current_time,
+				0, update->revision, update->recipient);
+			std::lock_guard lock{this->bootstrap_mutex};
+			if (update->generation == this->bootstrap_generation) {
+				this->update_ready = std::move(world);
+			}
+		}
 		if (this->time_loop->get_clock()->get_state() != time::ClockState::RUNNING) {
 			std::this_thread::sleep_for(std::chrono::milliseconds{10});
 		}
@@ -180,11 +202,30 @@ std::optional<network::WorldState> GameSimulation::take_network_bootstrap() {
 	return std::exchange(this->bootstrap_ready, std::nullopt);
 }
 
+void GameSimulation::request_network_update(player_id_t recipient, uint64_t revision) {
+	if (recipient == 0 or recipient > network::MAX_STATE_PLAYERS or revision < 2) {
+		throw Error{MSG(err) << "Invalid FVD recipient or world revision"};
+	}
+	std::lock_guard lock{this->bootstrap_mutex};
+	if (this->update_requested or this->update_ready) {
+		throw Error{MSG(err) << "FVD world update capture already pending"};
+	}
+	this->update_requested = UpdateRequest{
+		recipient, revision, this->bootstrap_generation};
+}
+
+std::optional<network::WorldState> GameSimulation::take_network_update() {
+	std::lock_guard lock{this->bootstrap_mutex};
+	return std::exchange(this->update_ready, std::nullopt);
+}
+
 void GameSimulation::cancel_network_bootstrap() {
 	std::lock_guard lock{this->bootstrap_mutex};
 	++this->bootstrap_generation;
 	this->bootstrap_requested.reset();
 	this->bootstrap_ready.reset();
+	this->update_requested.reset();
+	this->update_ready.reset();
 }
 
 void GameSimulation::set_modpacks(const std::vector<std::string> &modpacks) {

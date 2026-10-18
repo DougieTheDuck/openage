@@ -150,7 +150,15 @@ public:
 	/** Retrieve the completed bootstrap snapshot, if ready. */
 	std::optional<network::WorldState> take_network_bootstrap();
 
-	/** Invalidate a pending/ready capture when the user leaves the lobby. */
+	/**
+	 * Queue a later recipient-specific state capture on the simulation thread.
+	 * The caller allocates increasing revisions (starting at 2 after bootstrap).
+	 * Only one request/result may be outstanding to bound memory use.
+	 */
+	void request_network_update(gamestate::player_id_t recipient, uint64_t revision);
+	std::optional<network::WorldState> take_network_update();
+
+	/** Invalidate any pending/ready captures when the user leaves the lobby. */
 	void cancel_network_bootstrap();
 
 	/**
@@ -226,6 +234,13 @@ private:
 	uint64_t bootstrap_generation{0};
 	std::optional<BootstrapRequest> bootstrap_requested{};
 	std::optional<network::WorldState> bootstrap_ready{};
+	struct UpdateRequest {
+		gamestate::player_id_t recipient;
+		uint64_t revision;
+		uint64_t generation;
+	};
+	std::optional<UpdateRequest> update_requested{};
+	std::optional<network::WorldState> update_ready{};
 };
 
 } // namespace gamestate

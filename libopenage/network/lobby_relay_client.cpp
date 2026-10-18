@@ -12,6 +12,7 @@
 #include "network/lobby.h"
 #include "network/replication.h"
 #include "network/relay.h"
+#include "network/world_delta.h"
 
 namespace openage::network {
 
@@ -86,22 +87,6 @@ void validate_config(const RelayLobbyConfig &cfg) {
 	}
 }
 
-void monitor_bootstrapped_connection(TcpConnection &connection,
-                                     ConnectionSession &session,
-                                     const std::atomic<bool> &stopping) {
-	auto frame = connection.receive_frame();
-	if (not frame) {
-		if (not stopping) {
-			throw Error{MSG(err) << "Relay peer disconnected after match bootstrap"};
-		}
-		return;
-	}
-	session.validate_incoming(*frame);
-	throw Error{MSG(err) << "Unexpected FVD message "
-	                     << static_cast<uint16_t>(frame->message_type)
-	                     << " after match bootstrap"};
-}
-
 } // namespace
 
 RelayLobbyClient::~RelayLobbyClient() {
@@ -118,6 +103,8 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		std::lock_guard lock{this->mutex};
 		this->hosting = settings.hosting;
 		this->pending_host_snapshot.reset();
+		this->pending_host_update.reset();
+		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
 		this->roles_assigned_at.reset();
 	}
@@ -159,7 +146,24 @@ void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
 	    or this->pending_host_snapshot) {
 		throw Error{MSG(err) << "Invalid or duplicate FVD host bootstrap snapshot"};
 	}
+	this->last_host_offered_revision = snapshot.world_revision;
 	this->pending_host_snapshot = std::move(snapshot);
+}
+
+void RelayLobbyClient::provide_host_update(WorldState world) {
+	std::lock_guard lock{this->mutex};
+	if (not this->hosting
+	    or (this->current.phase != "bootstrap" and this->current.phase != "streaming")
+	    or this->current.remote_player_id == 0
+	    or world.local_player_id != this->current.remote_player_id
+	    or world.base_revision != 0
+	    or world.world_revision <= this->last_host_offered_revision) {
+		throw Error{MSG(err) << "Invalid or stale FVD host world update"};
+	}
+	// A single pending sample is enough: the worker diffs against the last
+	// transmitted world, never against a dropped intermediate capture.
+	this->last_host_offered_revision = world.world_revision;
+	this->pending_host_update = std::move(world);
 }
 
 std::shared_ptr<ReplicationTracker> RelayLobbyClient::get_replication() const {
@@ -171,7 +175,8 @@ RelayLobbyStatus RelayLobbyClient::status() const {
 	std::lock_guard lock{this->mutex};
 	auto result = this->current;
 	if (this->roles_assigned_at
-	    and (result.phase == "assigned" or result.phase == "bootstrap")) {
+	    and (result.phase == "assigned" or result.phase == "bootstrap"
+	         or result.phase == "streaming")) {
 		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
 			std::chrono::steady_clock::now() - *this->roles_assigned_at);
 		result.role_seconds_remaining = role_reveal_seconds_remaining(elapsed);
@@ -188,6 +193,15 @@ void RelayLobbyClient::publish(RelayLobbyStatus next) {
 	this->current = std::move(next);
 }
 
+void RelayLobbyClient::publish_stream_revision(uint64_t revision, bool local_host) {
+	std::lock_guard lock{this->mutex};
+	this->current.phase = "streaming";
+	this->current.message = local_host
+		? "Sending authoritative world deltas. Gameplay controls are not connected yet."
+		: "Receiving authoritative world deltas. Guest rendering and controls are not connected yet.";
+	this->current.snapshot_revision = revision;
+}
+
 void RelayLobbyClient::close() {
 	this->stopping = true;
 	this->start_requested = false;
@@ -202,6 +216,8 @@ void RelayLobbyClient::close() {
 		std::lock_guard lock{this->mutex};
 		this->connection.reset();
 		this->pending_host_snapshot.reset();
+		this->pending_host_update.reset();
+		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
 		this->roles_assigned_at.reset();
 		this->hosting = false;
@@ -307,7 +323,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 					}
 					this->publish(RelayLobbyStatus{
 						.phase = "bootstrap",
-						.message = "Initial world acknowledged. Live gameplay networking is not connected yet.",
+						.message = "Initial world acknowledged. Waiting for live simulation captures.",
 						.participants = settings.name + " (host)\n" + guest_name + " (guest)",
 						.connected = true,
 						.local_player_id = host_player,
@@ -316,12 +332,33 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 						.roles = roles,
 						.local_role = host_role,
 					});
+					// Start the delta baseline with the exact snapshot the
+					// guest acknowledged, including recipient-private scores.
+					WorldDeltaBaseline baseline;
+					baseline.accept_snapshot(std::move(*snapshot));
+					while (not this->stopping) {
+						std::optional<WorldState> next;
+						{
+							std::lock_guard lock{this->mutex};
+							next = std::exchange(this->pending_host_update, std::nullopt);
+						}
+						if (next) {
+							const auto revision = next->world_revision;
+							auto delta = baseline.advance(std::move(*next));
+							socket->send_frame(accepted->make_frame(
+								MessageType::WORLD_DELTA, encode_world_delta(delta)));
+							this->publish_stream_revision(revision, true);
+						}
+						else {
+							if (not socket->peer_connected()) {
+								throw Error{MSG(err) << "Relay guest disconnected during world replication"};
+							}
+							std::this_thread::sleep_for(std::chrono::milliseconds{20});
+						}
+					}
 					break;
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds{20});
-			}
-			if (not this->stopping) {
-				monitor_bootstrapped_connection(*socket, *accepted, this->stopping);
 			}
 		}
 		else {
@@ -389,7 +426,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				encode_match_ready({guest_player, revision})));
 			{
 				std::lock_guard lock{this->mutex};
-				this->guest_replication = std::move(tracker);
+				this->guest_replication = tracker;
 			}
 			this->publish(RelayLobbyStatus{
 				.phase = "bootstrap",
@@ -402,8 +439,28 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				.roles = roles,
 				.local_role = guest_role,
 			});
-			if (not this->stopping) {
-				monitor_bootstrapped_connection(*socket, session, this->stopping);
+			while (not this->stopping) {
+				auto update_frame = socket->receive_frame();
+				if (not update_frame) {
+					if (this->stopping) break;
+					throw Error{MSG(err) << "Authoritative host disconnected during world replication"};
+				}
+				session.validate_incoming(*update_frame);
+				if (update_frame->message_type == MessageType::WORLD_DELTA) {
+					auto delta = decode_world_delta(update_frame->payload);
+					if (tracker->accept_delta(delta) != DeltaDisposition::APPLY) {
+						throw Error{MSG(err) << "Non-contiguous FVD world delta; snapshot recovery is not connected"};
+					}
+				}
+				else if (update_frame->message_type == MessageType::WORLD_SNAPSHOT) {
+					tracker->accept_snapshot(decode_world_state(update_frame->payload));
+				}
+				else {
+					throw Error{MSG(err) << "Unexpected FVD message "
+					                     << static_cast<uint16_t>(update_frame->message_type)
+					                     << " during world replication"};
+				}
+				this->publish_stream_revision(tracker->get_revision(), false);
 			}
 		}
 	}
@@ -417,6 +474,14 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			socket->close();
 		}
 		if (not this->stopping) {
+			std::shared_ptr<ReplicationTracker> replication;
+			{
+				std::lock_guard lock{this->mutex};
+				replication = this->guest_replication;
+			}
+			if (replication) {
+				replication->host_disconnected();
+			}
 			this->publish(RelayLobbyStatus{
 				.phase = "error",
 				.message = error.what(),

@@ -4,6 +4,7 @@
 
 #include <eigen3/Eigen/Dense>
 #include <algorithm>
+#include <chrono>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QVariantList>
@@ -307,6 +308,9 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		this->fvd_lobby_local_error.clear();
 		this->fvd_bootstrap_requested = false;
 		this->fvd_bootstrap_supplied = false;
+		this->fvd_update_requested = false;
+		this->fvd_next_world_revision = 2;
+		this->fvd_last_update_request = {};
 		this->fvd_lobby_hosting = false;
 		if (this->simulation) {
 			this->simulation->cancel_network_bootstrap();
@@ -322,6 +326,9 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	this->fvd_lobby_local_error.clear();
 	this->fvd_bootstrap_requested = false;
 	this->fvd_bootstrap_supplied = false;
+	this->fvd_update_requested = false;
+	this->fvd_next_world_revision = 2;
+	this->fvd_last_update_request = {};
 	if (this->simulation) {
 		this->simulation->cancel_network_bootstrap();
 	}
@@ -391,6 +398,35 @@ void Presenter::refresh_fvd_lobby_state() {
 			this->fvd_lobby_local_error = error.what();
 		}
 	}
+	// Live host captures are sampled on the simulation thread and queued on
+	// the existing authenticated relay connection. No gameplay commands or
+	// independent guest simulation are enabled yet; keep the overlay visible.
+	if (this->simulation and this->fvd_lobby_hosting
+	    and this->fvd_bootstrap_supplied
+	    and (state.phase == "bootstrap" or state.phase == "streaming")
+	    and state.role_seconds_remaining == 0 and state.remote_player_id != 0) {
+		try {
+			if (this->fvd_update_requested) {
+				auto world = this->simulation->take_network_update();
+				if (world) {
+					this->fvd_lobby_client->provide_host_update(std::move(*world));
+					this->fvd_update_requested = false;
+				}
+			}
+			if (not this->fvd_update_requested) {
+				const auto now = std::chrono::steady_clock::now();
+				if (now - this->fvd_last_update_request >= std::chrono::milliseconds{250}) {
+					this->simulation->request_network_update(
+						state.remote_player_id, this->fvd_next_world_revision++);
+					this->fvd_update_requested = true;
+					this->fvd_last_update_request = now;
+				}
+			}
+		}
+		catch (const std::exception &error) {
+			this->fvd_lobby_local_error = error.what();
+		}
+	}
 	auto update = [&](const char *key, const QVariant &value) {
 		if (this->fvd_lobby_state->value(key) != value) {
 			this->fvd_lobby_state->insert(key, value);
@@ -412,6 +448,7 @@ void Presenter::refresh_fvd_lobby_state() {
 	update("roles", QString::fromStdString(state.roles));
 	update("localRole", QString::fromStdString(state.local_role));
 	update("roleSeconds", static_cast<int>(state.role_seconds_remaining));
+	update("worldRevision", static_cast<qulonglong>(state.snapshot_revision));
 }
 
 void Presenter::init_input() {
@@ -625,6 +662,7 @@ void Presenter::init_input() {
 				this->fvd_lobby_state->insert("roles", QString{});
 				this->fvd_lobby_state->insert("localRole", QString{});
 				this->fvd_lobby_state->insert("roleSeconds", 0);
+				this->fvd_lobby_state->insert("worldRevision", static_cast<qulonglong>(0));
 				this->fvd_lobby_state->insert("enabled", true);
 				this->gui->set_context_property("fvdLobby", this->fvd_lobby_state.get());
 			}

@@ -10,7 +10,7 @@ Item {
     z: 100
 
     readonly property string phase: lobby ? lobby.phase : "menu"
-    readonly property bool matchSetup: phase === "assigned" || phase === "bootstrap"
+    readonly property bool matchSetup: phase === "assigned" || phase === "bootstrap" || phase === "streaming"
     readonly property int revealSeconds: lobby ? lobby.roleSeconds : 0
     readonly property bool revealingRoles: matchSetup && revealSeconds > 0
 
@@ -348,9 +348,10 @@ Item {
         }
     }
 
-    // The existing network stack supports lobby + synchronized bootstrap,
-    // not live gameplay. Keep that boundary visible instead of silently
-    // resuming independent local simulations.
+    // The existing network stack now streams validated world-state deltas
+    // over the relay, but gameplay inputs and guest world rendering still
+    // need integration. Keep this boundary visible; do not simulate
+    // independent local worlds or drop the overlay early.
     Rectangle {
         id: prepared
         anchors.centerIn: parent
@@ -369,7 +370,8 @@ Item {
             Text {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
-                text: menu.phase === "bootstrap" ? "MATCH SYNCHRONIZED" : "PREPARING MATCH"
+                text: menu.phase === "streaming" ? "WORLD STATE STREAMING"
+                    : menu.phase === "bootstrap" ? "MATCH SYNCHRONIZED" : "PREPARING MATCH"
                 color: "#e8e4c9"
                 font.bold: true
                 font.pixelSize: 22
@@ -389,6 +391,14 @@ Item {
                 color: "#c1d0c3"
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "World revision: " + (menu.lobby ? menu.lobby.worldRevision : 0)
+                color: "#f4dfad"
+                font.pixelSize: 13
+                visible: menu.phase === "streaming"
             }
             Rectangle {
                 objectName: "fvdLobbyEndButton"

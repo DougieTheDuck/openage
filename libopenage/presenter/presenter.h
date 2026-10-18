@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -225,6 +226,9 @@ protected:
 	uint64_t fvd_lobby_suggested_room_id{0};
 	bool fvd_bootstrap_requested{false};
 	bool fvd_bootstrap_supplied{false};
+	bool fvd_update_requested{false};
+	uint64_t fvd_next_world_revision{2};
+	std::chrono::steady_clock::time_point fvd_last_update_request{};
 	/** Guest HUD source; local-only matches continue to read their simulation. */
 	std::shared_ptr<network::ReplicationTracker> fvd_replication;
 	/** Most recent screen cursor coordinate, owned by the presenter thread. */

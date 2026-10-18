@@ -146,6 +146,41 @@ void lobby_relay_client() {
 	TESTEQUALS(host.status().roles, guest.status().roles);
 	TESTEQUALS(host.status().local_role != guest.status().local_role, true);
 
+	// The same authenticated relay session must continue carrying host
+	// changes after MATCH_READY; no second connection or new role draw.
+	auto next = initial;
+	next.world_revision = 2;
+	next.local_kill_count = 8;
+	auto wrong_update = next;
+	wrong_update.local_player_id = host.status().local_player_id;
+	TESTTHROWS(host.provide_host_update(wrong_update));
+	host.provide_host_update(next);
+	TESTTHROWS(host.provide_host_update(initial));
+	TESTEQUALS(wait_for(host, "streaming"), true);
+	TESTEQUALS(wait_for(guest, "streaming"), true);
+	TESTEQUALS(guest.status().snapshot_revision, uint64_t{2});
+	TESTEQUALS(replication->get_revision(), uint64_t{2});
+	TESTEQUALS(replication->get_local_kills().value(), uint64_t{8});
+	TESTEQUALS(guest.status().roles, host.status().roles);
+
+	// Revision numbers can skip captured intermediate samples: the world
+	// delta base is the last transmitted revision, not revision minus one.
+	auto later = next;
+	later.world_revision = 4;
+	later.local_kill_count = 10;
+	host.provide_host_update(later);
+	bool got_later = false;
+	for (size_t attempt = 0; attempt < 300; ++attempt) {
+		if (guest.status().snapshot_revision == 4) {
+			got_later = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(got_later, true);
+	TESTEQUALS(replication->get_revision(), uint64_t{4});
+	TESTEQUALS(replication->get_local_kills().value(), uint64_t{10});
+
 	guest.close();
 	TESTEQUALS(wait_for(host, "error"), true);
 	listener.close();
