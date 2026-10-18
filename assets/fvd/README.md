@@ -33,10 +33,11 @@ The **host** resumes authoritative simulation and sends world deltas at about
 4 Hz. The **guest** displays replicated units and sends Move, AttackMove and
 BuildTower intents; the host checks player ownership and sends an acceptance
 or rejection. Online number-key role switching is disabled. **F10** leaves the
-match. Restart both clients for a fresh match world after disconnecting.
-Two-player public rooms remain the supported online configuration; guest
-focus-target attacks, queued towers, advanced construction prioritization,
-recovery snapshots and final multiplayer HUD polish are pending.
+match. After leaving, the engine recreates the world at time zero before
+you host or join the next room. Two-player public rooms remain the supported
+online configuration. Guest focus-target attacks, queued construction,
+foundation prioritization, and recovery snapshots are implemented; complete
+online HUD polish and disconnect/reconnect policy are still in progress.
 
 In a Windows development build, run `.\RelWithDebInfo\run.exe game --modpacks fvd` from the build directory with the runtime dependency paths configured.
 Selected Builders display their current health above the unit.

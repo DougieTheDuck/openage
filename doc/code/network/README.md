@@ -55,9 +55,10 @@ The guest draws replicated Builder/Horse/Tower/Foundation sprite proxies,
 uses only its assigned faction, and sends basic Move, AttackMove and BuildTower
 intents to the host for simulation-side validation. Host decisions return as
 `COMMAND_RESULT` messages. The full-screen role dialog disappears after
-the reveal; F10 disconnects and returns to the lobby. **Two players only**,
-and guest focus-attack, foundation prioritization, queued building, snapshot
-recovery, and complete online HUD parity remain unfinished.
+the reveal; F10 disconnects and rebuilds the world for another room.
+**Two players only**. Guest focus attacks, foundation prioritization, queued
+tower orders, and snapshot recovery are implemented. Complete HUD parity,
+disconnect policy, and Internet transport security remain unfinished.
 The initial FVD scenario still creates all eight configured players; only
 two of them correspond to admitted lobby participants, so dynamic scenario
 initialization and unused-slot removal are also required before real matches.
@@ -86,8 +87,9 @@ the five-second reveal the dialog closes and the host-authoritative simulation
 starts. Both players should see the same units; the first Hunter horses begin
 spawning 20 simulation seconds later. Select the assigned Builder to move or
 build (B then click), or as Hunter select horses and press A then click to
-attack-move. Press F10 to disconnect. Restart both game clients for a clean
-rematch; the current process does not reset the simulated match world.
+attack-move. Press F10 to disconnect and allow the simulator and renderer
+to recreate a fresh time-zero match world before hosting the next room.
+The rematch lifecycle still requires physical Windows verification.
 The relay remains available for later rooms after either client disconnects.
 
 For a private alpha, start the relay with one repeatable `--player-token TOKEN_64_HEX` option per authorized player.
