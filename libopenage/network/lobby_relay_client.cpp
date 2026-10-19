@@ -13,6 +13,7 @@
 #include "network/lobby.h"
 #include "network/replication.h"
 #include "network/relay.h"
+#include "network/relay_multi_host_lobby.h"
 #include "network/world_delta.h"
 
 namespace openage::network {
@@ -96,6 +97,9 @@ void validate_config(const RelayLobbyConfig &cfg) {
 		throw Error{MSG(err) << "A valid player name is required"};
 	}
 	if (cfg.hosting) {
+		if (cfg.player_capacity < 2 or cfg.player_capacity > MAX_STATE_PLAYERS) {
+			throw Error{MSG(err) << "Host player capacity must be between 2 and 8"};
+		}
 		if (cfg.room_name.empty()
 		    or cfg.room_name.size() > MAX_RELAY_ROOM_NAME_SIZE) {
 			throw Error{MSG(err) << "A valid room name is required"};
@@ -132,6 +136,10 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->hosting = settings.hosting;
 		this->pending_host_snapshot.reset();
 		this->pending_host_update.reset();
+		this->pending_multi_snapshots.clear();
+		this->pending_multi_updates.clear();
+		this->pending_multi_results.clear();
+		this->active_multi_identities.clear();
 		this->pending_guest_commands.clear();
 		this->incoming_host_commands.clear();
 		this->pending_command_results.clear();
@@ -142,6 +150,7 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->guest_snapshot_requested = false;
 		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
+		this->multi_host_lobby.reset();
 		this->roles_assigned_at.reset();
 	}
 	this->publish(RelayLobbyStatus{
@@ -149,7 +158,12 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		.message = settings.hosting ? "Creating relay room..." : "Joining relay room...",
 	});
 	this->worker = std::thread{[this, settings = std::move(settings)]() {
-		this->run(settings);
+		if (settings.hosting and settings.player_capacity > 2) {
+			this->run_multi_host(settings);
+		}
+		else {
+			this->run(settings);
+		}
 	}};
 }
 
@@ -176,22 +190,35 @@ void RelayLobbyClient::request_start() {
 void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
 	std::lock_guard lock{this->mutex};
 	if (not this->hosting or this->current.phase != "assigned"
-	    or this->current.remote_player_id == 0
-	    or snapshot.local_player_id != this->current.remote_player_id
+	    or (this->current.remote_player_id == 0
+	        and this->active_multi_identities.empty())
+	    or (this->active_multi_identities.empty()
+	        ? snapshot.local_player_id != this->current.remote_player_id
+	        : not this->active_multi_identities.contains(snapshot.local_player_id))
 	    or snapshot.base_revision != 0 or snapshot.world_revision == 0
 	    or this->pending_host_snapshot) {
 		throw Error{MSG(err) << "Invalid or duplicate FVD host bootstrap snapshot"};
 	}
 	this->last_host_offered_revision = snapshot.world_revision;
-	this->pending_host_snapshot = std::move(snapshot);
+	if (not this->active_multi_identities.empty()) {
+		auto recipient = snapshot.local_player_id;
+		if (this->pending_multi_snapshots.contains(recipient)) {
+			throw Error{MSG(err) << "Duplicate multi-guest bootstrap snapshot"};
+		}
+		this->pending_multi_snapshots.emplace(recipient, std::move(snapshot));
+	}
+	else this->pending_host_snapshot = std::move(snapshot);
 }
 
 void RelayLobbyClient::provide_host_update(WorldState world) {
 	std::lock_guard lock{this->mutex};
 	if (not this->hosting
 	    or (this->current.phase != "bootstrap" and this->current.phase != "streaming")
-	    or this->current.remote_player_id == 0
-	    or world.local_player_id != this->current.remote_player_id
+	    or (this->current.remote_player_id == 0
+	        and this->active_multi_identities.empty())
+	    or (this->active_multi_identities.empty()
+	        ? world.local_player_id != this->current.remote_player_id
+	        : not this->active_multi_identities.contains(world.local_player_id))
 	    or world.base_revision != 0
 	    or world.world_revision <= this->last_host_offered_revision) {
 		throw Error{MSG(err) << "Invalid or stale FVD host world update"};
@@ -199,7 +226,10 @@ void RelayLobbyClient::provide_host_update(WorldState world) {
 	// A single pending sample is enough: the worker diffs against the last
 	// transmitted world, never against a dropped intermediate capture.
 	this->last_host_offered_revision = world.world_revision;
-	this->pending_host_update = std::move(world);
+	if (not this->active_multi_identities.empty()) {
+		this->pending_multi_updates.insert_or_assign(world.local_player_id, std::move(world));
+	}
+	else this->pending_host_update = std::move(world);
 }
 
 bool RelayLobbyClient::reveal_finished_locked() const {
@@ -246,15 +276,25 @@ bool RelayLobbyClient::send_command_result(
 	std::lock_guard lock{this->mutex};
 	if (this->stopping or not this->hosting or not this->current.connected
 	    or generation != this->session_generation
-	    or not this->active_remote_identity
-	    or this->active_remote_identity->session_id != identity.session_id
-	    or this->active_remote_identity->player_id != identity.player_id) {
+	    or (not this->active_multi_identities.empty()
+	        ? (not this->active_multi_identities.contains(identity.player_id)
+	           or this->active_multi_identities.at(identity.player_id).session_id != identity.session_id)
+	        : (not this->active_remote_identity
+	           or this->active_remote_identity->session_id != identity.session_id
+	           or this->active_remote_identity->player_id != identity.player_id))) {
 		return false;
 	}
 	if (this->pending_command_results.size() >= MAX_INFLIGHT_COMMANDS) {
 		throw Error{MSG(err) << "FVD command-result queue capacity exceeded"};
 	}
-	this->pending_command_results.push_back(std::move(result));
+	if (not this->active_multi_identities.empty()) {
+		auto &queue = this->pending_multi_results[identity.player_id];
+		if (queue.size() >= MAX_INFLIGHT_COMMANDS) {
+			throw Error{MSG(err) << "FVD per-peer command-result queue is full"};
+		}
+		queue.push_back(std::move(result));
+	}
+	else this->pending_command_results.push_back(std::move(result));
 	return true;
 }
 
@@ -323,19 +363,26 @@ void RelayLobbyClient::close() {
 	this->stopping = true;
 	this->start_requested = false;
 	std::shared_ptr<TcpConnection> socket;
+	std::shared_ptr<RelayMultiHostLobby> multi_host;
 	{
 		std::lock_guard lock{this->mutex};
 		++this->session_generation;
 		this->active_remote_identity.reset();
+		this->active_multi_identities.clear();
 		socket = this->connection;
+		multi_host = this->multi_host_lobby;
 	}
 	if (socket) socket->close();
+	if (multi_host) multi_host->close();
 	if (this->worker.joinable()) this->worker.join();
 	{
 		std::lock_guard lock{this->mutex};
 		this->connection.reset();
 		this->pending_host_snapshot.reset();
 		this->pending_host_update.reset();
+		this->pending_multi_snapshots.clear();
+		this->pending_multi_updates.clear();
+		this->pending_multi_results.clear();
 		this->pending_guest_commands.clear();
 		this->incoming_host_commands.clear();
 		this->pending_command_results.clear();
