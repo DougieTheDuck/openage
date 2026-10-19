@@ -483,6 +483,30 @@ void Presenter::refresh_fvd_lobby_state() {
 			this->simulation->get_game()->get_state()->get_fvd()->get_player_count());
 	}
 	const auto state = this->fvd_lobby_client->status();
+	const bool actual_authority = this->fvd_lobby_client->is_authority();
+	if (actual_authority != this->fvd_lobby_hosting) {
+		// A Builder who created the lobby becomes an ordinary guest, while
+		// the randomly drawn Hunter becomes the sole simulation authority.
+		// This transition takes place before the first world snapshot.
+		if (this->fvd_bootstrap_supplied or this->fvd_gameplay_active) {
+			this->fvd_lobby_local_error =
+				"Unsafe late Hunter authority transfer; reset the match with F10.";
+			return;
+		}
+		this->fvd_lobby_hosting = actual_authority;
+		this->fvd_bootstrap_requested = false;
+		this->fvd_bootstrap_supplied = false;
+		this->fvd_participant_slots_configured = false;
+		this->fvd_bootstrapped_recipients.clear();
+		this->fvd_recorded_departures.clear();
+		this->fvd_capture_cursor = 0;
+		this->fvd_capture_recipient = 0;
+		this->fvd_update_requested = false;
+		this->fvd_next_world_revision = 2;
+		this->fvd_replication.reset();
+		if (this->time_loop) this->time_loop->get_clock()->pause();
+		if (this->simulation) this->simulation->cancel_network_bootstrap();
+	}
 	// Snapshot capture belongs to the simulation thread. The presenter only
 	// requests it and passes the immutable result to the relay worker.
 	if (state.phase == "assigned" and this->simulation and not this->fvd_bootstrap_supplied) {
