@@ -577,8 +577,11 @@ void Presenter::refresh_fvd_lobby_state() {
 				this->fvd_lobby_client->send_command_result(
 					identity, generation, std::move(result));
 			};
+			auto live_session = [this, identity, generation]() {
+				return this->fvd_lobby_client->accepts_host_command(identity, generation);
+			};
 			if (not this->simulation->submit_network_command(
-				std::move(command), reply)) reply(false);
+				std::move(command), reply, std::move(live_session))) reply(false);
 		}
 	}
 	if (this->fvd_gameplay_active and not this->fvd_lobby_hosting) {
