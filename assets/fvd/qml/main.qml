@@ -33,6 +33,19 @@ Item {
 		font.bold: true
 	}
 
+	Text {
+		anchors.top: parent.top
+		anchors.right: parent.right
+		anchors.topMargin: 35
+		anchors.rightMargin: 13
+		z: 10
+		visible: root.lobby !== null && root.lobby.builderDisconnected
+		text: "BUILDER DISCONNECTED — MATCH CONTINUES"
+		color: "#f4c78c"
+		font.pixelSize: 13
+		font.bold: true
+	}
+
 	// Tile-accurate 2D build preview, using the same camera projection as
 	// world sprites. Mouse input still passes through to the game.
 	Canvas {
