@@ -273,8 +273,9 @@ bin/run relay \
 
 Enter the corresponding token on each client before hosting, refreshing or joining.
 
-Authority succession safety check:
-`bin/run test openage::network::tests::authority_succession`. This verifies
+Authority succession safety checks:
+`bin/run test openage::network::tests::authority_succession` and
+`bin/run test openage::network::tests::rehost_ticket`. This verifies
 Hunter-only termination, monotonic epochs, stale takeover rejection, and the
 all-participant fresh-session barrier required for a pre-game role-preserving
 Hunter rehost. The `relay_multi_host_lobby` test also exercises
@@ -575,6 +576,18 @@ and `RelayMultiHostLobby::start_fixed()` reuses the initial lottery.
 Once that redirect is wired into the GUI, the initial Builder host will no
 longer be the authoritative host, so leaving will not end the match.
 The redirect and renderer/controller role swap are not yet implemented.
+The rehost transport foundation now includes protocol 7.4's one-time
+`AUTHORITY_REHOST_OFFER` and `AUTHORITY_REHOST_PROOF` frames. A
+`RehostTicketBook` ties each Builder's private credential to its original
+player slot, immutable lobby revision, destination relay room, and authority
+epoch. In a new Hunter-owned room, `prepare_hunter_rehost()` requires a fresh,
+authenticated guest proof before admitting that player to the new roster.
+`start_rehost()` only commits the new Hunter lease after all expected
+Builders have redeemed their unique tickets, and `start_fixed()` preserves
+the original Hunter/Builder assignments. This does **not** yet deliver the
+offers to peers or transfer the active game simulation. Public relay join
+capacity can still be exhausted by untrusted connections before proof
+verification, so it is not a production Internet security guarantee.
 
 The multi-participant `MatchDisconnectCoordinator` keeps surviving
 Builder sessions after another Builder disconnects, retaining original ownership and queued commands. The connection state now marks a match inactive when player 1 (Hunter) disconnects, refusing all further remote commands. The coordinator still broadcasts a final `ParticipantDisconnected` and world delta to surviving Builders so they can learn why the match ended. The live 3–8-player host worker sends those notices, drops only the
