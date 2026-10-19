@@ -119,6 +119,61 @@ The remaining integration must:
 Avoid replacing the working two-player code path until the new multi-guest
 runner has automated coverage, to prevent regression of the playable build.
 
+## 1.17 Hunter authority continuity
+
+**Current limitation:** The original lobby creator still runs the only
+authoritative simulation, regardless of role. Builder *guest* disconnections
+work, but losing that authoritative Builder destroys the only event loop and
+closes every pair forwarded through the old relay room. The guest
+`ReplicationTracker` holds only presentation data and cannot resume that
+simulation.
+
+**Preferred design: move authority before gameplay rather than after a
+crash.** Keep the existing weighted Hunter lottery and the lobby creator's
+"host room" UI. Once `START_MATCH` chooses the Hunter:
+
+1. If the creator is Hunter, retain the current host-authoritative path.
+   If the creator is Builder, the Hunter starts a second, **Hunter-owned**
+   relay room while the original lobby is still connected. All participants
+   learn the new room ID and a distinct, single-use, old-player-bound
+   rejoin ticket over their authenticated original session.
+2. Each Builder (including the original room creator) connects to a separate
+   Hunter-owned relay channel. A ticket must match the previous match
+   identity and exact assigned player slot; never infer player ownership
+   from display names, join order or an unauthenticated public room token.
+   The rehost room's participant numbers are new; `start_fixed()` carries
+   the original game-player slots instead of running a second role lottery.
+3. The Hunter confirms the entire new session roster before publishing the
+   final authority lease. `AuthoritySuccession` requires unique new session
+   identities and fences the old authority epoch. Abort and return to the
+   lobby if handoff cannot finish; don't start competing simulations.
+4. All clients close their old gameplay transport (without erasing the
+   immutable role draw), switch the presenter/controller to the new
+   authority channel and send the ordinary `WORLD_SNAPSHOT` /
+   `MATCH_READY` bootstrap. The Hunter begins the *one* authoritative
+   simulation at paused time zero. Only then does the five-second reveal
+   release the host clock and accept commands.
+5. A Builder who originally hosted can now disconnect just like any other
+   Builder: it has no simulation authority or relay channel that other peers
+   depend on. Other Builders remain connected to the Hunter and retain
+   their towers and units. Hunter loss ends the match.
+
+**Implemented foundation:** The role/epoch succession ledger, checkpoint
+fencing, full-rejoin preparation barrier, and role-preserving
+`RelayMultiHostLobby::start_fixed()`, with unit/transport regression tests.
+The original two-peer and multi-guest live game paths are unchanged
+until the complete redirect/rebind transaction is present. Do **not**
+advertise continuity on a Builder-host disconnect yet.
+
+**Fallback for an actual mid-match authority change:** A complete restartable
+engine checkpoint is necessary. A `WorldState` lacks the authoritative
+event queue, entity component curves, outstanding command acknowledgements,
+construction reservations and timers, scheduled Hunter spawns, combat
+cooldowns, and any stochastic engine state. The existing
+`AuthoritySuccession::attest_restored_checkpoint()` gate is a planning API,
+not an engine restore function. No production caller may attest success
+until a checkpoint has been fully restored and checked for parity.
+
 ## Risks
 
 Network timing and simulation time-indexed curves could be mistakenly
