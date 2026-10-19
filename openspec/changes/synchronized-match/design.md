@@ -70,24 +70,30 @@ The first version uses no client-side prediction.
 
 ## Live 3–8-player integration boundary (1.16c)
 
+The `RelayRoomDirectory` now reserves seven independently forwarded
+host channels; `RelayMultiHostLobby` joins them to one `HostLobby`,
+broadcasts roster revisions, starts one role lottery and rebinds each
+session. A dedicated test exercises three/eight player public rooms,
+bootstraps and command round trips. The existing GUI is **not yet using**
+this multi-host admission manager.
+
 The three/eight-player `fvd_multi_session` test exercises the current
 authoritative command bridge, unique TCP `ConnectionSession` objects, per-peer
 `WorldDeltaBaseline` instances and `MatchDisconnectCoordinator` without
 depending on the public relay UI. This validates the multi-session core,
-**not** live 3–8-player public rooms. The current `RelayRoomDirectory`
-consumes the waiting host socket when the first guest joins, and
-`RelayLobbyClient` maintains only one game transport and one remote
+**not** the multi-guest gameplay loop in the GUI. The existing
+`RelayLobbyClient` still maintains one game transport and one remote
 recipient. Raising lobby's `max_players` alone would create false capacity.
 
 The remaining integration must:
 
-1. Keep an advertised room joinable until 2–8 participants are admitted
-   (bounded to seven independently authenticated host/guest channels).
-   Each channel must have its own TCP sequence state, and a disconnect must
-   close only that channel.
-2. Maintain a single host-owned `HostLobby` roster. Broadcast the updated
-   `PARTICIPANT_SNAPSHOT` to all admitted guests; `START_MATCH` must include
-   the exact same final roster and unique role/slot mapping.
+1. **Implemented in the relay and host admission manager:** a room stays
+   joinable until its reserved channels (up to seven) are paired. Each
+   channel has an independent authenticated TCP sequence stream, and
+   public rooms use a separate private host-slot capability.
+2. **Implemented in `RelayMultiHostLobby`:** a single host-owned
+   `HostLobby` broadcasts each roster revision to all admitted guests
+   and sends one immutable `START_MATCH` mapping.
 3. Configure the authoritative connection state from the admitted roster
    before bootstrap, so unused scenario slots are disconnected. Remove or
    suppress the seven-minus-N unused scenario Builders for the finished game.
