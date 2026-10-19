@@ -161,6 +161,17 @@ crash.** Keep the existing weighted Hunter lottery and the lobby creator's
 **Implemented foundation:** The role/epoch succession ledger, checkpoint
 fencing, full-rejoin preparation barrier, and role-preserving
 `RelayMultiHostLobby::start_fixed()`, with unit/transport regression tests.
+Protocol 7.4 defines authenticated-session `AUTHORITY_REHOST_OFFER` and
+`AUTHORITY_REHOST_PROOF` frames. `RehostTicketBook` generates one private
+one-use credential per original Builder slot, bound to the old lobby
+revision, target relay room and new authority epoch. A Hunter-owned
+`RelayMultiHostLobby` in rehost mode does **not** add a newly handshaken
+guest to its roster until that session supplies and redeems its proof.
+`start_rehost()` also checks the full new-session barrier and commits
+the successor lease only after all Builders rejoin with their old roles.
+Tests exercise successful replacement-room admission and forged
+proof rejection. Offer delivery through the old room and the live
+presenter/controller swap are still unimplemented.
 The original two-peer and multi-guest live game paths are unchanged
 until the complete redirect/rebind transaction is present. Do **not**
 advertise continuity on a Builder-host disconnect yet.
