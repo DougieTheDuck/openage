@@ -953,11 +953,18 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
 		}
 		if (this->stopping) return;
+		// HostLobby::start() increments its roster revision. The assignments
+		// must be checked against the LAST PRE-START roster (revision N),
+		// not the post-start roster (N+1), exactly as in the two-peer path.
+		// Otherwise describe_match_roles() throws and closes all guest sockets
+		// before they receive a WORLD_SNAPSHOT.
+		const auto final_roster = lobby->roster();
 		const auto assignment = lobby->start();
+		validate_start_match_against_roster(final_roster, assignment);
 		AuthoritySuccession authority{assignment, assignment.host_participant_id};
 		const auto host_player = player_for_participant(assignment, 1);
 		const auto role = local_role_name(assignment, host_player);
-		const auto role_text = describe_match_roles(lobby->roster(), assignment);
+		const auto role_text = describe_match_roles(final_roster, assignment);
 		std::vector<gamestate::player_id_t> remotes{};
 		std::map<gamestate::player_id_t, RelayMultiHostLobby::Peer const *> peers{};
 		for (const auto &peer : lobby->channels()) {
