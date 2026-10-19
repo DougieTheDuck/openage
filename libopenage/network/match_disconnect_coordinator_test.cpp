@@ -192,6 +192,48 @@ void match_disconnect_coordinator() {
 		out_of_space, state, time::TIME_ZERO, small_revision, 1));
 	TESTEQUALS(small_revision, uint64_t{8});
 	TESTEQUALS(small_match.is_connected(2), true);
+
+	// A remote Hunter departure is terminal even when Builder sessions are
+	// connected. Surviving Builders receive one final ordered notification
+	// and world delta, but may no longer submit gameplay commands.
+	MatchConnectionState hunter_match{3};
+	MatchDisconnectCoordinator hunter_coordinator{hunter_match};
+	const SessionIdentity hunter_identity{401, 1};
+	const SessionIdentity builder_identity{403, 3};
+	OutboundMailbox hunter_outbound{4};
+	OutboundMailbox builder_outbound{4};
+	hunter_coordinator.register_remote(hunter_identity, hunter_outbound);
+	hunter_coordinator.register_remote(builder_identity, builder_outbound);
+	auto hunter_initial = capture_fvd_state(
+		state, hunter_match, time::TIME_ZERO, 0, 12, builder_identity.player_id);
+	hunter_coordinator.record_snapshot(hunter_initial);
+	TESTEQUALS(hunter_match.is_match_active(), true);
+	ConnectionEventMailbox hunter_closures{2};
+	hunter_closures.try_push({hunter_identity, DisconnectReason::CONNECTION_LOST}) or TESTFAIL;
+	uint64_t hunter_revision = 12;
+	TESTEQUALS(hunter_coordinator.process_closures(
+		hunter_closures, state, time::TIME_ZERO, hunter_revision, 2), size_t{1});
+	TESTEQUALS(hunter_revision, uint64_t{13});
+	TESTEQUALS(hunter_match.is_match_active(), false);
+	TESTEQUALS(hunter_match.is_connected(3), true);
+	TESTEQUALS(hunter_match.accepts_commands(builder_identity), false);
+	AuthenticatedCommand post_hunter_loss{};
+	post_hunter_loss.identity = builder_identity;
+	post_hunter_loss.intent.command_id = 99;
+	post_hunter_loss.intent.kind = CommandKind::MOVE;
+	post_hunter_loss.intent.entity_ids = {*builder_three};
+	post_hunter_loss.intent.target = {60, 60, 0};
+	TESTEQUALS(hunter_coordinator.accepts_command(post_hunter_loss), false);
+	auto goodbye = builder_outbound.drain(4);
+	TESTEQUALS(goodbye.size(), size_t{2});
+	TESTEQUALS(std::holds_alternative<ParticipantDisconnected>(goodbye.at(0)), true);
+	TESTEQUALS(std::get<ParticipantDisconnected>(goodbye.at(0)).player_id,
+	           gamestate::player_id_t{1});
+	TESTEQUALS(std::holds_alternative<WorldDeltaMessage>(goodbye.at(1)), true);
+	auto final_world = apply_world_delta(
+		hunter_initial, std::get<WorldDeltaMessage>(goodbye.at(1)).delta);
+	TESTEQUALS(final_world.players.at(0).connected, false);
+	TESTEQUALS(final_world.players.at(2).connected, true);
 }
 
 } // namespace openage::network::tests
