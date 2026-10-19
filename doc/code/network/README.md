@@ -263,7 +263,7 @@ bin/run relay \
 
 Enter the corresponding token on each client before hosting, refreshing or joining.
 
-Focused automated checks: `bin/run test openage::network::tests::lobby_relay_client`, `bin/run test openage::network::tests::match_disconnect_coordinator`, and `bin/run test openage::network::tests::fvd_multi_session` (requires FVD assets). The relay test exercises command-generation rejection after close/reconnect, several simultaneous queued/targeted orders, and host acknowledgements. The coordinator test covers Builder survival and terminal Hunter departure with a final replicated notice.
+Focused automated checks: `bin/run test openage::network::tests::lobby_relay_client`, `bin/run test openage::network::tests::match_disconnect_coordinator`, and `bin/run test openage::network::tests::fvd_multi_session` (requires FVD assets). Additional multi-room checks are `bin/run test openage::network::tests::relay_service` and `bin/run test openage::network::tests::relay_multi_host_lobby`; the latter covers a single public room with 3 and 8 participants, shared roster/roles, recipient-bound bootstrap frames and authenticated command/result round trips. The relay test exercises command-generation rejection after close/reconnect, several simultaneous queued/targeted orders, and host acknowledgements. The coordinator test covers Builder survival and terminal Hunter departure with a final replicated notice.
 Relay directory and access-control check: `bin/run test openage::network::tests::relay_service`.
 Local non-network gameplay: `bin/run game --solo`.
 
