@@ -666,8 +666,17 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 		}
 		else {
 			auto session = client_handshake(*socket, {
-				PROTOCOL_MINIMUM_COMPATIBLE_MINOR, settings.name,
-				"fvd-lobby", provisional_gameplay_digest()});
+				settings.rehost_offer ? uint16_t{4}
+				                      : PROTOCOL_MINIMUM_COMPATIBLE_MINOR,
+				settings.name, "fvd-lobby", provisional_gameplay_digest()});
+			if (settings.rehost_offer) {
+				if (session.get_protocol_version().minor < 4) {
+					throw Error{MSG(err) << "Hunter handoff requires protocol 7.4"};
+				}
+				socket->send_frame(session.make_frame(
+					MessageType::AUTHORITY_REHOST_PROOF,
+					encode_rehost_proof(make_rehost_proof(*settings.rehost_offer))));
+			}
 			auto frame = socket->receive_frame();
 			if (not frame) {
 				throw Error{MSG(err) << "Relay host closed before lobby snapshot"};
@@ -726,6 +735,11 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			succession.emplace(assigned, assigned.host_participant_id);
 			session.bind_match_player(assigned, provisional_participant_id);
 			const auto guest_player = session.get_identity().player_id;
+			if (settings.rehost_offer
+			    and (guest_player != settings.rehost_offer->original_player_id
+			         or player_for_participant(assigned, assigned.host_participant_id) != 1)) {
+				throw Error{MSG(err) << "Hunter replacement changed the original role assignment"};
+			}
 			const auto host_player = player_for_participant(assigned, 1);
 			const auto roles = describe_match_roles(latest_roster, assigned);
 			const auto guest_role = local_role_name(assigned, guest_player);
