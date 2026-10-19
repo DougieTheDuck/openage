@@ -756,9 +756,18 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 					this->begin_hunter_rehost(settings, assigned, session, *socket);
 				}
 				else {
-					auto invitation = socket->receive_frame();
+					std::optional<Frame> invitation{};
+					const auto deadline = std::chrono::steady_clock::now()
+					                      + std::chrono::seconds{30};
+					while (not this->stopping and std::chrono::steady_clock::now() < deadline) {
+						invitation = socket->try_receive_frame();
+						if (invitation) break;
+						if (not socket->is_open() or not socket->peer_connected()) break;
+						std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
+					}
+					if (this->stopping) return;
 					if (not invitation) {
-						throw Error{MSG(err) << "Original host disconnected before Hunter invitation"};
+						throw Error{MSG(err) << "Host closed or timed out before Hunter invitation"};
 					}
 					session.validate_incoming(*invitation);
 					if (invitation->message_type != MessageType::AUTHORITY_REHOST_OFFER) {
@@ -1436,7 +1445,11 @@ void RelayLobbyClient::run_rehosted_guest(
 	// The old authenticated sessions stay alive until the replacement has
 	// completed StartMatch. Losing the former Builder host after this point
 	// cannot affect the Hunter's independent relay room.
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{45};
 	while (not this->stopping) {
+		if (std::chrono::steady_clock::now() >= deadline) {
+			throw Error{MSG(err) << "Hunter replacement did not start within 45 seconds"};
+		}
 		const auto status = child->status();
 		if (status.phase == "assigned" or status.phase == "bootstrap"
 		    or status.phase == "streaming" or status.phase == "playing") return;
@@ -1486,7 +1499,11 @@ void RelayLobbyClient::begin_hunter_rehost(
 			MessageType::AUTHORITY_REHOST_OFFER,
 			encode_rehost_offer(room->rehost_offer_for(slot.player_id))));
 	}
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{45};
 	while (not this->stopping) {
+		if (std::chrono::steady_clock::now() >= deadline) {
+			throw Error{MSG(err) << "Other Builders did not complete Hunter handoff within 45 seconds"};
+		}
 		auto status = child->status();
 		if (status.phase == "assigned" or status.phase == "bootstrap"
 		    or status.phase == "streaming" or status.phase == "playing") return;
