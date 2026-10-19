@@ -39,6 +39,8 @@ struct RelayLobbyConfig {
 	size_t player_capacity{2};
 	/** An already drawn match is rehosted, never subjected to a second lottery. */
 	std::optional<StartMatch> rehost_start{};
+	/** Hunter-created room ready for new guests and private-ticket admission. */
+	std::shared_ptr<RelayMultiHostLobby> prepared_rehost_lobby{};
 	/** Private one-use proof to join the Hunter's replacement room. */
 	std::optional<RehostOffer> rehost_offer{};
 };
