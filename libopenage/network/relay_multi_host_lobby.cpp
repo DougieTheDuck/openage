@@ -85,11 +85,75 @@ void RelayMultiHostLobby::broadcast_roster() {
 	} while (retry);
 }
 
+void RelayMultiHostLobby::prepare_hunter_rehost(
+	const StartMatch &original_assignment) {
+	if (this->started or this->lobby.size() != 1 or this->rehost_tickets) {
+		throw Error{MSG(err) << "FVD Hunter rehost must be prepared before guest admission"};
+	}
+	if (player_for_participant(original_assignment,
+	                           original_assignment.host_participant_id) == 1) {
+		throw Error{MSG(err) << "Original Hunter host does not need a rehost"};
+	}
+	if (this->channels_by_slot.size() + 1 != original_assignment.assignments.size()) {
+		throw Error{MSG(err) << "Hunter rehost must reserve all original Builder slots"};
+	}
+	this->rehost_tickets = std::make_unique<RehostTicketBook>(
+		original_assignment, this->advertised_room_id);
+}
+
+RehostOffer RelayMultiHostLobby::rehost_offer_for(
+	gamestate::player_id_t original_player_id) const {
+	if (not this->rehost_tickets) {
+		throw Error{MSG(err) << "No Hunter handoff is in progress"};
+	}
+	return this->rehost_tickets->offer_for(original_player_id);
+}
+
+StartMatch RelayMultiHostLobby::start_rehost() {
+	if (not this->rehost_tickets or not this->rehost_tickets->complete()
+	    or this->lobby.size() != this->rehost_tickets->expected_guests() + 1) {
+		throw Error{MSG(err) << "Hunter handoff requires every authenticated Builder"};
+	}
+	return this->start_fixed(this->rehost_tickets->new_participant_slots());
+}
+
 size_t RelayMultiHostLobby::poll_admissions(const AssetDigest &digest) {
 	if (this->started) return 0;
 	size_t newly_joined{0};
 	bool roster_changed = false;
 	for (auto &peer : this->channels_by_slot) {
+		if (this->rehost_tickets and peer.session and not peer.admitted) {
+			auto frame = peer.socket->try_receive_frame();
+			if (frame) {
+				try {
+					peer.session->validate_incoming(*frame);
+					if (frame->message_type != MessageType::AUTHORITY_REHOST_PROOF) {
+						throw Error{MSG(err) << "Expected authenticated Hunter rehost proof"};
+					}
+					auto proof = decode_rehost_proof(frame->payload);
+					if (not this->rehost_tickets->redeem(
+						proof, peer.session->get_identity())) {
+						throw Error{MSG(err) << "Invalid or reused Hunter rehost ticket"};
+					}
+					this->lobby.join(peer.participant_id, std::move(peer.accepted_name));
+					peer.admitted = true;
+					++newly_joined;
+					roster_changed = true;
+				}
+				catch (const std::exception &) {
+					peer.socket->close();
+					peer.session.reset();
+					peer.accepted_name.clear();
+				}
+			}
+			else if (not peer.socket->peer_connected()
+			         or std::chrono::steady_clock::now() >= peer.proof_deadline) {
+				peer.socket->close();
+				peer.session.reset();
+				peer.accepted_name.clear();
+			}
+			continue;
+		}
 		if (peer.admitted) {
 			if (not peer.socket->peer_connected()) {
 				this->lobby.leave(peer.participant_id);
@@ -126,11 +190,21 @@ size_t RelayMultiHostLobby::poll_admissions(const AssetDigest &digest) {
 				peer.socket->close();
 				break;
 			}
-			this->lobby.join(peer.participant_id, std::move(guest_name));
 			peer.session = std::make_unique<ConnectionSession>(std::move(*session));
-			peer.admitted = true;
-			roster_changed = true;
-			++newly_joined;
+			if (this->rehost_tickets) {
+				// A handshake proves protocol compatibility, not ownership
+				// of any OLD player slot. Admit only after a session-sequenced,
+				// one-time handoff proof validates on a subsequent poll.
+				peer.accepted_name = std::move(guest_name);
+				peer.proof_deadline = std::chrono::steady_clock::now()
+				                      + std::chrono::seconds{15};
+			}
+			else {
+				this->lobby.join(peer.participant_id, std::move(guest_name));
+				peer.admitted = true;
+				roster_changed = true;
+				++newly_joined;
+			}
 			break;
 		}
 	}
@@ -147,6 +221,9 @@ ParticipantSnapshot RelayMultiHostLobby::roster() const {
 }
 
 StartMatch RelayMultiHostLobby::start() {
+	if (this->rehost_tickets) {
+		throw Error{MSG(err) << "Cannot redraw Hunter roles during a role-preserving rehost"};
+	}
 	if (this->started) {
 		throw Error{MSG(err) << "FVD multi-guest lobby has already started"};
 	}
@@ -171,6 +248,11 @@ StartMatch RelayMultiHostLobby::start() {
 
 StartMatch RelayMultiHostLobby::start_fixed(
 	const std::map<uint64_t, gamestate::player_id_t> &player_slots) {
+	if (this->rehost_tickets
+	    and (not this->rehost_tickets->complete()
+	         or this->rehost_tickets->new_participant_slots() != player_slots)) {
+		throw Error{MSG(err) << "Rehost player IDs must match redeemed private tickets"};
+	}
 	if (this->started) {
 		throw Error{MSG(err) << "Cannot rehost an already started FVD room"};
 	}
