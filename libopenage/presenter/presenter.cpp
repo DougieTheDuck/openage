@@ -346,6 +346,11 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		}
 		this->fvd_bootstrap_requested = false;
 		this->fvd_bootstrap_supplied = false;
+		this->fvd_participant_slots_configured = false;
+		this->fvd_capture_recipient = 0;
+		this->fvd_bootstrapped_recipients.clear();
+		this->fvd_capture_cursor = 0;
+		this->fvd_recorded_departures.clear();
 		this->fvd_update_requested = false;
 		this->fvd_next_world_revision = 2;
 		this->fvd_last_update_request = {};
@@ -400,6 +405,11 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	}
 	this->fvd_bootstrap_requested = false;
 	this->fvd_bootstrap_supplied = false;
+		this->fvd_participant_slots_configured = false;
+		this->fvd_capture_recipient = 0;
+		this->fvd_bootstrapped_recipients.clear();
+		this->fvd_capture_cursor = 0;
+		this->fvd_recorded_departures.clear();
 	this->fvd_update_requested = false;
 	this->fvd_next_world_revision = 2;
 	this->fvd_last_update_request = {};
@@ -433,6 +443,12 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		}
 		config.hosting = action == "host";
 		if (config.hosting) {
+			bool valid_count = false;
+			auto count = val("maxPlayers").toUInt(&valid_count);
+			if (not valid_count or count < 2 or count > 8) {
+				throw std::invalid_argument{"Maximum players must be between 2 and 8"};
+			}
+			config.player_capacity = count;
 			config.room_name = val("roomName").toStdString();
 		}
 		else {
@@ -471,18 +487,38 @@ void Presenter::refresh_fvd_lobby_state() {
 	// requests it and passes the immutable result to the relay worker.
 	if (state.phase == "assigned" and this->simulation and not this->fvd_bootstrap_supplied) {
 		try {
-			if (this->fvd_lobby_hosting and state.remote_player_id != 0
-			    and not this->fvd_bootstrap_requested) {
-				this->simulation->request_network_bootstrap(state.remote_player_id);
-				this->fvd_bootstrap_requested = true;
-			}
-			if (this->fvd_bootstrap_requested) {
-				auto world = this->simulation->take_network_bootstrap();
-				if (world) {
-					this->fvd_lobby_client->provide_host_snapshot(std::move(*world));
-					this->fvd_bootstrap_supplied = true;
-					this->fvd_bootstrap_requested = false;
+			if (this->fvd_lobby_hosting) {
+				if (state.multi_host and not this->fvd_participant_slots_configured) {
+					this->simulation->configure_network_participants(state.match_player_count);
+					this->fvd_participant_slots_configured = true;
 				}
+				// One request at a time across all recipient-private streams.
+				if (not this->fvd_bootstrap_requested) {
+					auto recipients = state.multi_host ? state.remote_player_ids
+					                                   : std::vector<gamestate::player_id_t>{
+					                                       state.remote_player_id};
+					for (auto id : recipients) {
+						if (id == 0
+						    or std::find(this->fvd_bootstrapped_recipients.begin(),
+						                 this->fvd_bootstrapped_recipients.end(), id)
+						               != this->fvd_bootstrapped_recipients.end()) continue;
+						this->simulation->request_network_bootstrap(id);
+						this->fvd_capture_recipient = id;
+						this->fvd_bootstrap_requested = true;
+						break;
+					}
+				}
+				if (this->fvd_bootstrap_requested) {
+					auto world = this->simulation->take_network_bootstrap();
+					if (world) {
+						this->fvd_lobby_client->provide_host_snapshot(std::move(*world));
+						this->fvd_bootstrapped_recipients.push_back(this->fvd_capture_recipient);
+						this->fvd_bootstrap_requested = false;
+					}
+				}
+				this->fvd_bootstrap_supplied =
+					this->fvd_bootstrapped_recipients.size()
+					== (state.multi_host ? state.remote_player_ids.size() : size_t{1});
 			}
 		}
 		catch (const std::exception &error) {
@@ -516,6 +552,14 @@ void Presenter::refresh_fvd_lobby_state() {
 		}
 	}
 	if (this->fvd_gameplay_active and this->fvd_lobby_hosting) {
+		for (auto player : state.disconnected_players) {
+			if (std::find(this->fvd_recorded_departures.begin(),
+			              this->fvd_recorded_departures.end(), player)
+			    == this->fvd_recorded_departures.end()) {
+				this->simulation->report_network_participant_disconnect(player);
+				this->fvd_recorded_departures.push_back(player);
+			}
+		}
 		for (auto &command : this->fvd_lobby_client->take_host_commands()) {
 			const auto command_id = command.intent.command_id;
 			const auto identity = command.identity;
