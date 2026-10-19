@@ -108,6 +108,11 @@ def tests_cpp():
         "FVD command authority and state synchronization over loopback TCP",
     )
     yield (
+        "openage::network::tests::fvd_multi_session",
+        "FVD 3- and 8-player TCP sessions, simultaneous Builder commands and disconnect continuation",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::network::tests::fvd_process_worker",
         "Internal worker for the FVD two-process network test",
         lambda _env: False,
