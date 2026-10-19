@@ -271,6 +271,21 @@ uint64_t RelayLobbyClient::get_session_generation() const {
 	return this->session_generation;
 }
 
+bool RelayLobbyClient::accepts_host_command(
+	const SessionIdentity &identity, uint64_t generation) const {
+	std::lock_guard lock{this->mutex};
+	if (this->stopping or not this->hosting or not this->current.connected
+	    or generation != this->session_generation) return false;
+	if (not this->active_multi_identities.empty()) {
+		auto found = this->active_multi_identities.find(identity.player_id);
+		return found != this->active_multi_identities.end()
+		    and found->second.session_id == identity.session_id;
+	}
+	return this->active_remote_identity
+	    and this->active_remote_identity->session_id == identity.session_id
+	    and this->active_remote_identity->player_id == identity.player_id;
+}
+
 bool RelayLobbyClient::send_command_result(
 	const SessionIdentity &identity, uint64_t generation, CommandResult result) {
 	std::lock_guard lock{this->mutex};
