@@ -498,7 +498,7 @@ gamestate::player_id_t attach_relay_room(
 	    or answer.payload.size() != RELAY_READY_PAYLOAD_SIZE) {
 		throw Error{MSG(err) << "Relay did not acknowledge the additional host channel"};
 	}
-	const auto slot = static_cast<gamestate::player_id_t>(read_u64(answer.payload.data() + 8));
+	const auto slot = read_u64(answer.payload.data() + 8);
 	if (slot < 3 or slot > MAX_STATE_PLAYERS) {
 		throw Error{MSG(err) << "Relay supplied an invalid additional host slot"};
 	}
@@ -564,7 +564,7 @@ gamestate::player_id_t join_relay_room_slot(TcpConnection &connection,
 	if (response.payload.size() != RELAY_READY_PAYLOAD_SIZE) {
 		throw Error{MSG(err) << "Invalid FVD relay guest room slot acknowledgement"};
 	}
-	const auto slot = static_cast<gamestate::player_id_t>(read_u64(response.payload.data() + 8));
+	const auto slot = read_u64(response.payload.data() + 8);
 	if (slot < 2 or slot > MAX_STATE_PLAYERS) {
 		throw Error{MSG(err) << "Invalid provisional FVD guest slot"};
 	}
@@ -715,6 +715,10 @@ std::optional<RelayPair> RelayRoomDirectory::admit(TcpConnection &connection) {
 		}
 		catch (const Error &) {
 			reject_relay_connection(connection, "malformed host room attachment");
+			return std::nullopt;
+		}
+		if (request->protocol_minor < RELAY_MULTIGUEST_PROTOCOL_MINOR) {
+			reject_relay_connection(connection, "multi-guest room attachment requires protocol minor 3");
 			return std::nullopt;
 		}
 		std::scoped_lock lock{this->mutex};
