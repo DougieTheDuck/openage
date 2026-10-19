@@ -20,6 +20,10 @@ namespace openage::network {
 namespace {
 
 constexpr size_t MAX_INFLIGHT_COMMANDS = 256;
+// Heartbeats are sent over the accepted, sequenced ConnectionSession.
+// Short stalls are tolerated; a silent relay/peer eventually ends the match.
+constexpr auto LIVE_HEARTBEAT_INTERVAL = std::chrono::seconds{1};
+constexpr auto LIVE_SESSION_TIMEOUT = std::chrono::seconds{15};
 
 uint8_t hex_digit(char ch) {
 	if (ch >= '0' and ch <= '9') return static_cast<uint8_t>(ch - '0');
@@ -416,6 +420,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 					// guest acknowledged, including recipient-private scores.
 					WorldDeltaBaseline baseline;
 					baseline.accept_snapshot(std::move(*snapshot));
+					auto last_guest_message = std::chrono::steady_clock::now();
 					while (not this->stopping) {
 						std::optional<WorldState> next;
 						{
@@ -435,6 +440,14 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 							auto frame = socket->try_receive_frame();
 							if (not frame) break;
 							accepted->validate_incoming(*frame);
+							last_guest_message = std::chrono::steady_clock::now();
+							if (frame->message_type == MessageType::PING) {
+								if (not frame->payload.empty()) {
+									throw Error{MSG(err) << "Invalid FVD gameplay heartbeat"};
+								}
+								socket->send_frame(accepted->make_frame(MessageType::PONG, {}));
+								continue;
+							}
 							if (frame->message_type == MessageType::SNAPSHOT_REQUEST) {
 								const auto request = decode_snapshot_request(frame->payload);
 								const auto &latest = baseline.current_snapshot();
@@ -469,6 +482,9 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 						}
 						if (not socket->is_open() or not socket->peer_connected()) {
 							throw Error{MSG(err) << "Relay guest disconnected during gameplay"};
+						}
+						if (std::chrono::steady_clock::now() - last_guest_message > LIVE_SESSION_TIMEOUT) {
+							throw Error{MSG(err) << "Relay guest stopped responding (15s); match ended. Press F10 to reset."};
 						}
 						std::this_thread::sleep_for(std::chrono::milliseconds{20});
 					}
@@ -555,7 +571,16 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				.roles = roles,
 				.local_role = guest_role,
 			});
+			auto last_host_message = std::chrono::steady_clock::now();
+			auto last_ping_sent = last_host_message - LIVE_HEARTBEAT_INTERVAL;
 			while (not this->stopping) {
+				// Keep an otherwise idle guest session observable by the host.
+				// A transient delay does not change the authenticated session.
+				const auto now = std::chrono::steady_clock::now();
+				if (now - last_ping_sent >= LIVE_HEARTBEAT_INTERVAL) {
+					socket->send_frame(session.make_frame(MessageType::PING, {}));
+					last_ping_sent = now;
+				}
 				// Queue client intents only through the authenticated session.
 				// This worker alone allocates outgoing sequence numbers.
 				bool snapshot_request = false;
@@ -585,10 +610,20 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 						if (this->stopping) break;
 						throw Error{MSG(err) << "Authoritative host disconnected during gameplay"};
 					}
+					if (std::chrono::steady_clock::now() - last_host_message > LIVE_SESSION_TIMEOUT) {
+						throw Error{MSG(err) << "Authoritative host stopped responding (15s); match ended. Press F10 to reset."};
+					}
 					std::this_thread::sleep_for(std::chrono::milliseconds{20});
 					continue;
 				}
 				session.validate_incoming(*update_frame);
+				last_host_message = std::chrono::steady_clock::now();
+				if (update_frame->message_type == MessageType::PONG) {
+					if (not update_frame->payload.empty()) {
+						throw Error{MSG(err) << "Invalid FVD gameplay heartbeat acknowledgement"};
+					}
+					continue;
+				}
 				if (update_frame->message_type == MessageType::COMMAND_RESULT) {
 					auto result = decode_command_result(update_frame->payload);
 					std::lock_guard lock{this->mutex};
@@ -646,7 +681,8 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			}
 			this->publish(RelayLobbyStatus{
 				.phase = "error",
-				.message = error.what(),
+				.message = std::string{"Match connection closed: "} + error.what()
+				         + ". Press F10 to reset before hosting or joining a new match.",
 			});
 		}
 	}
