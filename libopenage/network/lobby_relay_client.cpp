@@ -25,6 +25,17 @@ constexpr size_t MAX_INFLIGHT_COMMANDS = 256;
 constexpr auto LIVE_HEARTBEAT_INTERVAL = std::chrono::seconds{1};
 constexpr auto LIVE_SESSION_TIMEOUT = std::chrono::seconds{15};
 
+const char *order_name(CommandKind kind) {
+	switch (kind) {
+	case CommandKind::MOVE: return "Move";
+	case CommandKind::ATTACK_MOVE: return "Attack-move";
+	case CommandKind::BUILD_TOWER: return "Build tower";
+	case CommandKind::FOCUS_ATTACK: return "Focus attack";
+	case CommandKind::PRIORITIZE_FOUNDATION: return "Prioritize foundation";
+	}
+	return "Order";
+}
+
 uint8_t hex_digit(char ch) {
 	if (ch >= '0' and ch <= '9') return static_cast<uint8_t>(ch - '0');
 	if (ch >= 'a' and ch <= 'f') return static_cast<uint8_t>(ch - 'a' + 10);
@@ -124,6 +135,8 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->incoming_host_commands.clear();
 		this->pending_command_results.clear();
 		this->guest_command_results.clear();
+		this->guest_outstanding_commands.clear();
+		this->active_remote_identity.reset();
 		this->next_guest_command_id = 1;
 		this->guest_snapshot_requested = false;
 		this->last_host_offered_revision = 0;
@@ -200,10 +213,13 @@ bool RelayLobbyClient::send_guest_command(CommandIntent intent) {
 	if (this->hosting or not this->current.connected
 	    or (this->current.phase != "bootstrap" and this->current.phase != "streaming")
 	    or not this->reveal_finished_locked()
-	    or this->pending_guest_commands.size() >= MAX_INFLIGHT_COMMANDS) {
+	    or this->guest_outstanding_commands.size() >= MAX_INFLIGHT_COMMANDS) {
 		return false;
 	}
 	intent.command_id = this->next_guest_command_id++;
+	this->guest_outstanding_commands.emplace(intent.command_id, intent.kind);
+	this->current.pending_order_count = this->guest_outstanding_commands.size();
+	this->current.order_feedback = std::string{order_name(intent.kind)} + " sent...";
 	this->pending_guest_commands.push_back(std::move(intent));
 	return true;
 }
@@ -219,13 +235,26 @@ std::vector<AuthenticatedCommand> RelayLobbyClient::take_host_commands() {
 	return drained;
 }
 
-void RelayLobbyClient::send_command_result(CommandResult result) {
+uint64_t RelayLobbyClient::get_session_generation() const {
 	std::lock_guard lock{this->mutex};
-	if (this->stopping or not this->hosting or not this->current.connected) return;
+	return this->session_generation;
+}
+
+bool RelayLobbyClient::send_command_result(
+	const SessionIdentity &identity, uint64_t generation, CommandResult result) {
+	std::lock_guard lock{this->mutex};
+	if (this->stopping or not this->hosting or not this->current.connected
+	    or generation != this->session_generation
+	    or not this->active_remote_identity
+	    or this->active_remote_identity->session_id != identity.session_id
+	    or this->active_remote_identity->player_id != identity.player_id) {
+		return false;
+	}
 	if (this->pending_command_results.size() >= MAX_INFLIGHT_COMMANDS) {
 		throw Error{MSG(err) << "FVD command-result queue capacity exceeded"};
 	}
 	this->pending_command_results.push_back(std::move(result));
+	return true;
 }
 
 std::vector<CommandResult> RelayLobbyClient::take_command_results() {
@@ -295,6 +324,8 @@ void RelayLobbyClient::close() {
 	std::shared_ptr<TcpConnection> socket;
 	{
 		std::lock_guard lock{this->mutex};
+		++this->session_generation;
+		this->active_remote_identity.reset();
 		socket = this->connection;
 	}
 	if (socket) socket->close();
@@ -308,6 +339,7 @@ void RelayLobbyClient::close() {
 		this->incoming_host_commands.clear();
 		this->pending_command_results.clear();
 		this->guest_command_results.clear();
+		this->guest_outstanding_commands.clear();
 		this->next_guest_command_id = 1;
 		this->guest_snapshot_requested = false;
 		this->last_host_offered_revision = 0;
@@ -379,6 +411,10 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			const auto host_player = player_for_participant(assignment, 1);
 			const auto roles = describe_match_roles(roster, assignment);
 			const auto host_role = local_role_name(assignment, host_player);
+			{
+				std::lock_guard lock{this->mutex};
+				this->active_remote_identity = accepted->get_identity();
+			}
 			this->publish(RelayLobbyStatus{
 				.phase = "assigned",
 				.message = "Match start requested; synchronizing the initial world.",
@@ -640,6 +676,18 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				if (update_frame->message_type == MessageType::COMMAND_RESULT) {
 					auto result = decode_command_result(update_frame->payload);
 					std::lock_guard lock{this->mutex};
+					auto outstanding = this->guest_outstanding_commands.find(result.command_id);
+					if (outstanding == this->guest_outstanding_commands.end()) {
+						throw Error{MSG(err) << "Unrecognized or duplicate FVD command result"};
+					}
+					const auto kind = outstanding->second;
+					this->guest_outstanding_commands.erase(outstanding);
+					this->current.pending_order_count = this->guest_outstanding_commands.size();
+					this->current.order_feedback = std::string{order_name(kind)}
+						+ (result.status == CommandStatus::ACCEPTED ? " confirmed" : " rejected");
+					if (result.status == CommandStatus::REJECTED and not result.reason.empty()) {
+						this->current.order_feedback += ": " + result.reason;
+					}
 					if (this->guest_command_results.size() >= MAX_INFLIGHT_COMMANDS) {
 						this->guest_command_results.pop_front();
 					}
@@ -696,6 +744,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 					// stop producing snapshots for this closed connection.
 					this->incoming_host_commands.clear();
 					this->pending_command_results.clear();
+					this->active_remote_identity.reset();
 					this->pending_host_update.reset();
 					this->current.connected = false;
 					this->current.can_start = false;
