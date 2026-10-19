@@ -97,6 +97,7 @@ def tests_cpp():
         "FVD Hunter takeover epoch fencing and complete-checkpoint safety requirements",
     )
     yield "openage::network::tests::session"
+    yield "openage::network::tests::rehost_ticket", "Single-use Hunter rehost proof and old-slot binding"
     yield "openage::network::tests::command_mailbox"
     yield "openage::network::tests::connection_mailbox"
     yield (
