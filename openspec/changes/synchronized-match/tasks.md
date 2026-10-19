@@ -19,4 +19,5 @@
 
 - [x] 1.15a Add host-validated guest focus-target attacks, Shift+queued tower builds, and queued-foundation prioritization on the authenticated intent wire format.
 - [x] 1.15b Show recipient-authoritative queued sites, construction phase, and hunter countdown in the guest HUD; F10 resets the game/event/entity state, resets the paused clock to zero and reattaches cleared world/terrain render stages for clean rematches. Physical Windows rematch verification is outstanding.
-- [ ] 1.16 Finish live-session disconnect policy, command-result session-generation guards, special-order HUD polish, and full integration tests on Windows.
+- [ ] 1.16 Finish live-session disconnect policy for 3–8 players (Builder departures preserve their units and allow remaining roles to play; Hunter departure ends everyone's match), command-result session-generation guards, special-order HUD polish, and full integration tests on Windows. The two-peer relay now handles guest Builder departure when the host is Hunter.
+- [ ] 1.17 Resolve authoritative Builder-host loss: the Hunter and remaining Builders must be able to continue if the hosting Builder disconnects, requiring host migration or an independent authoritative server. The current relay still ends the game on host loss; do not claim the role-only policy is fully supported until this is implemented and tested.
