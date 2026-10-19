@@ -494,6 +494,12 @@ gamestate::player_id_t attach_relay_room(
 	connection.send_frame(relay_frame(
 		MessageType::RELAY_ATTACH_ROOM, encode_join_room_request(host_token, room_id)));
 	auto answer = receive_directory_response(connection, "host slot attachment");
+	while (answer.message_type == MessageType::PING) {
+		if (not answer.payload.empty()) {
+			throw Error{MSG(err) << "Invalid FVD relay attachment heartbeat"};
+		}
+		answer = receive_directory_response(connection, "host slot attachment");
+	}
 	if (answer.message_type != MessageType::RELAY_ROOM_ATTACHED
 	    or answer.payload.size() != RELAY_READY_PAYLOAD_SIZE) {
 		throw Error{MSG(err) << "Relay did not acknowledge the additional host channel"};
