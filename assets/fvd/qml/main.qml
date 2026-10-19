@@ -262,6 +262,15 @@ Item {
 				}
 			}
 			Text {
+				visible: root.lobby !== null && root.lobby.orderFeedback.length > 0
+				width: parent.width
+				wrapMode: Text.WordWrap
+				color: root.lobby.orderFeedback.indexOf("rejected") >= 0 ? "#ffb6a8" : "#b5d9c4"
+				font.pixelSize: 12
+				text: root.lobby.orderFeedback
+				      + (root.lobby.pendingOrders > 0 ? " (" + root.lobby.pendingOrders + " awaiting host)" : "")
+			}
+			Text {
 				visible: !root.hunter && (root.placing || root.queuedTowers > 0)
 				color: root.placing && !root.placementValid ? "#ffb6a8" : "#b5d9c4"
 				font.pixelSize: 12
