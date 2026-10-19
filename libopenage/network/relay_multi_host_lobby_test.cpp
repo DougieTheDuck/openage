@@ -83,6 +83,34 @@ void run_lobby_case(size_t people) {
 					TESTEQUALS(session.get_identity().player_id <= people, true);
 					break;
 				}
+				// The same guest session now receives a recipient-private
+				// authoritative bootstrap and acknowledges its own player.
+				auto initial_frame = socket.receive_frame();
+				initial_frame.has_value() or TESTFAIL;
+				session.validate_incoming(*initial_frame);
+				initial_frame->message_type == MessageType::WORLD_SNAPSHOT or TESTFAIL;
+				auto initial = decode_world_state(initial_frame->payload);
+				TESTEQUALS(initial.world_revision, uint64_t{1});
+				TESTEQUALS(initial.local_player_id, session.get_identity().player_id);
+				TESTEQUALS(initial.local_kill_count, participant * 10);
+				TESTEQUALS(initial.players.size(), people);
+				socket.send_frame(session.make_frame(
+					MessageType::MATCH_READY, encode_match_ready({
+						session.get_identity().player_id, initial.world_revision})));
+				CommandIntent intent{};
+				intent.command_id = participant;
+				intent.kind = CommandKind::MOVE;
+				intent.entity_ids = {8000 + participant};
+				intent.target = {42, 43, 0};
+				socket.send_frame(session.make_frame(
+					MessageType::COMMAND_INTENT, encode_command_intent(intent)));
+				auto decision_frame = socket.receive_frame();
+				decision_frame.has_value() or TESTFAIL;
+				session.validate_incoming(*decision_frame);
+				decision_frame->message_type == MessageType::COMMAND_RESULT or TESTFAIL;
+				auto decision = decode_command_result(decision_frame->payload);
+				TESTEQUALS(decision.command_id, intent.command_id);
+				TESTEQUALS(decision.status == CommandStatus::ACCEPTED, true);
 			}
 			catch (...) {
 				errors[index] = std::current_exception();
@@ -108,6 +136,51 @@ void run_lobby_case(size_t people) {
 		if (entry.role == PlayerRole::HUNTER) ++hunters;
 	}
 	TESTEQUALS(hunters, size_t{1});
+	// Multiplexing must not affect one guest's negotiated identity or
+	// frame ordering. Exercise bootstrap and command round-trip after the
+	// shared StartMatch over all independent relay connections.
+	for (const auto &channel : host.channels()) {
+		if (not channel.admitted) continue;
+		auto player = channel.session->get_identity().player_id;
+		WorldState world{};
+		world.map_size = 128;
+		world.world_revision = 1;
+		world.local_player_id = player;
+		world.local_kill_count = channel.participant_id * 10;
+		for (const auto &entry : assignment.assignments) {
+			world.players.push_back({
+				entry.player_id, entry.role, true});
+		}
+		channel.socket->send_frame(channel.session->make_frame(
+			MessageType::WORLD_SNAPSHOT, encode_world_state(world)));
+	}
+	for (const auto &channel : host.channels()) {
+		if (not channel.admitted) continue;
+		auto ready_frame = channel.socket->receive_frame();
+		ready_frame.has_value() or TESTFAIL;
+		channel.session->validate_incoming(*ready_frame);
+		ready_frame->message_type == MessageType::MATCH_READY or TESTFAIL;
+		auto ready = decode_match_ready(ready_frame->payload);
+		TESTEQUALS(ready.player_id, channel.session->get_identity().player_id);
+		TESTEQUALS(ready.snapshot_revision, uint64_t{1});
+	}
+	for (const auto &channel : host.channels()) {
+		if (not channel.admitted) continue;
+		auto intent_frame = channel.socket->receive_frame();
+		intent_frame.has_value() or TESTFAIL;
+		channel.session->validate_incoming(*intent_frame);
+		intent_frame->message_type == MessageType::COMMAND_INTENT or TESTFAIL;
+		auto intent = decode_command_intent(intent_frame->payload);
+		TESTEQUALS(intent.command_id, channel.participant_id);
+		TESTEQUALS(intent.entity_ids.size(), size_t{1});
+		TESTEQUALS(intent.entity_ids.front(), uint64_t{8000 + channel.participant_id});
+		CommandResult confirmation{};
+		confirmation.command_id = intent.command_id;
+		confirmation.status = CommandStatus::ACCEPTED;
+		confirmation.world_revision = 1;
+		channel.socket->send_frame(channel.session->make_frame(
+			MessageType::COMMAND_RESULT, encode_command_result(confirmation)));
+	}
 	for (auto &client : clients) client.join();
 	for (const auto &err : errors) if (err) std::rethrow_exception(err);
 	host.close();
