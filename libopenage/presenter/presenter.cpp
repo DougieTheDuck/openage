@@ -601,15 +601,33 @@ void Presenter::refresh_fvd_lobby_state() {
 			if (this->fvd_update_requested) {
 				auto world = this->simulation->take_network_update();
 				if (world) {
-					this->fvd_lobby_client->provide_host_update(std::move(*world));
+					// A Builder can leave while their capture is in flight.
+					if (not state.multi_host
+					    or std::find(state.remote_player_ids.begin(),
+					                 state.remote_player_ids.end(), this->fvd_capture_recipient)
+					       != state.remote_player_ids.end()) {
+						this->fvd_lobby_client->provide_host_update(std::move(*world));
+					}
 					this->fvd_update_requested = false;
 				}
 			}
 			if (not this->fvd_update_requested) {
 				const auto now = std::chrono::steady_clock::now();
-				if (now - this->fvd_last_update_request >= this->fvd_update_interval) {
+				auto interval = this->fvd_update_interval;
+				if (state.multi_host and not state.remote_player_ids.empty()) {
+					interval = std::max(std::chrono::milliseconds{10},
+						std::chrono::duration_cast<std::chrono::milliseconds>(
+							this->fvd_update_interval / state.remote_player_ids.size()));
+				}
+				if (now - this->fvd_last_update_request >= interval) {
+					auto recipient = state.remote_player_id;
+					if (state.multi_host) {
+						recipient = state.remote_player_ids[
+							this->fvd_capture_cursor++ % state.remote_player_ids.size()];
+					}
 					this->simulation->request_network_update(
-						state.remote_player_id, this->fvd_next_world_revision++);
+						recipient, this->fvd_next_world_revision++);
+					this->fvd_capture_recipient = recipient;
 					this->fvd_update_requested = true;
 					this->fvd_last_update_request = now;
 				}
