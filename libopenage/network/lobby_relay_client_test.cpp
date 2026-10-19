@@ -207,6 +207,19 @@ void lobby_relay_client() {
 	}
 	TESTEQUALS(host_ready, true);
 	TESTEQUALS(guest_ready, true);
+	// Even without guest commands, the accepted session remains alive via
+	// validated PING/PONG frames rather than relying on TCP peer_connected().
+	bool heartbeats_received = false;
+	for (size_t attempt = 0; attempt < 300; ++attempt) {
+		if (guest.status().heartbeat_acknowledgements >= 2) {
+			heartbeats_received = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(heartbeats_received, true);
+	TESTEQUALS(host.status().connected, true);
+	TESTEQUALS(guest.status().connected, true);
 	CommandIntent movement{};
 	movement.kind = CommandKind::MOVE;
 	movement.entity_ids = {42};
@@ -243,6 +256,11 @@ void lobby_relay_client() {
 
 	guest.close();
 	TESTEQUALS(wait_for(host, "error"), true);
+	// Terminal disconnects must not continue admitting remote commands,
+	// and old guest kill/replication data is no longer authoritative.
+	TESTEQUALS(host.status().connected, false);
+	TESTEQUALS(host.status().can_start, false);
+	TESTEQUALS(replication->is_host_connected(), true); // Local close does not fake a remote failure.
 	listener.close();
 	relay.join();
 	if (relay_error) std::rethrow_exception(relay_error);
