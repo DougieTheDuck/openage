@@ -61,13 +61,28 @@ uint64_t RelayMultiHostLobby::room_id() const {
 }
 
 void RelayMultiHostLobby::broadcast_roster() {
-	const auto payload = encode_participant_snapshot(this->lobby.snapshot());
-	for (auto &peer : this->channels_by_slot) {
-		if (peer.admitted) {
-			peer.socket->send_frame(peer.session->make_frame(
-				MessageType::PARTICIPANT_SNAPSHOT, payload));
+	// A peer may disappear while a revised roster is being distributed.
+	// Remove only that peer and rebroadcast the newer revision rather
+	// than letting one broken socket terminate everyone else's lobby.
+	bool retry{};
+	do {
+		retry = false;
+		const auto payload = encode_participant_snapshot(this->lobby.snapshot());
+		for (auto &peer : this->channels_by_slot) {
+			if (not peer.admitted) continue;
+			try {
+				peer.socket->send_frame(peer.session->make_frame(
+					MessageType::PARTICIPANT_SNAPSHOT, payload));
+			}
+			catch (...) {
+				this->lobby.leave(peer.participant_id);
+				peer.admitted = false;
+				peer.session.reset();
+				peer.socket->close();
+				retry = true;
+			}
 		}
-	}
+	} while (retry);
 }
 
 size_t RelayMultiHostLobby::poll_admissions(const AssetDigest &digest) {
