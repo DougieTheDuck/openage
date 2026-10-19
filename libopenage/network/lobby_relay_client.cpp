@@ -988,9 +988,11 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 
 void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 	try {
-		auto lobby = std::make_shared<RelayMultiHostLobby>(
-			settings.address, settings.port, parse_token(settings.token_hex),
-			settings.room_name, settings.name, settings.player_capacity);
+		auto lobby = settings.prepared_rehost_lobby
+			? settings.prepared_rehost_lobby
+			: std::make_shared<RelayMultiHostLobby>(
+				settings.address, settings.port, parse_token(settings.token_hex),
+				settings.room_name, settings.name, settings.player_capacity);
 		{
 			std::lock_guard lock{this->mutex};
 			this->multi_host_lobby = lobby;
@@ -1028,7 +1030,10 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 					.connected = true,
 				});
 			}
-			if (this->start_requested and lobby->participant_count() >= 2) break;
+			if ((this->start_requested and lobby->participant_count() >= 2
+			     and not settings.rehost_start)
+			    or (settings.rehost_start
+			        and lobby->participant_count() == settings.rehost_start->assignments.size())) break;
 			std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
 		}
 		if (this->stopping) return;
@@ -1038,7 +1043,8 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		// Otherwise describe_match_roles() throws and closes all guest sockets
 		// before they receive a WORLD_SNAPSHOT.
 		const auto final_roster = lobby->roster();
-		const auto assignment = lobby->start();
+		const auto assignment = settings.rehost_start
+			? lobby->start_rehost() : lobby->start();
 		validate_start_match_against_roster(final_roster, assignment);
 		AuthoritySuccession authority{assignment, assignment.host_participant_id};
 		const auto host_player = player_for_participant(assignment, 1);
@@ -1051,6 +1057,24 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			const auto identity = peer.session->get_identity();
 			remotes.push_back(identity.player_id);
 			peers.emplace(identity.player_id, &peer);
+		}
+		if (host_player != 1) {
+			this->publish(RelayLobbyStatus{
+				.phase = "handoff",
+				.message = "Original Builder host: delivering Hunter authority invitations...",
+				.participants = participants_text(),
+				.connected = true,
+				.roles = role_text,
+				.local_role = role,
+			});
+			std::map<gamestate::player_id_t,
+				std::pair<ConnectionSession *, TcpConnection *>> original_peers{};
+			for (const auto &[id, peer] : peers) {
+				original_peers.emplace(id, std::make_pair(
+					peer->session.get(), peer->socket.get()));
+			}
+			this->forward_rehost_offers(assignment, original_peers, settings);
+			return;
 		}
 		{
 			std::lock_guard lock{this->mutex};
@@ -1483,7 +1507,8 @@ void RelayLobbyClient::forward_rehost_offers(
 			auto offer = decode_rehost_offer(frame->payload);
 			if (offer.original_lobby_revision != assignment.lobby_revision
 			    or offer.original_player_id == 1 or offer.authority_epoch != 2
-			    or not old_peers.contains(offer.original_player_id)
+			    or (offer.original_player_id != old_host_player
+			        and not old_peers.contains(offer.original_player_id))
 			    or invitations.contains(offer.original_player_id)
 			    or (not invitations.empty()
 			        and invitations.begin()->second.room_id != offer.room_id)) {
