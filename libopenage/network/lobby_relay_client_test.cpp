@@ -324,12 +324,12 @@ void lobby_relay_client() {
 	TESTEQUALS(special[0].intent.command_id, uint64_t{2});
 	TESTEQUALS(special[1].intent.command_id, uint64_t{3});
 	TESTEQUALS(special[2].intent.command_id, uint64_t{4});
-	TESTEQUALS(special[0].intent.kind, CommandKind::BUILD_TOWER);
+	TESTEQUALS(special[0].intent.kind == CommandKind::BUILD_TOWER, true);
 	TESTEQUALS(special[0].intent.queue, true);
-	TESTEQUALS(special[1].intent.kind, CommandKind::FOCUS_ATTACK);
-	TESTEQUALS(special[1].intent.target_entity, focus.target_entity);
-	TESTEQUALS(special[2].intent.kind, CommandKind::PRIORITIZE_FOUNDATION);
-	TESTEQUALS(special[2].intent.target_entity, prioritize.target_entity);
+	TESTEQUALS(special[1].intent.kind == CommandKind::FOCUS_ATTACK, true);
+	TESTEQUALS(special[1].intent.target_entity == focus.target_entity, true);
+	TESTEQUALS(special[2].intent.kind == CommandKind::PRIORITIZE_FOUNDATION, true);
+	TESTEQUALS(special[2].intent.target_entity == prioritize.target_entity, true);
 	for (size_t i = 0; i < special.size(); ++i) {
 		CommandResult decision{};
 		decision.command_id = special[i].intent.command_id;
