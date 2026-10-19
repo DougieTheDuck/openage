@@ -605,9 +605,58 @@ void lobby_relay_client() {
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(updated_disconnected, true);
-	multiplayer_host.close();
-	TESTEQUALS(wait_for(survivor, "error"), true);
-	survivor.close();
+	// A departed Builder's queued callback must never reach another guest
+	// or cause stale world mutations.
+	for (const auto &cmd : multi_commands) {
+		if (cmd.identity.player_id != departed_id) continue;
+		CommandResult stale{};
+		stale.command_id = cmd.intent.command_id;
+		stale.status = CommandStatus::ACCEPTED;
+		TESTEQUALS(multiplayer_host.send_command_result(
+			cmd.identity, multiplayer_host.get_session_generation(), stale), false);
+	}
+	// Surviving Hunter/Builder input is still authorized and independently
+	// acknowledged, even after the remaining player's world changes.
+	CommandIntent continuing{};
+	continuing.kind = CommandKind::MOVE;
+	continuing.entity_ids = {509};
+	continuing.target = {51, 52, 0};
+	TESTEQUALS(survivor.send_guest_command(continuing), true);
+	std::vector<AuthenticatedCommand> continuation{};
+	for (size_t attempt = 0; attempt < 300; ++attempt) {
+		continuation = multiplayer_host.take_host_commands();
+		if (not continuation.empty()) break;
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(continuation.size(), size_t{1});
+	TESTEQUALS(continuation.front().identity.player_id, survivor_id);
+	CommandResult continued{};
+	continued.command_id = continuation.front().intent.command_id;
+	continued.status = CommandStatus::ACCEPTED;
+	TESTEQUALS(multiplayer_host.send_command_result(
+		continuation.front().identity, multiplayer_host.get_session_generation(),
+		continued), true);
+	bool continued_acknowledged = false;
+	for (size_t attempt = 0; attempt < 300; ++attempt) {
+		if (survivor.status().pending_order_count == 0) {
+			continued_acknowledged = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(continued_acknowledged, true);
+	// Only the Hunter's departure is terminal. If they are the guest,
+	// the host detects that loss; otherwise the host's F10 ends all guests.
+	if (survivor_id == 1) {
+		survivor.close();
+		TESTEQUALS(wait_for(multiplayer_host, "error"), true);
+		multiplayer_host.close();
+	}
+	else {
+		multiplayer_host.close();
+		TESTEQUALS(wait_for(survivor, "error"), true);
+		survivor.close();
+	}
 	listener.close();
 	relay.join();
 	if (relay_error) std::rethrow_exception(relay_error);
