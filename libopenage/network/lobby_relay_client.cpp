@@ -622,6 +622,10 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 					if (not update_frame->payload.empty()) {
 						throw Error{MSG(err) << "Invalid FVD gameplay heartbeat acknowledgement"};
 					}
+					{
+						std::lock_guard lock{this->mutex};
+						++this->current.heartbeat_acknowledgements;
+					}
 					continue;
 				}
 				if (update_frame->message_type == MessageType::COMMAND_RESULT) {
