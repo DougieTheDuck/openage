@@ -42,6 +42,12 @@ void run_lobby_case(size_t people) {
 	TESTEQUALS(host.participant_count(), size_t{1});
 	TESTEQUALS(host.channels().size(), people - 1);
 
+	// A public-room guest token is not a host attachment credential.
+	// MultiHost generates a private capability for its extra channels.
+	auto impersonator = TcpConnection::connect("127.0.0.1", listener.get_port());
+	TESTTHROWS(attach_relay_room(impersonator, {}, host.room_id()));
+	impersonator.close();
+
 	std::vector<std::exception_ptr> errors(people - 1);
 	std::vector<std::jthread> clients{};
 	clients.reserve(people - 1);
