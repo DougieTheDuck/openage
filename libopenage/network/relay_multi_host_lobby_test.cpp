@@ -2,6 +2,7 @@
 
 #include "relay_multi_host_lobby.h"
 
+#include <array>
 #include <chrono>
 #include <exception>
 #include <string>
@@ -219,6 +220,109 @@ void run_lobby_case(size_t people, bool preserve_roles = false) {
 	if (relay_error) std::rethrow_exception(relay_error);
 }
 
+void run_secure_rehost_case() {
+	// The original human lobby host was assigned Builder; Hunter is
+	// participant 2. A new Hunter-owned room may not admit anyone without
+	// a private proof of their OLD fixed player slot.
+	HostLobby original{11, "Old Builder Host"};
+	original.join(22, "Hunter");
+	original.join(33, "Other Builder");
+	auto old_start = original.start([](uint64_t bound) {
+		return bound == 5 ? uint64_t{1} : uint64_t{0};
+	});
+	TESTEQUALS(player_for_participant(old_start, 22), gamestate::player_id_t{1});
+	auto old_host_slot = player_for_participant(old_start, 11);
+	auto other_slot = player_for_participant(old_start, 33);
+
+	RelayRoomDirectory directory{1};
+	auto listener = TcpListener::listen("127.0.0.1", 0);
+	std::exception_ptr relay_error{};
+	std::jthread relay{[&]() {
+		try {
+			serve_relay_directory(listener, directory, 16);
+		}
+		catch (...) {
+			relay_error = std::current_exception();
+		}
+	}};
+	RelayMultiHostLobby new_host{
+		"127.0.0.1", listener.get_port(), {}, "Hunter-owned rehost",
+		"Hunter", 3};
+	new_host.prepare_hunter_rehost(old_start);
+	TESTTHROWS(new_host.start());
+	TESTTHROWS(new_host.prepare_hunter_rehost(old_start));
+	const auto offer_a = new_host.rehost_offer_for(old_host_slot);
+	const auto offer_b = new_host.rehost_offer_for(other_slot);
+
+	std::array<std::exception_ptr, 2> client_errors{};
+	std::array<gamestate::player_id_t, 2> desired{old_host_slot, other_slot};
+	std::array<RehostOffer, 2> tickets{offer_a, offer_b};
+	std::vector<std::jthread> clients{};
+	for (size_t i = 0; i < desired.size(); ++i) {
+		clients.emplace_back([&, i]() {
+			try {
+				auto socket = TcpConnection::connect(
+					"127.0.0.1", listener.get_port());
+				auto participant = join_relay_room_slot(
+					socket, {}, new_host.room_id());
+				auto session = client_handshake(socket, {
+					PROTOCOL_MINIMUM_COMPATIBLE_MINOR,
+					"Former Builder " + std::to_string(desired[i]),
+					"fvd-handoff-test", multi_lobby_digest()});
+				socket.send_frame(session.make_frame(
+					MessageType::AUTHORITY_REHOST_PROOF,
+					encode_rehost_proof(make_rehost_proof(tickets[i]))));
+				bool saw_snapshot = false;
+				while (true) {
+					auto frame = socket.receive_frame();
+					frame.has_value() or TESTFAIL;
+					session.validate_incoming(*frame);
+					if (frame->message_type == MessageType::PARTICIPANT_SNAPSHOT) {
+						auto roster = decode_participant_snapshot(frame->payload);
+						TESTEQUALS(roster.participants.size() >= 2, true);
+						saw_snapshot = true;
+						continue;
+					}
+					TESTEQUALS(frame->message_type == MessageType::START_MATCH, true);
+					TESTEQUALS(saw_snapshot, true);
+					auto rehost = decode_start_match(frame->payload);
+					TESTEQUALS(player_for_participant(rehost, participant), desired[i]);
+					session.bind_match_player(rehost, participant);
+					TESTEQUALS(session.get_identity().player_id, desired[i]);
+					break;
+				}
+			}
+			catch (...) {
+				client_errors[i] = std::current_exception();
+			}
+		});
+	}
+
+	bool ready = false;
+	for (size_t attempt = 0; attempt < 1200; ++attempt) {
+		new_host.poll_admissions(multi_lobby_digest());
+		if (new_host.participant_count() == 3) {
+			ready = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds{5});
+	}
+	TESTEQUALS(ready, true);
+	auto new_start = new_host.start_rehost();
+	TESTEQUALS(player_for_participant(new_start, 1), gamestate::player_id_t{1});
+	for (const auto &channel : new_host.channels()) {
+		if (not channel.admitted) continue;
+		TESTEQUALS(channel.session->get_identity().player_id == old_host_slot
+		           or channel.session->get_identity().player_id == other_slot, true);
+	}
+	for (auto &client : clients) client.join();
+	for (const auto &error : client_errors) if (error) std::rethrow_exception(error);
+	new_host.close();
+	listener.close();
+	relay.join();
+	if (relay_error) std::rethrow_exception(relay_error);
+}
+
 } // namespace
 
 void relay_multi_host_lobby() {
@@ -228,6 +332,7 @@ void relay_multi_host_lobby() {
 	// across fresh authenticated relay sessions, without a second lottery.
 	run_lobby_case(3, true);
 	run_lobby_case(8, true);
+	run_secure_rehost_case();
 }
 
 } // namespace openage::network::tests
