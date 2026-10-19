@@ -33,6 +33,8 @@ struct RelayLobbyConfig {
 	std::string token_hex{};
 	std::string name{};
 	bool hosting{false};
+	/** Maximum people in a hosted room, including the host (2..8). */
+	size_t player_capacity{2};
 };
 
 struct RelayLobbyStatus {
@@ -43,6 +45,12 @@ struct RelayLobbyStatus {
 	bool connected{false};
 	gamestate::player_id_t local_player_id{0};
 	gamestate::player_id_t remote_player_id{0};
+	/** Host's active remote player IDs, one recipient-private stream each. */
+	std::vector<gamestate::player_id_t> remote_player_ids{};
+	/** Fixed match size, including the host and guests, after role draw. */
+	size_t match_player_count{0};
+	/** Remote Builders that have been disconnected during this match. */
+	std::vector<gamestate::player_id_t> disconnected_players{};
 	uint64_t snapshot_revision{0};
 	/** Number of full recovery snapshots accepted after initial bootstrap. */
 	uint32_t snapshot_recoveries{0};
@@ -139,6 +147,7 @@ private:
 	void run_refresh(RelayLobbyConfig settings);
 	void publish(RelayLobbyStatus next);
 	void publish_stream_revision(uint64_t revision, bool local_host);
+	void run_multi_host(RelayLobbyConfig settings);
 	bool reveal_finished_locked() const;
 
 	mutable std::mutex mutex;
@@ -146,18 +155,23 @@ private:
 	std::shared_ptr<TcpConnection> connection{};
 	std::optional<WorldState> pending_host_snapshot{};
 	std::optional<WorldState> pending_host_update{};
+	std::map<gamestate::player_id_t, WorldState> pending_multi_snapshots{};
+	std::map<gamestate::player_id_t, WorldState> pending_multi_updates{};
 	std::deque<CommandIntent> pending_guest_commands{};
 	std::deque<AuthenticatedCommand> incoming_host_commands{};
 	std::deque<CommandResult> pending_command_results{};
+	std::map<gamestate::player_id_t, std::deque<CommandResult>> pending_multi_results{};
 	std::deque<CommandResult> guest_command_results{};
 	std::map<uint64_t, CommandKind> guest_outstanding_commands{};
 	uint64_t next_guest_command_id{1};
 	uint64_t session_generation{0};
 	std::optional<SessionIdentity> active_remote_identity{};
+	std::map<gamestate::player_id_t, SessionIdentity> active_multi_identities{};
 	bool guest_snapshot_requested{false};
 	/** Largest revision submitted, including an update in flight. */
 	uint64_t last_host_offered_revision{0};
 	std::shared_ptr<ReplicationTracker> guest_replication{};
+	std::shared_ptr<class RelayMultiHostLobby> multi_host_lobby{};
 	bool hosting{false};
 	std::optional<std::chrono::steady_clock::time_point> roles_assigned_at{};
 	std::thread worker{};
