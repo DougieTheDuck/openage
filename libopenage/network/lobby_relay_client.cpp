@@ -96,6 +96,15 @@ void validate_config(const RelayLobbyConfig &cfg) {
 
 } // namespace
 
+bool host_can_continue_after_guest_loss(const RelayLobbyStatus &status) {
+	// Only continue a bootstrapped match. Losing the Hunter always ends it;
+	// the local authoritative Hunter can survive a remote Builder leaving.
+	return status.connected and status.local_role == "HUNTER"
+	       and status.local_player_id == 1 and status.remote_player_id >= 2
+	       and (status.phase == "bootstrap" or status.phase == "streaming"
+	            or status.phase == "playing");
+}
+
 RelayLobbyClient::~RelayLobbyClient() {
 	this->close();
 }
@@ -676,18 +685,38 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 		}
 		if (not this->stopping) {
 			std::shared_ptr<ReplicationTracker> replication;
+			bool builder_departure = false;
 			{
 				std::lock_guard lock{this->mutex};
+				builder_departure = settings.hosting
+				                    and host_can_continue_after_guest_loss(this->current);
+				if (builder_departure) {
+					// A Builder leaving must not stop the authoritative Hunter.
+					// Reject any queued, not-yet-submitted Builder commands and
+					// stop producing snapshots for this closed connection.
+					this->incoming_host_commands.clear();
+					this->pending_command_results.clear();
+					this->pending_host_update.reset();
+					this->current.connected = false;
+					this->current.can_start = false;
+					this->current.remote_player_id = 0;
+					this->current.message =
+						"Builder disconnected; the Hunter match continues. Press F10 to leave.";
+					// Preserve bootstrap/streaming so status() still ends the
+					// role reveal at its original time without a second session.
+				}
 				replication = this->guest_replication;
 			}
-			if (replication) {
-				replication->host_disconnected();
+			if (not builder_departure) {
+				if (replication) {
+					replication->host_disconnected();
+				}
+				this->publish(RelayLobbyStatus{
+					.phase = "error",
+					.message = std::string{"Match connection closed: "} + error.what()
+					         + ". Press F10 to reset before hosting or joining a new match.",
+				});
 			}
-			this->publish(RelayLobbyStatus{
-				.phase = "error",
-				.message = std::string{"Match connection closed: "} + error.what()
-				         + ". Press F10 to reset before hosting or joining a new match.",
-			});
 		}
 	}
 }
