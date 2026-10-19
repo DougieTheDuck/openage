@@ -123,8 +123,14 @@ duplicate identities and malformed role allocations.
 
 The two-person relay lobby broadcasts these payloads and rebinds its provisional
 guest slot to the final assignment before exchanging the initial world.
-Direct-IP startup, more than one guest, initialization using only admitted
-participants, and the continuous gameplay handoff remain to be integrated.
+`MatchConnectionState::restrict_to_participants()` now distinguishes admitted
+player slots 1..N from the eight slots created by the FVD scenario. The new
+`fvd_multi_session` integration harness exercises three and eight players
+with independent TCP handshakes, concurrent authenticated Builder intents,
+per-recipient deltas, and a Builder departing while survivors continue.
+It uses direct loopback sockets rather than the public room directory, which
+still admits only one guest per room. Full multi-guest room admission, dynamic
+scenario removal of unused Builder units, and live GUI fanout remain pending.
 
 ## Transport
 
@@ -239,7 +245,7 @@ bin/run relay \
 
 Enter the corresponding token on each client before hosting, refreshing or joining.
 
-Focused automated checks: `bin/run test openage::network::tests::lobby_relay_client` and `bin/run test openage::network::tests::match_disconnect_coordinator`. The relay test exercises command-generation rejection after close/reconnect, several simultaneous queued/targeted orders, and host acknowledgements. The coordinator test covers Builder survival and terminal Hunter departure with a final replicated notice.
+Focused automated checks: `bin/run test openage::network::tests::lobby_relay_client`, `bin/run test openage::network::tests::match_disconnect_coordinator`, and `bin/run test openage::network::tests::fvd_multi_session` (requires FVD assets). The relay test exercises command-generation rejection after close/reconnect, several simultaneous queued/targeted orders, and host acknowledgements. The coordinator test covers Builder survival and terminal Hunter departure with a final replicated notice.
 Relay directory and access-control check: `bin/run test openage::network::tests::relay_service`.
 Local non-network gameplay: `bin/run game --solo`.
 
