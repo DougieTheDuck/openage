@@ -489,7 +489,25 @@ HostedRelayRoom create_relay_room(const std::string &address,
 	return {room_id, std::move(connection)};
 }
 
-void await_relay_room(TcpConnection &connection, uint64_t room_id) {
+gamestate::player_id_t attach_relay_room(
+	TcpConnection &connection, const RelayToken &host_token, uint64_t room_id) {
+	connection.send_frame(relay_frame(
+		MessageType::RELAY_ATTACH_ROOM, encode_join_room_request(host_token, room_id)));
+	auto answer = receive_directory_response(connection, "host slot attachment");
+	if (answer.message_type != MessageType::RELAY_ROOM_ATTACHED
+	    or answer.payload.size() != RELAY_READY_PAYLOAD_SIZE) {
+		throw Error{MSG(err) << "Relay did not acknowledge the additional host channel"};
+	}
+	const auto slot = static_cast<gamestate::player_id_t>(read_u64(answer.payload.data() + 8));
+	if (slot < 3 or slot > MAX_STATE_PLAYERS) {
+		throw Error{MSG(err) << "Relay supplied an invalid additional host slot"};
+	}
+	require_relay_ready(answer.payload, {room_id, slot, RelayRole::HOST, {}});
+	return slot;
+}
+
+void await_relay_room(TcpConnection &connection, uint64_t room_id,
+                      gamestate::player_id_t slot) {
 	if (room_id == 0) {
 		throw Error{MSG(err) << "Cannot await an invalid FVD relay room"};
 	}
@@ -508,7 +526,7 @@ void await_relay_room(TcpConnection &connection, uint64_t room_id) {
 		                     << static_cast<uint16_t>(response.message_type)};
 	}
 	RelayConnect expected{
-		room_id, 2, RelayRole::HOST, {}};
+		room_id, slot, RelayRole::HOST, {}};
 	require_relay_ready(response.payload, expected);
 }
 
@@ -532,9 +550,9 @@ std::vector<RelayRoomSummary> list_relay_rooms(const std::string &address,
 	return list_relay_rooms(connection, token);
 }
 
-void join_relay_room(TcpConnection &connection,
-                     const RelayToken &token,
-                     uint64_t room_id) {
+gamestate::player_id_t join_relay_room_slot(TcpConnection &connection,
+                                           const RelayToken &token,
+                                           uint64_t room_id) {
 	connection.send_frame(relay_frame(
 		MessageType::RELAY_JOIN_ROOM,
 		encode_join_room_request(token, room_id)));
@@ -543,9 +561,21 @@ void join_relay_room(TcpConnection &connection,
 		throw Error{MSG(err) << "Expected FVD relay ready response, received message "
 		                     << static_cast<uint16_t>(response.message_type)};
 	}
-	RelayConnect expected{
-		room_id, 2, RelayRole::GUEST, {}};
-	require_relay_ready(response.payload, expected);
+	if (response.payload.size() != RELAY_READY_PAYLOAD_SIZE) {
+		throw Error{MSG(err) << "Invalid FVD relay guest room slot acknowledgement"};
+	}
+	const auto slot = static_cast<gamestate::player_id_t>(read_u64(response.payload.data() + 8));
+	if (slot < 2 or slot > MAX_STATE_PLAYERS) {
+		throw Error{MSG(err) << "Invalid provisional FVD guest slot"};
+	}
+	require_relay_ready(response.payload, {room_id, slot, RelayRole::GUEST, {}});
+	return slot;
+}
+
+void join_relay_room(TcpConnection &connection,
+                     const RelayToken &token,
+                     uint64_t room_id) {
+	(void) join_relay_room_slot(connection, token, room_id);
 }
 
 TcpConnection join_relay_room(const std::string &address,
@@ -664,16 +694,47 @@ std::optional<RelayPair> RelayRoomDirectory::admit(TcpConnection &connection) {
 		RelayRoomSummary summary{
 			room_id, std::move(create.room_name), std::move(create.host_name)};
 		auto inserted = this->rooms.emplace(
-			room_id,
-			PendingRoom{summary, create.token, std::move(connection)});
+			room_id, PendingRoom{summary, create.token, {}, {}, 3});
+		inserted.first->second.host_slots.emplace(2, std::move(connection));
 		std::vector<uint8_t> payload{};
 		append_u64(payload, room_id);
 		try {
-			inserted.first->second.host.send_frame(relay_frame(
+			inserted.first->second.host_slots.at(2).send_frame(relay_frame(
 				MessageType::RELAY_ROOM_CREATED, std::move(payload)));
 		}
 		catch (...) {
 			this->rooms.erase(inserted.first);
+		}
+		return std::nullopt;
+	}
+
+	if (request->message_type == MessageType::RELAY_ATTACH_ROOM) {
+		RelayJoinRoomRequest attach{};
+		try {
+			attach = decode_join_room_request(request->payload);
+		}
+		catch (const Error &) {
+			reject_relay_connection(connection, "malformed host room attachment");
+			return std::nullopt;
+		}
+		std::scoped_lock lock{this->mutex};
+		auto found = this->rooms.find(attach.room_id);
+		if (found == this->rooms.end()
+		    or not this->authorized(attach.token)
+		    or not tokens_equal(found->second.host_token, attach.token)
+		    or found->second.next_host_slot > MAX_STATE_PLAYERS) {
+			reject_relay_connection(connection, "invalid or full host room attachment");
+			return std::nullopt;
+		}
+		const auto slot = found->second.next_host_slot++;
+		auto inserted = found->second.host_slots.emplace(slot, std::move(connection));
+		try {
+			inserted.first->second.send_frame(relay_frame(
+				MessageType::RELAY_ROOM_ATTACHED,
+				encode_relay_ready(attach.room_id, slot)));
+		}
+		catch (...) {
+			found->second.host_slots.erase(inserted.first);
 		}
 		return std::nullopt;
 	}
@@ -700,23 +761,36 @@ std::optional<RelayPair> RelayRoomDirectory::admit(TcpConnection &connection) {
 			if (found == this->rooms.end()) {
 				rejection = "relay room is no longer available";
 			}
-			else if (not found->second.host.peer_connected()) {
-				// A disconnected host may remain in the directory until the
-				// next query. Never allow a guest to join its orphaned room.
-				this->rooms.erase(found);
-				rejection = "relay room host has disconnected";
-			}
 			else if (this->requires_token()
 			         and tokens_equal(found->second.host_token, join.token)) {
 				rejection = "host and guest must use different player tokens";
 			}
+			else if (this->requires_token()
+			         and std::find(found->second.admitted_guest_tokens.begin(),
+			                      found->second.admitted_guest_tokens.end(), join.token)
+			             != found->second.admitted_guest_tokens.end()) {
+				rejection = "player token is already admitted to this room";
+			}
 			else {
-				completed.emplace(RelayPair{
-					join.room_id,
-					2,
-					std::move(found->second.host),
-					std::move(connection)});
-				this->rooms.erase(found);
+				// A host publishes up to seven independent channels, each
+				// consumed by one guest without disturbing earlier pairs.
+				auto &slots = found->second.host_slots;
+				while (not slots.empty() and not slots.begin()->second.peer_connected()) {
+					slots.erase(slots.begin());
+				}
+				if (slots.empty()) {
+					this->rooms.erase(found);
+					rejection = "relay room host has disconnected or has no free channels";
+				}
+				else {
+					auto available = slots.begin();
+					completed.emplace(RelayPair{
+						join.room_id, available->first,
+						std::move(available->second), std::move(connection)});
+					slots.erase(available);
+					found->second.admitted_guest_tokens.push_back(join.token);
+					if (slots.empty()) this->rooms.erase(found);
+				}
 			}
 		}
 		if (not rejection.empty()) {
@@ -761,19 +835,28 @@ std::vector<RelayRoomSummary> RelayRoomDirectory::list() {
 	result.reserve(this->rooms.size());
 	auto heartbeat = relay_frame(MessageType::PING, {});
 	for (auto room = this->rooms.begin(); room != this->rooms.end();) {
-		// A successful send does not guarantee the peer is still present:
-		// TCP can buffer a heartbeat after the host closed its socket.
-		if (not room->second.host.peer_connected()) {
-			room = this->rooms.erase(room);
-			continue;
+		// Each unconsumed host slot has its own socket. Keep the room
+		// visible after the first join, but never advertise dead channels.
+		auto &slots = room->second.host_slots;
+		for (auto it = slots.begin(); it != slots.end();) {
+			if (not it->second.peer_connected()) {
+				it = slots.erase(it);
+				continue;
+			}
+			try {
+				it->second.send_frame(heartbeat);
+				++it;
+			}
+			catch (...) {
+				it = slots.erase(it);
+			}
 		}
-		try {
-			room->second.host.send_frame(heartbeat);
+		if (slots.empty()) {
+			room = this->rooms.erase(room);
+		}
+		else {
 			result.push_back(room->second.summary);
 			++room;
-		}
-		catch (...) {
-			room = this->rooms.erase(room);
 		}
 	}
 	return result;
