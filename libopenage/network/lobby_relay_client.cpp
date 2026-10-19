@@ -963,13 +963,37 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		std::map<gamestate::player_id_t, std::chrono::steady_clock::time_point> last_seen{};
 		std::map<gamestate::player_id_t, std::chrono::steady_clock::time_point> bootstrap_sent{};
 		std::map<gamestate::player_id_t, bool> ready{};
-		for (const auto &[id, peer] : peers) ready[id] = false;
+		std::map<gamestate::player_id_t, bool> dropped_during_bootstrap{};
+		for (const auto &[id, peer] : peers) {
+			ready[id] = false;
+			dropped_during_bootstrap[id] = false;
+		}
+		auto drop_before_ready = [&](gamestate::player_id_t id) {
+			if (id == 1) throw Error{MSG(err) << "Hunter disconnected before match bootstrap"};
+			if (dropped_during_bootstrap[id]) return;
+			dropped_during_bootstrap[id] = true;
+			peers.at(id)->socket->close();
+			std::lock_guard lock{this->mutex};
+			this->active_multi_identities.erase(id);
+			this->pending_multi_snapshots.erase(id);
+			this->pending_multi_updates.erase(id);
+			auto &ids = this->current.remote_player_ids;
+			ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
+			this->current.disconnected_players.push_back(id);
+			this->current.remote_player_id = ids.empty() ? 0 : ids.front();
+			this->current.departure_notice =
+				"Builder player " + std::to_string(id) + " left during synchronization.";
+		};
 		// Bootstrap is recipient-private and must be acknowledged separately.
 		while (not this->stopping) {
 			bool all_ready = true;
 			for (const auto &[id, peer] : peers) {
-				if (ready.at(id)) continue;
+				if (ready.at(id) or dropped_during_bootstrap[id]) continue;
 				all_ready = false;
+				if (not peer->socket->is_open() or not peer->socket->peer_connected()) {
+					drop_before_ready(id);
+					continue;
+				}
 				std::optional<WorldState> snapshot{};
 				{
 					std::lock_guard lock{this->mutex};
@@ -1007,7 +1031,7 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 				else if (not peer->socket->is_open() or not peer->socket->peer_connected()
 				         or std::chrono::steady_clock::now() - bootstrap_sent[id]
 				            > LIVE_SESSION_TIMEOUT) {
-					throw Error{MSG(err) << "Guest lost during initial multi-player synchronization"};
+					drop_before_ready(id);
 				}
 			}
 			if (all_ready) break;
@@ -1021,7 +1045,22 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		}
 
 		std::map<gamestate::player_id_t, bool> live{};
-		for (const auto &[id, peer] : peers) live[id] = true;
+		for (const auto &[id, peer] : peers) {
+			live[id] = not dropped_during_bootstrap[id];
+		}
+		// A Builder who failed during the initial handshake is still a
+		// fixed, disconnected match participant. Tell all surviving peers
+		// before any streamed world updates change their player flags.
+		for (const auto &[departed, was_dropped] : dropped_during_bootstrap) {
+			if (not was_dropped) continue;
+			for (const auto &[other, peer] : peers) {
+				if (not live[other]) continue;
+				peer->socket->send_frame(peer->session->make_frame(
+					MessageType::PARTICIPANT_DISCONNECTED,
+					encode_participant_disconnected({
+						departed, DisconnectReason::CONNECTION_LOST})));
+			}
+		}
 		auto disconnect_peer = [&](gamestate::player_id_t player) {
 			if (not live[player]) return;
 			live[player] = false;
