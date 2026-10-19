@@ -16,6 +16,22 @@ MatchConnectionState::MatchConnectionState(size_t player_count) :
 	}
 }
 
+void MatchConnectionState::restrict_to_participants(size_t admitted_count) {
+	if (admitted_count < 2 or admitted_count > this->participants.size()) {
+		throw Error{MSG(err) << "FVD admitted player count must be between 2 and "
+		                     << this->participants.size()};
+	}
+	if (std::any_of(this->participants.begin(), this->participants.end(),
+	                [](const auto &participant) {
+		                return participant.remote_identity.has_value();
+	                })) {
+		throw Error{MSG(err) << "FVD admitted players cannot change after binding remote sessions"};
+	}
+	for (size_t i = 0; i < this->participants.size(); ++i) {
+		this->participants[i].connected = i < admitted_count;
+	}
+}
+
 void MatchConnectionState::bind_remote(const SessionIdentity &identity) {
 	if (identity.session_id == 0 or identity.player_id == 0
 	    or identity.player_id > this->participants.size()) {
