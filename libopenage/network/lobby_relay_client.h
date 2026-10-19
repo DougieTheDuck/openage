@@ -45,6 +45,8 @@ struct RelayLobbyStatus {
 	uint64_t snapshot_revision{0};
 	/** Number of full recovery snapshots accepted after initial bootstrap. */
 	uint32_t snapshot_recoveries{0};
+	/** Authenticated gameplay heartbeat replies, useful for link diagnostics. */
+	uint32_t heartbeat_acknowledgements{0};
 	std::string rooms{};
 	uint64_t suggested_room_id{0};
 	/** The same name/role assignments on every peer, established by StartMatch. */
