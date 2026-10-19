@@ -954,6 +954,7 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		}
 		if (this->stopping) return;
 		const auto assignment = lobby->start();
+		AuthoritySuccession authority{assignment, assignment.host_participant_id};
 		const auto host_player = player_for_participant(assignment, 1);
 		const auto role = local_role_name(assignment, host_player);
 		const auto role_text = describe_match_roles(lobby->roster(), assignment);
@@ -1142,7 +1143,8 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			}
 		}
 		auto disconnect_peer = [&](gamestate::player_id_t player) {
-			if (not live[player]) return;
+			if (not live[player]) return AuthorityLossAction::CONTINUE;
+			const auto consequence = authority.disconnected(player);
 			live[player] = false;
 			const auto &peer = *peers.at(player);
 			peer.socket->close();
@@ -1181,6 +1183,7 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 					// incorrectly terminate the entire Hunter's game.
 				}
 			}
+			return consequence;
 		};
 
 		while (not this->stopping) {
@@ -1250,9 +1253,13 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 					}
 				}
 				catch (const std::exception &) {
-					disconnect_peer(id); // Notify survivors, including Hunter loss.
-					if (id == 1) {
+					auto consequence = disconnect_peer(id);
+					if (consequence == AuthorityLossAction::END_MATCH) {
 						throw Error{MSG(err) << "Hunter disconnected; match ended"};
+					}
+					if (consequence == AuthorityLossAction::REQUIRE_RESTORED_CHECKPOINT) {
+						throw Error{MSG(err) << "Authoritative Builder lost; "
+						                     << "takeover requires a complete simulation checkpoint"};
 					}
 				}
 			}
