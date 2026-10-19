@@ -142,63 +142,69 @@ void lobby_relay_client() {
 	           gamestate::player_id_t{3});
 	TESTEQUALS(guest.get_replication() == nullptr, true);
 
+	// Authority belongs to the Hunter after a transparent time-zero rehost.
+	// It is deliberately unrelated to which person created the room.
+	RelayLobbyClient &authority = host.is_authority() ? host : guest;
+	RelayLobbyClient &remote = host.is_authority() ? guest : host;
+	TESTEQUALS(authority.status().local_player_id, gamestate::player_id_t{1});
+	TESTEQUALS(remote.status().local_player_id, gamestate::player_id_t{2});
 	WorldState initial{};
 	initial.map_size = 128;
 	initial.world_revision = 1;
-	initial.local_player_id = guest.status().local_player_id;
+	initial.local_player_id = remote.status().local_player_id;
 	initial.local_kill_count = 7;
 	initial.players = {
 		{1, PlayerRole::HUNTER, true},
 		{2, PlayerRole::BUILDER, true},
 	};
 	auto wrong_recipient = initial;
-	wrong_recipient.local_player_id = host.status().local_player_id;
-	TESTTHROWS(host.provide_host_snapshot(wrong_recipient));
+	wrong_recipient.local_player_id = authority.status().local_player_id;
+	TESTTHROWS(authority.provide_host_snapshot(wrong_recipient));
 	auto wrong_base = initial;
 	wrong_base.base_revision = 3;
-	TESTTHROWS(host.provide_host_snapshot(wrong_base));
+	TESTTHROWS(authority.provide_host_snapshot(wrong_base));
 
-	host.provide_host_snapshot(initial);
-	TESTTHROWS(host.provide_host_snapshot(initial));
-	TESTEQUALS(wait_for(guest, "bootstrap"), true);
-	TESTEQUALS(wait_for(host, "bootstrap"), true);
-	auto replication = guest.get_replication();
+	authority.provide_host_snapshot(initial);
+	TESTTHROWS(authority.provide_host_snapshot(initial));
+	TESTEQUALS(wait_for(remote, "bootstrap"), true);
+	TESTEQUALS(wait_for(authority, "bootstrap"), true);
+	auto replication = remote.get_replication();
 	TESTEQUALS(replication != nullptr, true);
 	TESTEQUALS(replication->get_local_player_id(), initial.local_player_id);
 	TESTEQUALS(replication->get_revision(), uint64_t{1});
 	TESTEQUALS(replication->get_local_kills().value(), uint64_t{7});
 	TESTEQUALS(replication->get_world_state()->players.size(), size_t{2});
-	TESTEQUALS(host.status().snapshot_revision, uint64_t{1});
-	TESTEQUALS(guest.status().snapshot_revision, uint64_t{1});
-	TESTEQUALS(host.status().roles, guest.status().roles);
-	TESTEQUALS(host.status().local_role != guest.status().local_role, true);
+	TESTEQUALS(authority.status().snapshot_revision, uint64_t{1});
+	TESTEQUALS(remote.status().snapshot_revision, uint64_t{1});
+	TESTEQUALS(authority.status().roles, remote.status().roles);
+	TESTEQUALS(authority.status().local_role != remote.status().local_role, true);
 
-	// The same authenticated relay session must continue carrying host
+	// The same authenticated relay session must continue carrying authority
 	// changes after MATCH_READY; no second connection or new role draw.
 	auto next = initial;
 	next.world_revision = 2;
 	next.local_kill_count = 8;
 	auto wrong_update = next;
-	wrong_update.local_player_id = host.status().local_player_id;
-	TESTTHROWS(host.provide_host_update(wrong_update));
-	host.provide_host_update(next);
-	TESTTHROWS(host.provide_host_update(initial));
-	TESTEQUALS(wait_for(host, "streaming"), true);
-	TESTEQUALS(wait_for(guest, "streaming"), true);
-	TESTEQUALS(guest.status().snapshot_revision, uint64_t{2});
+	wrong_update.local_player_id = authority.status().local_player_id;
+	TESTTHROWS(authority.provide_host_update(wrong_update));
+	authority.provide_host_update(next);
+	TESTTHROWS(authority.provide_host_update(initial));
+	TESTEQUALS(wait_for(authority, "streaming"), true);
+	TESTEQUALS(wait_for(remote, "streaming"), true);
+	TESTEQUALS(remote.status().snapshot_revision, uint64_t{2});
 	TESTEQUALS(replication->get_revision(), uint64_t{2});
 	TESTEQUALS(replication->get_local_kills().value(), uint64_t{8});
-	TESTEQUALS(guest.status().roles, host.status().roles);
+	TESTEQUALS(remote.status().roles, authority.status().roles);
 
 	// Revision numbers can skip captured intermediate samples: the world
 	// delta base is the last transmitted revision, not revision minus one.
 	auto later = next;
 	later.world_revision = 4;
 	later.local_kill_count = 10;
-	host.provide_host_update(later);
+	authority.provide_host_update(later);
 	bool got_later = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		if (guest.status().snapshot_revision == 4) {
+		if (remote.status().snapshot_revision == 4) {
 			got_later = true;
 			break;
 		}
@@ -209,11 +215,11 @@ void lobby_relay_client() {
 	TESTEQUALS(replication->get_local_kills().value(), uint64_t{10});
 
 	// The same session must recover a full recipient-specific world from
-	// the host's most recently transmitted delta baseline.
-	TESTEQUALS(guest.request_recovery_snapshot(), true);
+	// the authority's most recently transmitted delta baseline.
+	TESTEQUALS(remote.request_recovery_snapshot(), true);
 	bool recovered = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		if (guest.status().snapshot_recoveries == 1) {
+		if (remote.status().snapshot_recoveries == 1) {
 			recovered = true;
 			break;
 		}
@@ -227,35 +233,35 @@ void lobby_relay_client() {
 	bool host_ready = false;
 	bool guest_ready = false;
 	for (size_t attempt = 0; attempt < 700; ++attempt) {
-		host_ready = host.status().phase == "playing";
-		guest_ready = guest.status().phase == "playing";
+		host_ready = authority.status().phase == "playing";
+		guest_ready = remote.status().phase == "playing";
 		if (host_ready and guest_ready) break;
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(host_ready, true);
 	TESTEQUALS(guest_ready, true);
-	// Even without guest commands, the accepted session remains alive via
+	// Even without remote commands, the accepted session remains alive via
 	// validated PING/PONG frames rather than relying on TCP peer_connected().
 	bool heartbeats_received = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		if (guest.status().heartbeat_acknowledgements >= 2) {
+		if (remote.status().heartbeat_acknowledgements >= 2) {
 			heartbeats_received = true;
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(heartbeats_received, true);
-	TESTEQUALS(host.status().connected, true);
-	TESTEQUALS(guest.status().connected, true);
+	TESTEQUALS(authority.status().connected, true);
+	TESTEQUALS(remote.status().connected, true);
 	CommandIntent movement{};
 	movement.kind = CommandKind::MOVE;
 	movement.entity_ids = {42};
 	movement.target = {17, 18, 0};
-	TESTEQUALS(host.send_guest_command(movement), false);
-	TESTEQUALS(guest.send_guest_command(movement), true);
+	TESTEQUALS(authority.send_guest_command(movement), false);
+	TESTEQUALS(remote.send_guest_command(movement), true);
 	std::vector<AuthenticatedCommand> submitted{};
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		submitted = host.take_host_commands();
+		submitted = authority.take_host_commands();
 		if (not submitted.empty()) break;
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
@@ -269,18 +275,18 @@ void lobby_relay_client() {
 	answer.status = CommandStatus::REJECTED;
 	answer.world_revision = 4;
 	answer.reason = "unauthorized unit";
-	const auto active_generation = host.get_session_generation();
+	const auto active_generation = authority.get_session_generation();
 	const auto source = submitted[0].identity;
 	// A delayed callback cannot reply as a different player or a prior
 	// session generation, even if its command ID is reused.
-	TESTEQUALS(host.send_command_result(
+	TESTEQUALS(authority.send_command_result(
 		{source.session_id + 1, source.player_id}, active_generation, answer), false);
-	TESTEQUALS(host.send_command_result(
+	TESTEQUALS(authority.send_command_result(
 		source, active_generation + 1, answer), false);
-	TESTEQUALS(host.send_command_result(source, active_generation, answer), true);
+	TESTEQUALS(authority.send_command_result(source, active_generation, answer), true);
 	std::vector<CommandResult> decisions{};
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		decisions = guest.take_command_results();
+		decisions = remote.take_command_results();
 		if (not decisions.empty()) break;
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
@@ -288,12 +294,12 @@ void lobby_relay_client() {
 	TESTEQUALS(decisions[0].command_id, answer.command_id);
 	TESTEQUALS(decisions[0].status == CommandStatus::REJECTED, true);
 	TESTEQUALS(decisions[0].reason, answer.reason);
-	TESTEQUALS(guest.status().pending_order_count, size_t{0});
-	TESTEQUALS(guest.status().order_feedback.find("Move rejected") != std::string::npos, true);
+	TESTEQUALS(remote.status().pending_order_count, size_t{0});
+	TESTEQUALS(remote.status().order_feedback.find("Move rejected") != std::string::npos, true);
 
 	// Special orders retain their payloads and command identities in the
-	// authenticated relay, even with several in flight at once. The host
-	// can decide independently; the guest's feedback follows each result.
+	// authenticated relay, even with several in flight at once. The authority
+	// can decide independently; the remote's feedback follows each result.
 	CommandIntent queued_tower{};
 	queued_tower.kind = CommandKind::BUILD_TOWER;
 	queued_tower.entity_ids = {42};
@@ -309,13 +315,13 @@ void lobby_relay_client() {
 	prioritize.entity_ids = {42};
 	prioritize.target_entity = gamestate::entity_id_t{88};
 	prioritize.target = {33, 34, 0};
-	TESTEQUALS(guest.send_guest_command(queued_tower), true);
-	TESTEQUALS(guest.send_guest_command(focus), true);
-	TESTEQUALS(guest.send_guest_command(prioritize), true);
-	TESTEQUALS(guest.status().pending_order_count, size_t{3});
+	TESTEQUALS(remote.send_guest_command(queued_tower), true);
+	TESTEQUALS(remote.send_guest_command(focus), true);
+	TESTEQUALS(remote.send_guest_command(prioritize), true);
+	TESTEQUALS(remote.status().pending_order_count, size_t{3});
 	std::vector<AuthenticatedCommand> special{};
 	for (size_t attempt = 0; attempt < 300 and special.size() < 3; ++attempt) {
-		auto batch = host.take_host_commands();
+		auto batch = authority.take_host_commands();
 		special.insert(special.end(), batch.begin(), batch.end());
 		if (special.size() < 3) {
 			std::this_thread::sleep_for(std::chrono::milliseconds{10});
@@ -336,50 +342,42 @@ void lobby_relay_client() {
 		decision.command_id = special[i].intent.command_id;
 		decision.status = i == 2 ? CommandStatus::REJECTED : CommandStatus::ACCEPTED;
 		decision.reason = i == 2 ? "foundation unavailable" : "";
-		TESTEQUALS(host.send_command_result(source, active_generation, decision), true);
+		TESTEQUALS(authority.send_command_result(source, active_generation, decision), true);
 	}
 	std::vector<CommandResult> special_results{};
 	for (size_t attempt = 0; attempt < 300 and special_results.size() < 3; ++attempt) {
-		auto batch = guest.take_command_results();
+		auto batch = remote.take_command_results();
 		special_results.insert(special_results.end(), batch.begin(), batch.end());
 		if (special_results.size() < 3) {
 			std::this_thread::sleep_for(std::chrono::milliseconds{10});
 		}
 	}
 	TESTEQUALS(special_results.size(), size_t{3});
-	TESTEQUALS(guest.status().pending_order_count, size_t{0});
-	TESTEQUALS(guest.status().order_feedback.find("Prioritize foundation rejected")
+	TESTEQUALS(remote.status().pending_order_count, size_t{0});
+	TESTEQUALS(remote.status().order_feedback.find("Prioritize foundation rejected")
 	           != std::string::npos, true);
 
-	// If the guest is a Builder, the authoritative Hunter host continues;
-	// if the guest is Hunter, losing them ends the match.
-	const bool host_is_hunter = host.status().local_role == "HUNTER";
-	guest.close();
-	bool host_saw_departure = false;
+	// Every Builder is now an ordinary guest, even if that person
+	// originally created the room. The Hunter's authority survives.
+	remote.close();
+	bool builder_left = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		if (not host.status().connected) {
-			host_saw_departure = true;
+		const auto current = authority.status();
+		if (current.remote_player_id == 0) {
+			builder_left = true;
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
-	TESTEQUALS(host_saw_departure, true);
-	TESTEQUALS(host.send_command_result(source, active_generation, answer), false);
-	TESTEQUALS(host.status().can_start, false);
-	if (host_is_hunter) {
-		TESTEQUALS(host.status().phase, std::string{"playing"});
-		TESTEQUALS(host.status().remote_player_id, gamestate::player_id_t{0});
-		TESTEQUALS(host.status().message.find("Builder disconnected") != std::string::npos, true);
-		TESTEQUALS(host.take_host_commands().empty(), true);
-	}
-	else {
-		TESTEQUALS(host.status().phase, std::string{"error"});
-	}
-	TESTEQUALS(guest.send_guest_command(movement), false);
-	host.close();
-	TESTEQUALS(host.status().phase, std::string{"menu"});
-	TESTEQUALS(host.send_command_result(source, active_generation, answer), false);
-	TESTEQUALS(host.get_session_generation() != active_generation, true);
+	TESTEQUALS(builder_left, true);
+	TESTEQUALS(authority.status().phase, std::string{"playing"});
+	TESTEQUALS(authority.send_command_result(source, active_generation, answer), false);
+	TESTEQUALS(authority.take_host_commands().empty(), true);
+	TESTEQUALS(remote.send_guest_command(movement), false);
+	authority.close();
+	TESTEQUALS(authority.status().phase, std::string{"menu"});
+	TESTEQUALS(authority.send_command_result(source, active_generation, answer), false);
+	TESTEQUALS(authority.get_session_generation() != active_generation, true);
 
 	// Test the opposite failure direction in a fresh relay room. Host loss
 	// must invalidate the guest's authoritative state, including its score.
@@ -404,23 +402,24 @@ void lobby_relay_client() {
 	host2.request_start();
 	TESTEQUALS(wait_for(host2, "assigned"), true);
 	TESTEQUALS(wait_for(guest2, "assigned"), true);
-	TESTEQUALS(host2.get_session_generation() != active_generation, true);
-	TESTEQUALS(host2.send_command_result(source, active_generation, answer), false);
+	RelayLobbyClient &authority2 = host2.is_authority() ? host2 : guest2;
+	RelayLobbyClient &remote2 = host2.is_authority() ? guest2 : host2;
+	TESTEQUALS(authority2.send_command_result(source, active_generation, answer), false);
 	auto restart = initial;
-	restart.local_player_id = guest2.status().local_player_id;
-	host2.provide_host_snapshot(restart);
-	TESTEQUALS(wait_for(guest2, "bootstrap"), true);
-	TESTEQUALS(wait_for(host2, "bootstrap"), true);
-	auto last_replication = guest2.get_replication();
+	restart.local_player_id = remote2.status().local_player_id;
+	authority2.provide_host_snapshot(restart);
+	TESTEQUALS(wait_for(remote2, "bootstrap"), true);
+	TESTEQUALS(wait_for(authority2, "bootstrap"), true);
+	auto last_replication = remote2.get_replication();
 	TESTEQUALS(last_replication != nullptr, true);
 	TESTEQUALS(last_replication->is_host_connected(), true);
-	host2.close();
-	TESTEQUALS(wait_for(guest2, "error"), true);
-	TESTEQUALS(guest2.status().connected, false);
+	authority2.close();
+	TESTEQUALS(wait_for(remote2, "error"), true);
+	TESTEQUALS(remote2.status().connected, false);
 	TESTEQUALS(last_replication->is_host_connected(), false);
 	TESTEQUALS(last_replication->get_local_kills().has_value(), false);
-	TESTEQUALS(guest2.send_guest_command(movement), false);
-	guest2.close();
+	TESTEQUALS(remote2.send_guest_command(movement), false);
+	remote2.close();
 
 	// End-to-end relay client integration with one authoritative host and
 	// TWO live guests: shared role assignment, private snapshots, independent
