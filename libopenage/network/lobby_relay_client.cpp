@@ -526,6 +526,21 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				std::lock_guard lock{this->mutex};
 				this->active_remote_identity = accepted->get_identity();
 			}
+			if (host_player != 1) {
+				this->publish(RelayLobbyStatus{
+					.phase = "handoff",
+					.message = "Builder lobby creator: transferring match authority to Hunter...",
+					.participants = settings.name + " (host)\n" + guest_name + " (guest)",
+					.connected = true,
+					.roles = roles,
+					.local_role = host_role,
+				});
+				std::map<gamestate::player_id_t,
+					std::pair<ConnectionSession *, TcpConnection *>> peers{};
+				peers.emplace(guest_player, std::make_pair(&*accepted, socket.get()));
+				this->forward_rehost_offers(assignment, peers, settings);
+				return;
+			}
 			this->publish(RelayLobbyStatus{
 				.phase = "assigned",
 				.message = "Match start requested; synchronizing the initial world.",
@@ -714,6 +729,37 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			const auto host_player = player_for_participant(assigned, 1);
 			const auto roles = describe_match_roles(latest_roster, assigned);
 			const auto guest_role = local_role_name(assigned, guest_player);
+			if (host_player != 1) {
+				this->publish(RelayLobbyStatus{
+					.phase = "handoff",
+					.message = "Hunter selected. Establishing independent authoritative room...",
+					.participants = people,
+					.connected = true,
+					.roles = roles,
+					.local_role = guest_role,
+				});
+				if (guest_player == 1) {
+					this->begin_hunter_rehost(settings, assigned, session, *socket);
+				}
+				else {
+					auto invitation = socket->receive_frame();
+					if (not invitation) {
+						throw Error{MSG(err) << "Original host disconnected before Hunter invitation"};
+					}
+					session.validate_incoming(*invitation);
+					if (invitation->message_type != MessageType::AUTHORITY_REHOST_OFFER) {
+						throw Error{MSG(err) << "Expected Hunter authority redirect offer"};
+					}
+					const auto offer = decode_rehost_offer(invitation->payload);
+					if (offer.original_player_id != guest_player
+					    or offer.original_lobby_revision != assigned.lobby_revision
+					    or offer.authority_epoch != 2) {
+						throw Error{MSG(err) << "Hunter handoff offer did not match original identity"};
+					}
+					this->run_rehosted_guest(settings, offer);
+				}
+				return;
+			}
 			this->publish(RelayLobbyStatus{
 				.phase = "assigned",
 				.message = "Match start requested; waiting for authoritative initial world.",
