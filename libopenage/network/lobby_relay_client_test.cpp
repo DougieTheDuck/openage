@@ -464,6 +464,13 @@ void lobby_relay_client() {
 	TESTEQUALS(wait_for(multi_guest_a, "assigned"), true);
 	TESTEQUALS(wait_for(multi_guest_b, "assigned"), true);
 	auto multi_status = multiplayer_host.status();
+	// Regression: HostLobby::start advances the roster revision. If the
+	// multi-host worker describes roles against that post-start roster it
+	// throws and drops every guest before initial world synchronization.
+	TESTEQUALS(multi_status.phase, std::string{"assigned"});
+	TESTEQUALS(multi_status.roles.find("Many Host") != std::string::npos, true);
+	TESTEQUALS(multi_status.roles.find("Guest A") != std::string::npos, true);
+	TESTEQUALS(multi_status.roles.find("Guest B") != std::string::npos, true);
 	TESTEQUALS(multi_status.multi_host, true);
 	TESTEQUALS(multi_status.match_player_count, size_t{3});
 	TESTEQUALS(multi_status.remote_player_ids.size(), size_t{2});
