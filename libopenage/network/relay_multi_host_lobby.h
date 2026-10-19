@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "network/authority_succession.h"
 #include "network/handshake.h"
 #include "network/lobby.h"
 #include "network/relay.h"
@@ -80,6 +81,7 @@ private:
 	uint64_t advertised_room_id{0};
 	HostLobby lobby;
 	std::unique_ptr<RehostTicketBook> rehost_tickets{};
+	std::unique_ptr<AuthoritySuccession> rehost_succession{};
 	std::vector<Peer> channels_by_slot{};
 	bool started{false};
 };
