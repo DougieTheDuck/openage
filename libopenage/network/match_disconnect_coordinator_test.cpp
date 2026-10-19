@@ -231,7 +231,7 @@ void match_disconnect_coordinator() {
 	           gamestate::player_id_t{1});
 	TESTEQUALS(std::holds_alternative<WorldDeltaMessage>(goodbye.at(1)), true);
 	auto final_world = apply_world_delta(
-		hunter_initial, std::get<WorldDeltaMessage>(goodbye.at(1)).delta);
+		hunter_initial, std::get<WorldDeltaMessage>(goodbye.at(1)).state);
 	TESTEQUALS(final_world.players.at(0).connected, false);
 	TESTEQUALS(final_world.players.at(2).connected, true);
 }
