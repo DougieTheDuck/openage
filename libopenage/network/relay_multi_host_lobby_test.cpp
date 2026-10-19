@@ -323,6 +323,63 @@ void run_secure_rehost_case() {
 	if (relay_error) std::rethrow_exception(relay_error);
 }
 
+void run_forged_rehost_case() {
+	HostLobby original{11, "Former Builder"};
+	original.join(22, "Hunter");
+	auto assignment = original.start([](uint64_t bound) {
+		return bound == 3 ? uint64_t{1} : uint64_t{0};
+	});
+	TESTEQUALS(player_for_participant(assignment, 22), gamestate::player_id_t{1});
+	RelayRoomDirectory directory{1};
+	auto listener = TcpListener::listen("127.0.0.1", 0);
+	std::exception_ptr relay_error{};
+	std::jthread relay{[&]() {
+		try {
+			serve_relay_directory(listener, directory, 8);
+		}
+		catch (...) {
+			relay_error = std::current_exception();
+		}
+	}};
+	RelayMultiHostLobby replacement{
+		"127.0.0.1", listener.get_port(), {},
+		"Private Hunter takeover", "Hunter", 2};
+	replacement.prepare_hunter_rehost(assignment);
+	auto proof = make_rehost_proof(replacement.rehost_offer_for(2));
+	proof.ticket[0] ^= 1; // Stolen public room ID is not sufficient.
+	std::exception_ptr guest_error{};
+	std::jthread attacker{[&]() {
+		try {
+			auto socket = TcpConnection::connect(
+				"127.0.0.1", listener.get_port());
+			(void) join_relay_room_slot(socket, {}, replacement.room_id());
+			auto session = client_handshake(socket, {
+				PROTOCOL_MINIMUM_COMPATIBLE_MINOR, "Impostor",
+				"fvd-handoff-test", multi_lobby_digest()});
+			socket.send_frame(session.make_frame(
+				MessageType::AUTHORITY_REHOST_PROOF, encode_rehost_proof(proof)));
+			// Admission is refused; no roster or START_MATCH is published.
+			auto response = socket.receive_frame();
+			TESTEQUALS(response.has_value(), false);
+		}
+		catch (...) {
+			guest_error = std::current_exception();
+		}
+	}};
+	for (size_t attempt = 0; attempt < 500; ++attempt) {
+		replacement.poll_admissions(multi_lobby_digest());
+		std::this_thread::sleep_for(std::chrono::milliseconds{5});
+	}
+	TESTEQUALS(replacement.participant_count(), size_t{1});
+	TESTTHROWS(replacement.start_rehost());
+	attacker.join();
+	if (guest_error) std::rethrow_exception(guest_error);
+	replacement.close();
+	listener.close();
+	relay.join();
+	if (relay_error) std::rethrow_exception(relay_error);
+}
+
 } // namespace
 
 void relay_multi_host_lobby() {
@@ -333,6 +390,7 @@ void relay_multi_host_lobby() {
 	run_lobby_case(3, true);
 	run_lobby_case(8, true);
 	run_secure_rehost_case();
+	run_forged_rehost_case();
 }
 
 } // namespace openage::network::tests
