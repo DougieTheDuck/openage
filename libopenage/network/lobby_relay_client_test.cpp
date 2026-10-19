@@ -3,6 +3,7 @@
 #include "lobby_relay_client.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <exception>
 #include <thread>
@@ -459,26 +460,33 @@ void lobby_relay_client() {
 	}
 	TESTEQUALS(both_in_lobby, true);
 	multiplayer_host.request_start();
-	TESTEQUALS(wait_for(multiplayer_host, "assigned"), true);
-	TESTEQUALS(wait_for(multi_guest_a, "assigned"), true);
-	TESTEQUALS(wait_for(multi_guest_b, "assigned"), true);
-	auto multi_status = multiplayer_host.status();
-	// Regression: HostLobby::start advances the roster revision. If the
-	// multi-host worker describes roles against that post-start roster it
-	// throws and drops every guest before initial world synchronization.
-	TESTEQUALS(multi_status.phase, std::string{"assigned"});
-	TESTEQUALS(multi_status.roles.find("Many Host") != std::string::npos, true);
-	TESTEQUALS(multi_status.roles.find("Guest A") != std::string::npos, true);
-	TESTEQUALS(multi_status.roles.find("Guest B") != std::string::npos, true);
+	std::array<RelayLobbyClient *, 3> players{
+		&multiplayer_host, &multi_guest_a, &multi_guest_b};
+	for (auto *player : players) {
+		TESTEQUALS(wait_for(*player, "assigned"), true);
+	}
+	// The original room creator is not necessarily the Hunter anymore.
+	RelayLobbyClient *hunter_authority = nullptr;
+	std::vector<RelayLobbyClient *> builders{};
+	for (auto *player : players) {
+		if (player->is_authority()) {
+			TESTEQUALS(hunter_authority == nullptr, true);
+			hunter_authority = player;
+		}
+		else builders.push_back(player);
+	}
+	TESTEQUALS(hunter_authority != nullptr, true);
+	TESTEQUALS(builders.size(), size_t{2});
+	TESTEQUALS(hunter_authority->status().local_role, std::string{"HUNTER"});
+	auto multi_status = hunter_authority->status();
 	TESTEQUALS(multi_status.multi_host, true);
 	TESTEQUALS(multi_status.match_player_count, size_t{3});
 	TESTEQUALS(multi_status.remote_player_ids.size(), size_t{2});
-	TESTEQUALS(multi_guest_a.status().roles, multi_guest_b.status().roles);
-	TESTEQUALS(multi_guest_a.status().roles, multi_status.roles);
-	TESTEQUALS(multi_guest_a.status().local_player_id
-	           != multi_guest_b.status().local_player_id, true);
-	const auto guest_a_id = multi_guest_a.status().local_player_id;
-	const auto guest_b_id = multi_guest_b.status().local_player_id;
+	for (auto *player : players) {
+		TESTEQUALS(player->status().roles, multi_status.roles);
+	}
+	TESTEQUALS(builders[0]->status().local_player_id
+	           != builders[1]->status().local_player_id, true);
 	for (auto id : multi_status.remote_player_ids) {
 		WorldState world{};
 		world.map_size = 128;
@@ -489,54 +497,60 @@ void lobby_relay_client() {
 			{1, PlayerRole::HUNTER, true},
 			{2, PlayerRole::BUILDER, true},
 			{3, PlayerRole::BUILDER, true}};
-		multiplayer_host.provide_host_snapshot(std::move(world));
+		hunter_authority->provide_host_snapshot(std::move(world));
 	}
-	TESTEQUALS(wait_for(multiplayer_host, "bootstrap"), true);
-	TESTEQUALS(wait_for(multi_guest_a, "bootstrap"), true);
-	TESTEQUALS(wait_for(multi_guest_b, "bootstrap"), true);
-	TESTEQUALS(multi_guest_a.get_replication()->get_local_kills().value(),
-	           uint64_t{10 + guest_a_id});
-	TESTEQUALS(multi_guest_b.get_replication()->get_local_kills().value(),
-	           uint64_t{10 + guest_b_id});
-	WorldState update_a{};
-	update_a.map_size = 128;
-	update_a.world_revision = 2;
-	update_a.local_player_id = guest_a_id;
-	update_a.local_kill_count = 22;
-	update_a.players = {
-		{1, PlayerRole::HUNTER, true}, {2, PlayerRole::BUILDER, true},
-		{3, PlayerRole::BUILDER, true}};
-	auto update_b = update_a;
-	update_b.local_player_id = guest_b_id;
-	update_b.world_revision = 3;
-	update_b.local_kill_count = 33;
-	multiplayer_host.provide_host_update(update_a);
-	multiplayer_host.provide_host_update(update_b);
-	TESTEQUALS(wait_for(multi_guest_a, "streaming"), true);
-	TESTEQUALS(wait_for(multi_guest_b, "streaming"), true);
-	TESTEQUALS(multi_guest_a.get_replication()->get_local_kills().value(), uint64_t{22});
-	TESTEQUALS(multi_guest_b.get_replication()->get_local_kills().value(), uint64_t{33});
+	for (auto *player : players) {
+		TESTEQUALS(wait_for(*player, "bootstrap"), true);
+	}
+	for (auto *builder : builders) {
+		TESTEQUALS(builder->get_replication() != nullptr, true);
+		TESTEQUALS(builder->get_replication()->get_local_kills().value(),
+		           uint64_t{10 + builder->status().local_player_id});
+	}
+	auto update_for = [](gamestate::player_id_t player, uint64_t revision,
+	                     uint64_t kills) {
+		WorldState world{};
+		world.map_size = 128;
+		world.world_revision = revision;
+		world.local_player_id = player;
+		world.local_kill_count = kills;
+		world.players = {
+			{1, PlayerRole::HUNTER, true},
+			{2, PlayerRole::BUILDER, true},
+			{3, PlayerRole::BUILDER, true}};
+		return world;
+	};
+	hunter_authority->provide_host_update(
+		update_for(builders[0]->status().local_player_id, 2, 22));
+	hunter_authority->provide_host_update(
+		update_for(builders[1]->status().local_player_id, 3, 33));
+	for (auto *builder : builders) {
+		TESTEQUALS(wait_for(*builder, "streaming"), true);
+	}
+	TESTEQUALS(builders[0]->get_replication()->get_local_kills().value(),
+	           uint64_t{22});
+	TESTEQUALS(builders[1]->get_replication()->get_local_kills().value(),
+	           uint64_t{33});
 	bool all_playing = false;
 	for (size_t attempt = 0; attempt < 700; ++attempt) {
-		if (multiplayer_host.status().phase == "playing"
-		    and multi_guest_a.status().phase == "playing"
-		    and multi_guest_b.status().phase == "playing") {
-			all_playing = true;
-			break;
-		}
+		all_playing = std::all_of(players.begin(), players.end(),
+			[](RelayLobbyClient *client) {
+				return client->status().phase == "playing";
+			});
+		if (all_playing) break;
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(all_playing, true);
-	CommandIntent guest_move{};
-	guest_move.kind = CommandKind::MOVE;
-	guest_move.entity_ids = {501};
-	guest_move.target = {22, 23, 0};
-	TESTEQUALS(multi_guest_a.send_guest_command(guest_move), true);
-	guest_move.entity_ids = {502};
-	TESTEQUALS(multi_guest_b.send_guest_command(guest_move), true);
+	CommandIntent move{};
+	move.kind = CommandKind::MOVE;
+	move.entity_ids = {501};
+	move.target = {22, 23, 0};
+	TESTEQUALS(builders[0]->send_guest_command(move), true);
+	move.entity_ids = {502};
+	TESTEQUALS(builders[1]->send_guest_command(move), true);
 	std::vector<AuthenticatedCommand> multi_commands{};
 	for (size_t attempt = 0; attempt < 300 and multi_commands.size() < 2; ++attempt) {
-		auto batch = multiplayer_host.take_host_commands();
+		auto batch = hunter_authority->take_host_commands();
 		multi_commands.insert(multi_commands.end(), batch.begin(), batch.end());
 		if (multi_commands.size() < 2)
 			std::this_thread::sleep_for(std::chrono::milliseconds{10});
@@ -545,64 +559,60 @@ void lobby_relay_client() {
 	TESTEQUALS(multi_commands.at(0).identity.player_id
 	           != multi_commands.at(1).identity.player_id, true);
 	for (const auto &cmd : multi_commands) {
-		CommandResult response{};
-		response.command_id = cmd.intent.command_id;
-		response.status = CommandStatus::ACCEPTED;
-		response.world_revision = 3;
-		TESTEQUALS(multiplayer_host.send_command_result(
-			cmd.identity, multiplayer_host.get_session_generation(), response), true);
+		CommandResult result{};
+		result.command_id = cmd.intent.command_id;
+		result.status = CommandStatus::ACCEPTED;
+		result.world_revision = 3;
+		TESTEQUALS(hunter_authority->send_command_result(
+			cmd.identity, hunter_authority->get_session_generation(), result), true);
 	}
 	bool both_confirmed = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		if (multi_guest_a.status().pending_order_count == 0
-		    and multi_guest_b.status().pending_order_count == 0) {
+		if (builders[0]->status().pending_order_count == 0
+		    and builders[1]->status().pending_order_count == 0) {
 			both_confirmed = true;
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(both_confirmed, true);
-	// A Builder leaving must not end the Hunter's match or drop other guests.
-	auto &departing = guest_a_id != 1 ? multi_guest_a : multi_guest_b;
-	auto &survivor = guest_a_id != 1 ? multi_guest_b : multi_guest_a;
-	const auto departed_id = departing.status().local_player_id;
-	const auto survivor_id = survivor.status().local_player_id;
-	departing.close();
+	// If the original room creator was randomly assigned Builder,
+	// disconnect THAT machine. Hunter authority must remain online.
+	auto *departing = hunter_authority == &multiplayer_host
+		? builders[0] : &multiplayer_host;
+	auto *survivor = departing == builders[0] ? builders[1] : builders[0];
+	const auto departed_id = departing->status().local_player_id;
+	const auto survivor_id = survivor->status().local_player_id;
+	departing->close();
 	bool departed_recorded = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		const auto status = multiplayer_host.status();
-		if (std::find(status.disconnected_players.begin(),
-		              status.disconnected_players.end(), departed_id)
-		    != status.disconnected_players.end()) {
+		const auto current = hunter_authority->status();
+		if (std::find(current.disconnected_players.begin(),
+		              current.disconnected_players.end(), departed_id)
+		    != current.disconnected_players.end()) {
 			departed_recorded = true;
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(departed_recorded, true);
-	TESTEQUALS(multiplayer_host.status().phase, std::string{"playing"});
-	TESTEQUALS(multiplayer_host.status().remote_player_ids.size(), size_t{1});
+	TESTEQUALS(hunter_authority->status().phase, std::string{"playing"});
+	TESTEQUALS(hunter_authority->status().remote_player_ids.size(), size_t{1});
 	bool survivor_notified = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		if (survivor.status().departure_notice.find("disconnected") != std::string::npos) {
+		if (survivor->status().departure_notice.find("disconnected") != std::string::npos) {
 			survivor_notified = true;
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(survivor_notified, true);
-	WorldState after_departure{};
-	after_departure.map_size = 128;
-	after_departure.world_revision = 4;
-	after_departure.local_player_id = survivor_id;
-	after_departure.players = {
-		{1, PlayerRole::HUNTER, departed_id != 1},
-		{2, PlayerRole::BUILDER, departed_id != 2},
-		{3, PlayerRole::BUILDER, departed_id != 3}};
-	multiplayer_host.provide_host_update(std::move(after_departure));
+	auto after_departure = update_for(survivor_id, 4, 34);
+	after_departure.players.at(departed_id - 1).connected = false;
+	hunter_authority->provide_host_update(std::move(after_departure));
 	bool updated_disconnected = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		auto current = survivor.get_replication()->get_world_state();
+		auto current = survivor->get_replication()->get_world_state();
 		if (current and current->world_revision == 4) {
 			updated_disconnected = true;
 			TESTEQUALS(current->players.at(departed_id - 1).connected, false);
@@ -611,58 +621,45 @@ void lobby_relay_client() {
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(updated_disconnected, true);
-	// A departed Builder's queued callback must never reach another guest
-	// or cause stale world mutations.
 	for (const auto &cmd : multi_commands) {
 		if (cmd.identity.player_id != departed_id) continue;
 		CommandResult stale{};
 		stale.command_id = cmd.intent.command_id;
 		stale.status = CommandStatus::ACCEPTED;
-		TESTEQUALS(multiplayer_host.send_command_result(
-			cmd.identity, multiplayer_host.get_session_generation(), stale), false);
+		TESTEQUALS(hunter_authority->send_command_result(
+			cmd.identity, hunter_authority->get_session_generation(), stale), false);
 	}
-	// Surviving Hunter/Builder input is still authorized and independently
-	// acknowledged, even after the remaining player's world changes.
 	CommandIntent continuing{};
 	continuing.kind = CommandKind::MOVE;
 	continuing.entity_ids = {509};
 	continuing.target = {51, 52, 0};
-	TESTEQUALS(survivor.send_guest_command(continuing), true);
+	TESTEQUALS(survivor->send_guest_command(continuing), true);
 	std::vector<AuthenticatedCommand> continuation{};
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		continuation = multiplayer_host.take_host_commands();
+		continuation = hunter_authority->take_host_commands();
 		if (not continuation.empty()) break;
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(continuation.size(), size_t{1});
 	TESTEQUALS(continuation.front().identity.player_id, survivor_id);
-	CommandResult continued{};
-	continued.command_id = continuation.front().intent.command_id;
-	continued.status = CommandStatus::ACCEPTED;
-	TESTEQUALS(multiplayer_host.send_command_result(
-		continuation.front().identity, multiplayer_host.get_session_generation(),
-		continued), true);
-	bool continued_acknowledged = false;
+	CommandResult accepted{};
+	accepted.command_id = continuation.front().intent.command_id;
+	accepted.status = CommandStatus::ACCEPTED;
+	TESTEQUALS(hunter_authority->send_command_result(
+		continuation.front().identity, hunter_authority->get_session_generation(),
+		accepted), true);
+	bool acknowledged = false;
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
-		if (survivor.status().pending_order_count == 0) {
-			continued_acknowledged = true;
+		if (survivor->status().pending_order_count == 0) {
+			acknowledged = true;
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
-	TESTEQUALS(continued_acknowledged, true);
-	// Only the Hunter's departure is terminal. If they are the guest,
-	// the host detects that loss; otherwise the host's F10 ends all guests.
-	if (survivor_id == 1) {
-		survivor.close();
-		TESTEQUALS(wait_for(multiplayer_host, "error"), true);
-		multiplayer_host.close();
-	}
-	else {
-		multiplayer_host.close();
-		TESTEQUALS(wait_for(survivor, "error"), true);
-		survivor.close();
-	}
+	TESTEQUALS(acknowledged, true);
+	hunter_authority->close();
+	TESTEQUALS(wait_for(*survivor, "error"), true);
+	for (auto *player : players) player->close();
 	listener.close();
 	relay.join();
 	if (relay_error) std::rethrow_exception(relay_error);
