@@ -8,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <cstdint>
+#include <vector>
 #include "network/messages.h"
 #include "network/command_mailbox.h"
 
@@ -150,6 +151,11 @@ public:
 	 */
 	void request_network_bootstrap(gamestate::player_id_t recipient);
 
+	/** Bind snapshots to the admitted players, rather than eight scenario slots. */
+	void configure_network_participants(size_t admitted_players);
+	/** Persist a departed Builder's connection status in later snapshots. */
+	void report_network_participant_disconnect(gamestate::player_id_t player);
+
 	/** Retrieve the completed bootstrap snapshot, if ready. */
 	std::optional<network::WorldState> take_network_bootstrap();
 
@@ -248,6 +254,8 @@ private:
 		uint64_t generation;
 	};
 	uint64_t bootstrap_generation{0};
+	size_t network_admitted_players{0};
+	std::vector<gamestate::player_id_t> network_disconnected_players{};
 	std::optional<BootstrapRequest> bootstrap_requested{};
 	std::optional<network::WorldState> bootstrap_ready{};
 	struct UpdateRequest {
