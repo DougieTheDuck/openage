@@ -103,6 +103,13 @@ void GameSimulation::run() {
 			incoming.swap(this->network_commands);
 		}
 		for (auto &request : incoming) {
+			// Connection teardown and F10 can race an already-drained command.
+			// Authorize again at the simulation owner-thread boundary, before
+			// mutating the authoritative world.
+			if (request.session_is_active and not request.session_is_active()) {
+				request.callback(false);
+				continue;
+			}
 			network::submit_authenticated_command(
 				request.command, this->event_loop, this->commander,
 				this->game->get_state(), current_time, std::move(request.callback));
@@ -308,11 +315,13 @@ std::optional<network::WorldState> GameSimulation::take_network_update() {
 }
 
 bool GameSimulation::submit_network_command(
-	network::AuthenticatedCommand command, std::function<void(bool)> callback) {
+	network::AuthenticatedCommand command, std::function<void(bool)> callback,
+	std::function<bool()> session_is_active) {
 	if (not callback) return false;
 	std::lock_guard lock{this->network_command_mutex};
 	if (this->network_commands.size() >= 256) return false;
-	this->network_commands.push_back({std::move(command), std::move(callback)});
+	this->network_commands.push_back({
+		std::move(command), std::move(callback), std::move(session_is_active)});
 	return true;
 }
 
