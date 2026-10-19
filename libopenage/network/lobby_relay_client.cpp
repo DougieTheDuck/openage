@@ -865,6 +865,272 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 	}
 }
 
+void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
+	try {
+		auto lobby = std::make_shared<RelayMultiHostLobby>(
+			settings.address, settings.port, parse_token(settings.token_hex),
+			settings.room_name, settings.name, settings.player_capacity);
+		{
+			std::lock_guard lock{this->mutex};
+			this->multi_host_lobby = lobby;
+		}
+		auto participants_text = [&]() {
+			std::string text{};
+			for (const auto &person : lobby->roster().participants) {
+				if (not text.empty()) text += "\n";
+				text += person.name + (person.is_host ? " (host)" : " (guest)");
+			}
+			return text;
+		};
+		this->publish(RelayLobbyStatus{
+			.phase = "waiting",
+			.message = "Room #" + std::to_string(lobby->room_id())
+			           + " accepts up to " + std::to_string(settings.player_capacity)
+			           + " players. Waiting for Builders or Hunter...",
+			.participants = participants_text(),
+			.connected = true,
+		});
+		while (not this->stopping) {
+			const auto changed = lobby->poll_admissions(provisional_gameplay_digest());
+			if (changed or (lobby->participant_count() > 1 and this->status().phase == "waiting")) {
+				this->publish(RelayLobbyStatus{
+					.phase = "lobby",
+					.message = "Guests joined. Start when everyone is ready ("
+					           + std::to_string(lobby->participant_count()) + "/"
+					           + std::to_string(settings.player_capacity) + ").",
+					.participants = participants_text(),
+					.can_start = lobby->participant_count() >= 2,
+					.connected = true,
+				});
+			}
+			if (this->start_requested and lobby->participant_count() >= 2) break;
+			std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
+		}
+		if (this->stopping) return;
+		const auto assignment = lobby->start();
+		const auto host_player = player_for_participant(assignment, 1);
+		const auto role = local_role_name(assignment, host_player);
+		const auto role_text = describe_match_roles(lobby->roster(), assignment);
+		std::vector<gamestate::player_id_t> remotes{};
+		std::map<gamestate::player_id_t, RelayMultiHostLobby::Peer const *> peers{};
+		for (const auto &peer : lobby->channels()) {
+			if (not peer.admitted) continue;
+			const auto identity = peer.session->get_identity();
+			remotes.push_back(identity.player_id);
+			peers.emplace(identity.player_id, &peer);
+		}
+		{
+			std::lock_guard lock{this->mutex};
+			for (const auto &[id, peer] : peers) {
+				this->active_multi_identities.emplace(id, peer->session->get_identity());
+			}
+		}
+		this->publish(RelayLobbyStatus{
+			.phase = "assigned",
+			.message = "Starting " + std::to_string(assignment.assignments.size())
+			           + "-player match; synchronizing each guest...",
+			.participants = participants_text(),
+			.connected = true,
+			.local_player_id = host_player,
+			.remote_player_id = remotes.front(),
+			.remote_player_ids = remotes,
+			.match_player_count = assignment.assignments.size(),
+			.roles = role_text,
+			.local_role = role,
+		});
+
+		std::map<gamestate::player_id_t, WorldDeltaBaseline> baselines{};
+		std::map<gamestate::player_id_t, std::chrono::steady_clock::time_point> last_seen{};
+		std::map<gamestate::player_id_t, std::chrono::steady_clock::time_point> bootstrap_sent{};
+		std::map<gamestate::player_id_t, bool> ready{};
+		for (const auto &[id, peer] : peers) ready[id] = false;
+		// Bootstrap is recipient-private and must be acknowledged separately.
+		while (not this->stopping) {
+			bool all_ready = true;
+			for (const auto &[id, peer] : peers) {
+				if (ready.at(id)) continue;
+				all_ready = false;
+				std::optional<WorldState> snapshot{};
+				{
+					std::lock_guard lock{this->mutex};
+					auto item = this->pending_multi_snapshots.find(id);
+					if (item != this->pending_multi_snapshots.end()) {
+						snapshot = std::move(item->second);
+						this->pending_multi_snapshots.erase(item);
+					}
+				}
+				if (snapshot) {
+					if (snapshot->local_player_id != id or snapshot->world_revision != 1) {
+						throw Error{MSG(err) << "Wrong recipient/revision for FVD multi-peer bootstrap"};
+					}
+					peer->socket->send_frame(peer->session->make_frame(
+						MessageType::WORLD_SNAPSHOT, encode_world_state(*snapshot)));
+					baselines[id].accept_snapshot(std::move(*snapshot));
+					bootstrap_sent[id] = std::chrono::steady_clock::now();
+					last_seen[id] = bootstrap_sent[id];
+				}
+				if (not bootstrap_sent.contains(id)) continue;
+				auto frame = peer->socket->try_receive_frame();
+				if (frame) {
+					peer->session->validate_incoming(*frame);
+					last_seen[id] = std::chrono::steady_clock::now();
+					if (frame->message_type != MessageType::MATCH_READY) {
+						throw Error{MSG(err) << "FVD guest sent a command before world acknowledgement"};
+					}
+					auto receipt = decode_match_ready(frame->payload);
+					if (receipt.player_id != id or
+					    receipt.snapshot_revision != baselines[id].current_snapshot().world_revision) {
+						throw Error{MSG(err) << "FVD guest acknowledged another player's world"};
+					}
+					ready[id] = true;
+				}
+				else if (not peer->socket->is_open() or not peer->socket->peer_connected()
+				         or std::chrono::steady_clock::now() - bootstrap_sent[id]
+				            > LIVE_SESSION_TIMEOUT) {
+					throw Error{MSG(err) << "Guest lost during initial multi-player synchronization"};
+				}
+			}
+			if (all_ready) break;
+			std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
+		}
+		if (this->stopping) return;
+		{
+			std::lock_guard lock{this->mutex};
+			this->current.phase = "bootstrap";
+			this->current.message = "All players synchronized. Waiting for role reveal.";
+		}
+
+		std::map<gamestate::player_id_t, bool> live{};
+		for (const auto &[id, peer] : peers) live[id] = true;
+		auto disconnect_peer = [&](gamestate::player_id_t player) {
+			if (not live[player]) return;
+			live[player] = false;
+			const auto &peer = *peers.at(player);
+			peer.socket->close();
+			{
+				std::lock_guard lock{this->mutex};
+				this->active_multi_identities.erase(player);
+				this->pending_multi_results.erase(player);
+				this->pending_multi_updates.erase(player);
+				this->pending_multi_snapshots.erase(player);
+				auto &ids = this->current.remote_player_ids;
+				ids.erase(std::remove(ids.begin(), ids.end(), player), ids.end());
+				auto &commands = this->incoming_host_commands;
+				commands.erase(std::remove_if(commands.begin(), commands.end(),
+					[player](const AuthenticatedCommand &cmd) {
+						return cmd.identity.player_id == player;
+					}), commands.end());
+				this->current.disconnected_players.push_back(player);
+				if (this->current.remote_player_id == player) {
+					this->current.remote_player_id = ids.empty() ? 0 : ids.front();
+				}
+				this->current.departure_notice = player == 1
+					? "Hunter disconnected; match ended."
+					: "Builder player " + std::to_string(player)
+					  + " disconnected; match continues.";
+			}
+			for (const auto &[other, recipient] : peers) {
+				if (not live[other]) continue;
+				try {
+					recipient->socket->send_frame(recipient->session->make_frame(
+						MessageType::PARTICIPANT_DISCONNECTED,
+						encode_participant_disconnected({
+							player, DisconnectReason::CONNECTION_LOST})));
+				}
+				catch (...) {
+					// This peer is reaped on the next loop pass; don't
+					// incorrectly terminate the entire Hunter's game.
+				}
+			}
+		};
+
+		while (not this->stopping) {
+			std::map<gamestate::player_id_t, WorldState> updates{};
+			std::map<gamestate::player_id_t, std::deque<CommandResult>> decisions{};
+			{
+				std::lock_guard lock{this->mutex};
+				updates.swap(this->pending_multi_updates);
+				decisions.swap(this->pending_multi_results);
+			}
+			for (const auto &[id, peer] : peers) {
+				if (not live[id]) continue;
+				try {
+					auto &socket = *peer->socket;
+					auto &session = *peer->session;
+					auto update = updates.find(id);
+					if (update != updates.end()) {
+						auto delta = baselines.at(id).advance(std::move(update->second));
+						socket.send_frame(session.make_frame(
+							MessageType::WORLD_DELTA, encode_world_delta(delta)));
+						this->publish_stream_revision(
+							baselines.at(id).current_snapshot().world_revision, true);
+					}
+					auto decisions_for_peer = decisions.find(id);
+					if (decisions_for_peer != decisions.end()) {
+						for (auto &decision : decisions_for_peer->second) {
+							socket.send_frame(session.make_frame(
+								MessageType::COMMAND_RESULT, encode_command_result(decision)));
+						}
+					}
+					for (size_t i = 0; i < 32; ++i) {
+						auto frame = socket.try_receive_frame();
+						if (not frame) break;
+						session.validate_incoming(*frame);
+						last_seen[id] = std::chrono::steady_clock::now();
+						if (frame->message_type == MessageType::PING) {
+							if (not frame->payload.empty()) {
+								throw Error{MSG(err) << "Invalid multi-guest heartbeat"};
+							}
+							socket.send_frame(session.make_frame(MessageType::PONG, {}));
+							continue;
+						}
+						if (frame->message_type == MessageType::SNAPSHOT_REQUEST) {
+							const auto request = decode_snapshot_request(frame->payload);
+							const auto &latest = baselines.at(id).current_snapshot();
+							if (request.last_applied_revision > latest.world_revision) {
+								throw Error{MSG(err) << "Future multi-guest snapshot revision requested"};
+							}
+							socket.send_frame(session.make_frame(
+								MessageType::WORLD_SNAPSHOT, encode_world_state(latest)));
+							continue;
+						}
+						if (frame->message_type != MessageType::COMMAND_INTENT) {
+							throw Error{MSG(err) << "Unexpected multi-guest match frame"};
+						}
+						auto intent = decode_command_intent(frame->payload);
+						std::lock_guard lock{this->mutex};
+						if (this->incoming_host_commands.size() >= MAX_INFLIGHT_COMMANDS) {
+							throw Error{MSG(err) << "Multi-guest command mailbox full"};
+						}
+						this->incoming_host_commands.push_back({
+							session.get_identity(), std::move(intent)});
+					}
+					if (not socket.is_open() or not socket.peer_connected()
+					    or std::chrono::steady_clock::now() - last_seen[id] > LIVE_SESSION_TIMEOUT) {
+						throw Error{MSG(err) << "Guest transport ended"};
+					}
+				}
+				catch (const std::exception &) {
+					if (id == 1) {
+						throw Error{MSG(err) << "Hunter disconnected; match ended"};
+					}
+					disconnect_peer(id);
+				}
+			}
+			std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
+		}
+	}
+	catch (const std::exception &error) {
+		if (not this->stopping) {
+			this->publish(RelayLobbyStatus{
+				.phase = "error",
+				.message = std::string{"Multi-player match ended: "} + error.what()
+				           + ". Press F10 to reset.",
+			});
+		}
+	}
+}
+
 void RelayLobbyClient::run_refresh(RelayLobbyConfig settings) {
 	try {
 		auto socket = std::make_shared<TcpConnection>(
