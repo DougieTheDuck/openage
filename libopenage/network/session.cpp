@@ -23,7 +23,9 @@ bool is_pre_session_message(MessageType message_type) {
 	    or message_type == MessageType::RELAY_ROOM_CREATED
 	    or message_type == MessageType::RELAY_LIST_ROOMS
 	    or message_type == MessageType::RELAY_ROOM_LIST
-	    or message_type == MessageType::RELAY_JOIN_ROOM;
+	    or message_type == MessageType::RELAY_JOIN_ROOM
+	    or message_type == MessageType::RELAY_ATTACH_ROOM
+	    or message_type == MessageType::RELAY_ROOM_ATTACHED;
 }
 
 void require_session_message(MessageType message_type) {
