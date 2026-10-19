@@ -23,7 +23,7 @@ AssetDigest multi_lobby_digest() {
 	return digest;
 }
 
-void run_lobby_case(size_t people) {
+void run_lobby_case(size_t people, bool preserve_roles = false) {
 	RelayRoomDirectory directory{1};
 	auto listener = TcpListener::listen("127.0.0.1", 0);
 	std::exception_ptr relay_error{};
@@ -87,6 +87,13 @@ void run_lobby_case(size_t people) {
 					session.bind_match_player(start, participant);
 					TESTEQUALS(session.get_identity().player_id >= 1, true);
 					TESTEQUALS(session.get_identity().player_id <= people, true);
+					if (preserve_roles) {
+						// The old Builder assignments are carried through
+						// the new Hunter-owned relay, not redrawn at random.
+						TESTEQUALS(session.get_identity().player_id,
+						           static_cast<gamestate::player_id_t>(
+						               people + 2 - participant));
+					}
 					break;
 				}
 				// The same guest session now receives a recipient-private
@@ -135,7 +142,24 @@ void run_lobby_case(size_t people) {
 	}
 	TESTEQUALS(admitted, true);
 	TESTEQUALS(directory.room_count(), size_t{0});
-	auto assignment = host.start();
+	StartMatch assignment{};
+	if (preserve_roles) {
+		std::map<uint64_t, gamestate::player_id_t> old_roles{};
+		old_roles.emplace(1, 1); // Rehosted Hunter is the room creator.
+		for (size_t participant = 2; participant <= people; ++participant) {
+			old_roles.emplace(participant, people + 2 - participant);
+		}
+		// Invalid fallback promotions are rejected before altering the
+		// already admitted roster or starting the game.
+		auto missing_hunter = old_roles;
+		missing_hunter[1] = 2;
+		TESTTHROWS(host.start_fixed(missing_hunter));
+		auto duplicate_slot = old_roles;
+		duplicate_slot[2] = 1;
+		TESTTHROWS(host.start_fixed(duplicate_slot));
+		assignment = host.start_fixed(old_roles);
+	}
+	else assignment = host.start();
 	TESTEQUALS(assignment.assignments.size(), people);
 	size_t hunters = 0;
 	for (const auto &entry : assignment.assignments) {
@@ -200,6 +224,10 @@ void run_lobby_case(size_t people) {
 void relay_multi_host_lobby() {
 	run_lobby_case(3);
 	run_lobby_case(8);
+	// A Hunter-owned replacement room retains every original player slot
+	// across fresh authenticated relay sessions, without a second lottery.
+	run_lobby_case(3, true);
+	run_lobby_case(8, true);
 }
 
 } // namespace openage::network::tests
