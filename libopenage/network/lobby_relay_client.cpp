@@ -189,6 +189,13 @@ void RelayLobbyClient::request_start() {
 
 void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
 	std::lock_guard lock{this->mutex};
+	// Simulation captures can finish one GUI frame after a remote Builder
+	// has departed. Ignore that specific obsolete recipient without ending
+	// the authoritative match.
+	if (this->current.multi_host
+	    and std::find(this->current.disconnected_players.begin(),
+	                  this->current.disconnected_players.end(), snapshot.local_player_id)
+	        != this->current.disconnected_players.end()) return;
 	if (not this->hosting or this->current.phase != "assigned"
 	    or (this->current.remote_player_id == 0
 	        and this->active_multi_identities.empty())
@@ -212,6 +219,10 @@ void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
 
 void RelayLobbyClient::provide_host_update(WorldState world) {
 	std::lock_guard lock{this->mutex};
+	if (this->current.multi_host
+	    and std::find(this->current.disconnected_players.begin(),
+	                  this->current.disconnected_players.end(), world.local_player_id)
+	        != this->current.disconnected_players.end()) return;
 	if (not this->hosting
 	    or (this->current.phase != "bootstrap" and this->current.phase != "streaming")
 	    or (this->current.remote_player_id == 0
