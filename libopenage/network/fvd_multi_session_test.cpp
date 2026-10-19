@@ -82,6 +82,7 @@ void run_multi_host(TcpListener &listener, size_t players) {
 	TESTEQUALS(player_for_participant(assignments, 1), gamestate::player_id_t{1});
 
 	MatchConnectionState connected{state->get_fvd()->get_player_count()};
+	connected.restrict_to_participants(players);
 	MatchDisconnectCoordinator coordinator{connected};
 	std::vector<RemotePeer> peers{};
 	peers.reserve(players - 1);
@@ -209,6 +210,9 @@ void run_multi_client(uint16_t port, size_t players) {
 	tracker.accept_snapshot(decode_world_state(first->payload));
 	auto world = tracker.get_world_state().value();
 	TESTEQUALS(world.players.size(), size_t{8});
+	for (size_t slot = 1; slot <= world.players.size(); ++slot) {
+		TESTEQUALS(world.players.at(slot - 1).connected, slot <= players);
+	}
 	auto builder = std::find_if(world.entities.begin(), world.entities.end(),
 		[player](const auto &entity) {
 			return entity.owner_id == player
