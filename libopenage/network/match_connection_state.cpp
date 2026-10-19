@@ -45,7 +45,7 @@ void MatchConnectionState::bind_remote(const SessionIdentity &identity) {
 
 bool MatchConnectionState::accepts_commands(const SessionIdentity &identity) const {
 	if (identity.session_id == 0 or identity.player_id == 0
-	    or identity.player_id > this->participants.size()) {
+	    or identity.player_id > this->participants.size() or not this->is_match_active()) {
 		return false;
 	}
 
@@ -78,6 +78,12 @@ bool MatchConnectionState::is_connected(
 		                     << " is outside the match participant range"};
 	}
 	return this->participants.at(player_id - 1).connected;
+}
+
+bool MatchConnectionState::is_match_active() const {
+	// Player 1 is always the Hunter. Other players may disconnect without
+	// ending the match; only Hunter loss makes further orders invalid.
+	return this->participants.front().connected;
 }
 
 size_t MatchConnectionState::get_player_count() const {
