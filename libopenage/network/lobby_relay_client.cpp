@@ -1327,6 +1327,139 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 	}
 }
 
+void RelayLobbyClient::run_rehosted_guest(
+	RelayLobbyConfig settings, const RehostOffer &offer) {
+	if (this->stopping) return;
+	if (offer.authority_epoch != 2 or offer.room_id == 0) {
+		throw Error{MSG(err) << "Invalid Hunter authority redirect"};
+	}
+	auto child = std::make_shared<RelayLobbyClient>();
+	settings.hosting = false;
+	settings.player_capacity = 2; // Guests never create an authority room.
+	settings.room_id = offer.room_id;
+	settings.rehost_start.reset();
+	settings.prepared_rehost_lobby.reset();
+	settings.rehost_offer = offer;
+	child->connect(std::move(settings));
+	{
+		std::lock_guard lock{this->mutex};
+		if (this->stopping or this->handoff_client) {
+			child->close();
+			return;
+		}
+		this->handoff_client = child;
+	}
+	// The old authenticated sessions stay alive until the replacement has
+	// completed StartMatch. Losing the former Builder host after this point
+	// cannot affect the Hunter's independent relay room.
+	while (not this->stopping) {
+		const auto status = child->status();
+		if (status.phase == "assigned" or status.phase == "bootstrap"
+		    or status.phase == "streaming" or status.phase == "playing") return;
+		if (status.phase == "error") {
+			throw Error{MSG(err) << "Hunter rehost failed: " << status.message};
+		}
+		std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
+	}
+}
+
+void RelayLobbyClient::begin_hunter_rehost(
+	RelayLobbyConfig settings, const StartMatch &assignment,
+	ConnectionSession &old_session, TcpConnection &old_socket) {
+	if (this->stopping) return;
+	const auto original_player = old_session.get_identity().player_id;
+	if (original_player != 1
+	    or player_for_participant(assignment, assignment.host_participant_id) == 1) {
+		throw Error{MSG(err) << "Only the remote Hunter can initiate authority transfer"};
+	}
+	auto room = std::make_shared<RelayMultiHostLobby>(
+		settings.address, settings.port, parse_token(settings.token_hex),
+		settings.room_name + " (Hunter)", settings.name,
+		assignment.assignments.size());
+	room->prepare_hunter_rehost(assignment);
+	auto child = std::make_shared<RelayLobbyClient>();
+	settings.hosting = true;
+	settings.room_id = 0;
+	settings.player_capacity = assignment.assignments.size();
+	settings.rehost_offer.reset();
+	settings.rehost_start = assignment;
+	settings.prepared_rehost_lobby = room;
+	child->connect(std::move(settings));
+	{
+		std::lock_guard lock{this->mutex};
+		if (this->stopping or this->handoff_client) {
+			child->close();
+			return;
+		}
+		this->handoff_client = child;
+	}
+	// The old Builder host forwards each private invitation on the original
+	// authenticated participant session. Each Builder subsequently proves
+	// their original slot to the Hunter's NEW accepted session.
+	for (const auto &slot : assignment.assignments) {
+		if (slot.player_id == 1) continue;
+		old_socket.send_frame(old_session.make_frame(
+			MessageType::AUTHORITY_REHOST_OFFER,
+			encode_rehost_offer(room->rehost_offer_for(slot.player_id))));
+	}
+	while (not this->stopping) {
+		auto status = child->status();
+		if (status.phase == "assigned" or status.phase == "bootstrap"
+		    or status.phase == "streaming" or status.phase == "playing") return;
+		if (status.phase == "error") {
+			throw Error{MSG(err) << "Hunter authority room failed: " << status.message};
+		}
+		std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
+	}
+}
+
+void RelayLobbyClient::forward_rehost_offers(
+	const StartMatch &assignment,
+	const std::map<gamestate::player_id_t,
+	               std::pair<ConnectionSession *, TcpConnection *>> &old_peers,
+	const RelayLobbyConfig &settings) {
+	if (this->stopping) return;
+	const auto old_host_player =
+		player_for_participant(assignment, assignment.host_participant_id);
+	if (old_host_player == 1 or not old_peers.contains(1)) {
+		throw Error{MSG(err) << "Hunter rehost needs the original Builder host and Hunter channel"};
+	}
+	const auto &[hunter_session, hunter_socket] = old_peers.at(1);
+	std::map<gamestate::player_id_t, RehostOffer> invitations{};
+	const auto expires = std::chrono::steady_clock::now() + std::chrono::seconds{30};
+	while (not this->stopping and invitations.size() + 1 < assignment.assignments.size()) {
+		auto frame = hunter_socket->try_receive_frame();
+		if (frame) {
+			hunter_session->validate_incoming(*frame);
+			if (frame->message_type != MessageType::AUTHORITY_REHOST_OFFER) {
+				throw Error{MSG(err) << "Expected the Hunter's private authority handoff offer"};
+			}
+			auto offer = decode_rehost_offer(frame->payload);
+			if (offer.original_lobby_revision != assignment.lobby_revision
+			    or offer.original_player_id == 1 or offer.authority_epoch != 2
+			    or not old_peers.contains(offer.original_player_id)
+			    or invitations.contains(offer.original_player_id)
+			    or (not invitations.empty()
+			        and invitations.begin()->second.room_id != offer.room_id)) {
+				throw Error{MSG(err) << "Invalid or duplicate Hunter authority invitation"};
+			}
+			invitations.emplace(offer.original_player_id, offer);
+			if (offer.original_player_id != old_host_player) {
+				auto &[session, socket] = old_peers.at(offer.original_player_id);
+				socket->send_frame(session->make_frame(
+					MessageType::AUTHORITY_REHOST_OFFER, encode_rehost_offer(offer)));
+			}
+		}
+		else if (not hunter_socket->peer_connected()
+		         or std::chrono::steady_clock::now() >= expires) {
+			throw Error{MSG(err) << "Hunter authority redirection timed out"};
+		}
+		else std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
+	}
+	if (this->stopping) return;
+	this->run_rehosted_guest(settings, invitations.at(old_host_player));
+}
+
 void RelayLobbyClient::run_refresh(RelayLobbyConfig settings) {
 	try {
 		auto socket = std::make_shared<TcpConnection>(
