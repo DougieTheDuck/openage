@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -49,12 +50,22 @@ public:
 	ParticipantSnapshot roster() const;
 	/** Send one immutable assignment on every admitted channel. */
 	StartMatch start();
+
+	/**
+	 * Used after a pre-game Hunter authority transfer. The Hunter creates
+	 * the new room, and callers map its newly authenticated participant IDs
+	 * to the *existing* immutable match player slots. Never redraw roles.
+	 * All new join credentials must be verified by the caller beforehand.
+	 */
+	StartMatch start_fixed(
+		const std::map<uint64_t, gamestate::player_id_t> &player_slots);
 	/** After start, each Peer::session is rebound to the assigned player. */
 	const std::vector<Peer> &channels() const;
 	void close();
 
 private:
 	void broadcast_roster();
+	void broadcast_start(const StartMatch &assignment);
 	uint64_t advertised_room_id{0};
 	HostLobby lobby;
 	std::vector<Peer> channels_by_slot{};
