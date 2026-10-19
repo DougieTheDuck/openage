@@ -14,6 +14,7 @@
 #include "network/replication.h"
 #include "network/relay.h"
 #include "network/relay_multi_host_lobby.h"
+#include "network/authority_succession.h"
 #include "network/world_delta.h"
 
 namespace openage::network {
@@ -425,6 +426,7 @@ void RelayLobbyClient::close() {
 }
 
 void RelayLobbyClient::run(RelayLobbyConfig settings) {
+	std::optional<AuthoritySuccession> succession{};
 	try {
 		auto socket = std::make_shared<TcpConnection>(
 			TcpConnection::connect(settings.address, settings.port));
@@ -480,6 +482,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			if (this->stopping) return;
 			auto assignment = lobby.start();
 			validate_start_match_against_roster(roster, assignment);
+			succession.emplace(assignment, assignment.host_participant_id);
 			socket->send_frame(accepted->make_frame(
 				MessageType::START_MATCH, encode_start_match(assignment)));
 			// The handshake's temporary slot 2 is not the role lottery result.
@@ -675,6 +678,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			if (this->stopping) return;
 			const auto assigned = decode_start_match(frame->payload);
 			validate_start_match_against_roster(latest_roster, assigned);
+			succession.emplace(assigned, assigned.host_participant_id);
 			session.bind_match_player(assigned, provisional_participant_id);
 			const auto guest_player = session.get_identity().player_id;
 			const auto host_player = player_for_participant(assigned, 1);
@@ -881,9 +885,21 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				if (replication) {
 					replication->host_disconnected();
 				}
+				std::string reason = std::string{"Match connection closed: "} + error.what();
+				// Explicitly distinguish a Builder *authority* loss from a
+				// Builder guest leaving. A Hunter guest is the rightful
+				// successor, but cannot run an imaginary reconstruction from
+				// the presentation-only WorldState.
+				if (not settings.hosting and succession
+				    and succession->host_is_builder()
+				    and this->status().local_role == "HUNTER") {
+					reason += ". You are the Hunter and designated successor, "
+					          "but there is no restorable simulation checkpoint "
+					          "or surviving peer transport. Match ended safely";
+				}
 				this->publish(RelayLobbyStatus{
 					.phase = "error",
-					.message = std::string{"Match connection closed: "} + error.what()
+					.message = std::move(reason)
 					         + ". Press F10 to reset before hosting or joining a new match.",
 				});
 			}
