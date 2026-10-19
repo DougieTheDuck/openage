@@ -90,7 +90,10 @@ size_t MatchDisconnectCoordinator::process_closures(
 		const auto base_revision = world_revision;
 		++world_revision;
 		for (auto &[player_id, recipient] : this->remotes) {
-			if (not this->connections.accepts_commands(recipient.identity)) {
+			// After a Hunter departure, command acceptance stops immediately,
+			// but surviving Builders still need the final disconnect notice
+			// and world revision in order to end their client matches.
+			if (not this->connections.is_connected(player_id)) {
 				continue;
 			}
 			auto complete = capture_fvd_state(
