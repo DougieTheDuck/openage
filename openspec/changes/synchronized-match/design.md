@@ -74,16 +74,18 @@ The `RelayRoomDirectory` now reserves seven independently forwarded
 host channels; `RelayMultiHostLobby` joins them to one `HostLobby`,
 broadcasts roster revisions, starts one role lottery and rebinds each
 session. A dedicated test exercises three/eight player public rooms,
-bootstraps and command round trips. The existing GUI is **not yet using**
-this multi-host admission manager.
+bootstraps and command round trips. The game GUI now selects the
+multi-host admission manager when the host chooses a 3–8-player room.
 
 The three/eight-player `fvd_multi_session` test exercises the current
 authoritative command bridge, unique TCP `ConnectionSession` objects, per-peer
 `WorldDeltaBaseline` instances and `MatchDisconnectCoordinator` without
 depending on the public relay UI. This validates the multi-session core,
-**not** the multi-guest gameplay loop in the GUI. The existing
-`RelayLobbyClient` still maintains one game transport and one remote
-recipient. Raising lobby's `max_players` alone would create false capacity.
+A separate `lobby_relay_client` test now covers the live three-client
+runner's role assignment, recipient-private snapshots, command replies,
+Builder departure, and surviving players' continued orders. The multi-host
+GUI also uses that runner, but Windows and physical-machine GUI tests remain
+outstanding.
 
 The remaining integration must:
 
@@ -94,23 +96,21 @@ The remaining integration must:
 2. **Implemented in `RelayMultiHostLobby`:** a single host-owned
    `HostLobby` broadcasts each roster revision to all admitted guests
    and sends one immutable `START_MATCH` mapping.
-3. Configure the authoritative connection state from the admitted roster
-   before bootstrap, so unused scenario slots are disconnected. Remove or
-   suppress the seven-minus-N unused scenario Builders for the finished game.
-4. Capture recipient-specific bootstrap snapshots sequentially on the
-   simulation thread and require each guest's `MATCH_READY` before starting
-   the common host clock. For live updates, keep **one delta baseline per
-   recipient** and never share another player's private kill count.
-5. Process authenticated intents from all live peers on the single host
-   simulation thread, validating ownership against persistent connection
-   state and resolving simultaneous construction conflicts in one event
-   order. Bind deferred command results to their originating peer's
-   session ID and connection generation.
-6. On Builder loss, mark their fixed slot disconnected, preserve entities,
-   and send `PARTICIPANT_DISCONNECTED` followed by one revisioned delta
-   to remaining peers. On Hunter loss, distribute the terminal notice and
-   stop the match. A lost authoritative **Builder host** still requires
-   separate continuity work under 1.17.
+3. **Implemented:** Configure authoritative capture with the admitted
+   player count, mark unused slots disconnected, and remove unassigned
+   starting Builders on the simulation owner thread before bootstrap.
+4. **Implemented:** Capture recipient-specific bootstrap snapshots
+   sequentially and await every surviving guest's `MATCH_READY`.
+   Maintain one delta baseline per recipient and private scores.
+5. **Implemented:** Queue intents from all authenticated peers onto the
+   single simulation thread; verify each session again just before execution.
+   Sequence concurrent construction events on the host and guard callbacks
+   with the source identity and session generation.
+6. **Implemented for guest departures:** A Builder leaving retains
+   existing entities and ownership, loses command access, and generates
+   `PARTICIPANT_DISCONNECTED` and a subsequent revisioned world update.
+   Hunter loss distributes terminal notices and closes the room. A lost
+   authoritative **Builder host** still requires 1.17.
 7. Exercise the public-room runner with 3, 4 and 8 local game processes
    including at least one human Hunter, concurrent tower sites, deaths,
    stale-command rejections, guest loss, host loss and F10 rematches.
