@@ -2,6 +2,8 @@
 
 #include "simulation.h"
 
+#include <algorithm>
+
 #include <utility>
 #include "error/error.h"
 
@@ -122,6 +124,14 @@ void GameSimulation::run() {
 			auto world = network::capture_fvd_state(
 				this->game->get_state(), connections, current_time, 0, 1, bootstrap->recipient);
 			std::lock_guard lock{this->bootstrap_mutex};
+			if (this->network_admitted_players > 0) {
+				for (auto &player : world.players) {
+					player.connected = player.player_id <= this->network_admitted_players
+						&& std::find(this->network_disconnected_players.begin(),
+						             this->network_disconnected_players.end(), player.player_id)
+						   == this->network_disconnected_players.end();
+				}
+			}
 			if (bootstrap->generation == this->bootstrap_generation) {
 				this->bootstrap_ready = std::move(world);
 			}
@@ -144,6 +154,14 @@ void GameSimulation::run() {
 				this->game->get_state(), connections, current_time,
 				0, update->revision, update->recipient);
 			std::lock_guard lock{this->bootstrap_mutex};
+			if (this->network_admitted_players > 0) {
+				for (auto &player : world.players) {
+					player.connected = player.player_id <= this->network_admitted_players
+						&& std::find(this->network_disconnected_players.begin(),
+						             this->network_disconnected_players.end(), player.player_id)
+						   == this->network_disconnected_players.end();
+				}
+			}
 			if (update->generation == this->bootstrap_generation) {
 				this->update_ready = std::move(world);
 			}
@@ -230,6 +248,29 @@ void GameSimulation::attach_renderer(const std::shared_ptr<renderer::RenderFacto
 	this->terrain_factory->attach_renderer(render_factory);
 }
 
+void GameSimulation::configure_network_participants(size_t admitted_players) {
+	if (admitted_players < 2 or admitted_players > network::MAX_STATE_PLAYERS) {
+		throw Error{MSG(err) << "FVD network match needs 2–8 admitted players"};
+	}
+	std::lock_guard lock{this->bootstrap_mutex};
+	if (this->network_admitted_players != 0
+	    and this->network_admitted_players != admitted_players) {
+		throw Error{MSG(err) << "Cannot change admitted player slots during a match"};
+	}
+	this->network_admitted_players = admitted_players;
+}
+
+void GameSimulation::report_network_participant_disconnect(player_id_t player) {
+	std::lock_guard lock{this->bootstrap_mutex};
+	if (this->network_admitted_players == 0 or player == 0
+	    or player > this->network_admitted_players) return;
+	if (std::find(this->network_disconnected_players.begin(),
+	              this->network_disconnected_players.end(), player)
+	    == this->network_disconnected_players.end()) {
+		this->network_disconnected_players.push_back(player);
+	}
+}
+
 void GameSimulation::request_network_bootstrap(player_id_t recipient) {
 	if (recipient == 0 or recipient > network::MAX_STATE_PLAYERS) {
 		throw Error{MSG(err) << "Invalid FVD bootstrap recipient"};
@@ -299,6 +340,8 @@ void GameSimulation::cancel_network_bootstrap() {
 	this->bootstrap_ready.reset();
 	this->update_requested.reset();
 	this->update_ready.reset();
+	this->network_admitted_players = 0;
+	this->network_disconnected_players.clear();
 	// Commands are validated against the guest session and must not survive
 	// leaving the current match.
 	std::lock_guard commands_lock{this->network_command_mutex};
