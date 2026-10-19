@@ -129,6 +129,9 @@ public:
 	 * False means that session no longer exists; the result is discarded.
 	 */
 	uint64_t get_session_generation() const;
+	/** Revalidate an already queued command before simulation mutation. */
+	bool accepts_host_command(const SessionIdentity &identity,
+	                          uint64_t generation) const;
 	bool send_command_result(const SessionIdentity &identity,
 	                         uint64_t generation, CommandResult result);
 
