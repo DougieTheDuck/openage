@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <limits>
 #include <mutex>
 #include <shared_mutex>
@@ -279,7 +280,13 @@ void TcpConnection::send_frame(const Frame &frame) {
 
 	auto bytes = encode_frame(frame);
 	size_t offset = 0;
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
 	while (offset < bytes.size()) {
+		// A silent or backpressured peer must not block the relay worker
+		// forever, preventing heartbeat processing or a clean match reset.
+		if (std::chrono::steady_clock::now() >= deadline) {
+			throw Error{MSG(err) << "Timed out sending an FVD TCP frame (15s)"};
+		}
 		if (this->socket_handle.load() != socket_handle) {
 			throw Error{MSG(err) << "FVD TCP connection closed during frame send"};
 		}
