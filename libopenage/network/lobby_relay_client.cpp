@@ -152,6 +152,8 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
 		this->multi_host_lobby.reset();
+		this->prepared_rehost_lobby.reset();
+		this->handoff_client.reset();
 		this->roles_assigned_at.reset();
 	}
 	this->publish(RelayLobbyStatus{
@@ -181,7 +183,19 @@ void RelayLobbyClient::refresh(RelayLobbyConfig settings) {
 	}};
 }
 
+std::shared_ptr<RelayLobbyClient> RelayLobbyClient::replacement() const {
+	std::lock_guard lock{this->mutex};
+	return this->handoff_client;
+}
+
+bool RelayLobbyClient::is_authority() const {
+	if (auto next = this->replacement()) return next->is_authority();
+	std::lock_guard lock{this->mutex};
+	return this->hosting;
+}
+
 void RelayLobbyClient::request_start() {
+	if (auto next = this->replacement()) { next->request_start(); return; }
 	std::lock_guard lock{this->mutex};
 	if (this->current.can_start and this->current.connected) {
 		this->start_requested = true;
@@ -189,6 +203,7 @@ void RelayLobbyClient::request_start() {
 }
 
 void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
+	if (auto next = this->replacement()) { next->provide_host_snapshot(std::move(snapshot)); return; }
 	std::lock_guard lock{this->mutex};
 	// Simulation captures can finish one GUI frame after a remote Builder
 	// has departed. Ignore that specific obsolete recipient without ending
@@ -219,6 +234,7 @@ void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
 }
 
 void RelayLobbyClient::provide_host_update(WorldState world) {
+	if (auto next = this->replacement()) { next->provide_host_update(std::move(world)); return; }
 	std::lock_guard lock{this->mutex};
 	if (this->current.multi_host
 	    and std::find(this->current.disconnected_players.begin(),
@@ -252,6 +268,7 @@ bool RelayLobbyClient::reveal_finished_locked() const {
 }
 
 bool RelayLobbyClient::send_guest_command(CommandIntent intent) {
+	if (auto next = this->replacement()) return next->send_guest_command(std::move(intent));
 	std::lock_guard lock{this->mutex};
 	if (this->hosting or not this->current.connected
 	    or (this->current.phase != "bootstrap" and this->current.phase != "streaming")
@@ -268,6 +285,7 @@ bool RelayLobbyClient::send_guest_command(CommandIntent intent) {
 }
 
 std::vector<AuthenticatedCommand> RelayLobbyClient::take_host_commands() {
+	if (auto next = this->replacement()) return next->take_host_commands();
 	std::lock_guard lock{this->mutex};
 	std::vector<AuthenticatedCommand> drained;
 	drained.reserve(this->incoming_host_commands.size());
@@ -279,12 +297,14 @@ std::vector<AuthenticatedCommand> RelayLobbyClient::take_host_commands() {
 }
 
 uint64_t RelayLobbyClient::get_session_generation() const {
+	if (auto next = this->replacement()) return next->get_session_generation();
 	std::lock_guard lock{this->mutex};
 	return this->session_generation;
 }
 
 bool RelayLobbyClient::accepts_host_command(
 	const SessionIdentity &identity, uint64_t generation) const {
+	if (auto next = this->replacement()) return next->accepts_host_command(identity, generation);
 	std::lock_guard lock{this->mutex};
 	if (this->stopping or not this->hosting or not this->current.connected
 	    or generation != this->session_generation) return false;
@@ -300,6 +320,7 @@ bool RelayLobbyClient::accepts_host_command(
 
 bool RelayLobbyClient::send_command_result(
 	const SessionIdentity &identity, uint64_t generation, CommandResult result) {
+	if (auto next = this->replacement()) return next->send_command_result(identity, generation, std::move(result));
 	std::lock_guard lock{this->mutex};
 	if (this->stopping or not this->hosting or not this->current.connected
 	    or generation != this->session_generation
@@ -326,6 +347,7 @@ bool RelayLobbyClient::send_command_result(
 }
 
 std::vector<CommandResult> RelayLobbyClient::take_command_results() {
+	if (auto next = this->replacement()) return next->take_command_results();
 	std::lock_guard lock{this->mutex};
 	std::vector<CommandResult> drained;
 	drained.reserve(this->guest_command_results.size());
@@ -337,6 +359,7 @@ std::vector<CommandResult> RelayLobbyClient::take_command_results() {
 }
 
 bool RelayLobbyClient::request_recovery_snapshot() {
+	if (auto next = this->replacement()) return next->request_recovery_snapshot();
 	std::lock_guard lock{this->mutex};
 	if (this->hosting or not this->current.connected
 	    or (this->current.phase != "bootstrap"
@@ -347,11 +370,13 @@ bool RelayLobbyClient::request_recovery_snapshot() {
 }
 
 std::shared_ptr<ReplicationTracker> RelayLobbyClient::get_replication() const {
+	if (auto next = this->replacement()) return next->get_replication();
 	std::lock_guard lock{this->mutex};
 	return this->guest_replication;
 }
 
 RelayLobbyStatus RelayLobbyClient::status() const {
+	if (auto next = this->replacement()) return next->status();
 	std::lock_guard lock{this->mutex};
 	auto result = this->current;
 	if (this->roles_assigned_at
@@ -391,8 +416,10 @@ void RelayLobbyClient::close() {
 	this->start_requested = false;
 	std::shared_ptr<TcpConnection> socket;
 	std::shared_ptr<RelayMultiHostLobby> multi_host;
+	std::shared_ptr<RelayLobbyClient> successor;
 	{
 		std::lock_guard lock{this->mutex};
+		successor = this->handoff_client;
 		++this->session_generation;
 		this->active_remote_identity.reset();
 		this->active_multi_identities.clear();
@@ -401,6 +428,7 @@ void RelayLobbyClient::close() {
 	}
 	if (socket) socket->close();
 	if (multi_host) multi_host->close();
+	if (successor) successor->close();
 	if (this->worker.joinable()) this->worker.join();
 	{
 		std::lock_guard lock{this->mutex};
@@ -419,6 +447,8 @@ void RelayLobbyClient::close() {
 		this->guest_snapshot_requested = false;
 		this->last_host_offered_revision = 0;
 		this->guest_replication.reset();
+		this->handoff_client.reset();
+		this->prepared_rehost_lobby.reset();
 		this->roles_assigned_at.reset();
 		this->hosting = false;
 		this->current = {};
