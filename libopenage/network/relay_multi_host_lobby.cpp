@@ -135,6 +135,20 @@ StartMatch RelayMultiHostLobby::start() {
 	if (this->started) {
 		throw Error{MSG(err) << "FVD multi-guest lobby has already started"};
 	}
+	// A guest can close its TCP socket between the last admission poll
+	// and Start. Never immortalize a known-disconnected participant in
+	// the final immutable Hunter lottery.
+	bool roster_changed = false;
+	for (auto &peer : this->channels_by_slot) {
+		if (peer.admitted and not peer.socket->peer_connected()) {
+			this->lobby.leave(peer.participant_id);
+			peer.admitted = false;
+			peer.session.reset();
+			peer.socket->close();
+			roster_changed = true;
+		}
+	}
+	if (roster_changed) this->broadcast_roster();
 	const auto assignment = this->lobby.start();
 	// All guests receive the same assignment over their own accepted
 	// session. Never combine per-connection sequence numbers.
