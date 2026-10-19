@@ -584,6 +584,9 @@ void Presenter::refresh_fvd_lobby_state() {
 	update("localRole", QString::fromStdString(state.local_role));
 	update("roleSeconds", static_cast<int>(state.role_seconds_remaining));
 	update("worldRevision", static_cast<qulonglong>(state.snapshot_revision));
+	update("builderDisconnected",
+	       not state.connected and state.local_role == "HUNTER"
+	       and state.remote_player_id == 0 and state.phase == "playing");
 }
 
 void Presenter::refresh_fvd_guest_visuals() {
@@ -898,6 +901,7 @@ void Presenter::init_input() {
 				this->fvd_lobby_state->insert("localRole", QString{});
 				this->fvd_lobby_state->insert("roleSeconds", 0);
 				this->fvd_lobby_state->insert("worldRevision", static_cast<qulonglong>(0));
+				this->fvd_lobby_state->insert("builderDisconnected", false);
 				this->fvd_lobby_state->insert("enabled", true);
 				this->gui->set_context_property("fvdLobby", this->fvd_lobby_state.get());
 			}
