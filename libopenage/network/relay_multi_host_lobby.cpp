@@ -2,6 +2,8 @@
 
 #include "relay_multi_host_lobby.h"
 
+#include <algorithm>
+#include <random>
 #include <utility>
 
 #include "error/error.h"
@@ -19,17 +21,30 @@ RelayMultiHostLobby::RelayMultiHostLobby(
 		throw Error{MSG(err) << "FVD room capacity must be between 2 and "
 		                     << MAX_STATE_PLAYERS};
 	}
+	// Even public rooms need a secret creator capability for attaching
+	// additional host sockets. A zero public guest token must NEVER be
+	// sufficient to impersonate another room's host channels.
+	RelayToken creator_token = host_token;
+	if (std::all_of(creator_token.begin(), creator_token.end(),
+	                [](uint8_t byte) { return byte == 0; })) {
+		std::random_device entropy{};
+		for (auto &byte : creator_token) {
+			byte = static_cast<uint8_t>(entropy());
+		}
+		// Ensure no accidental all-zero capability even with a poor RNG.
+		creator_token[0] |= 1;
+	}
 	this->channels_by_slot.reserve(player_capacity - 1);
 	auto primary = std::make_shared<TcpConnection>(
 		TcpConnection::connect(address, port));
 	this->advertised_room_id = create_relay_room(
-		*primary, host_token, room_name, host_name);
+		*primary, creator_token, room_name, host_name);
 	this->channels_by_slot.push_back({2, std::move(primary), nullptr, false});
 	for (size_t index = 3; index <= player_capacity; ++index) {
 		auto socket = std::make_shared<TcpConnection>(
 			TcpConnection::connect(address, port));
 		const auto reserved = attach_relay_room(
-			*socket, host_token, this->advertised_room_id);
+			*socket, creator_token, this->advertised_room_id);
 		if (reserved != index) {
 			throw Error{MSG(err) << "FVD relay returned a noncontiguous host slot"};
 		}
