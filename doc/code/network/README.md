@@ -273,6 +273,15 @@ bin/run relay \
 
 Enter the corresponding token on each client before hosting, refreshing or joining.
 
+Authority succession safety check:
+`bin/run test openage::network::tests::authority_succession`. This verifies
+Hunter-only termination, monotonic epochs, stale takeover rejection, and the
+all-participant fresh-session barrier required for a pre-game role-preserving
+Hunter rehost. The `relay_multi_host_lobby` test also exercises
+`start_fixed()` for 3 and 8 players.
+These are authority **foundation** checks; they do not validate a live
+Builder-host disconnect or real simulation restoration.
+
 Focused automated checks: `bin/run test openage::network::tests::lobby_relay_client`, `bin/run test openage::network::tests::match_disconnect_coordinator`, and `bin/run test openage::network::tests::fvd_multi_session` (requires FVD assets). Additional multi-room checks are `bin/run test openage::network::tests::relay_service` and `bin/run test openage::network::tests::relay_multi_host_lobby`; the latter covers a single public room with 3 and 8 participants, shared roster/roles, recipient-bound bootstrap frames and authenticated command/result round trips. The relay test exercises command-generation rejection after close/reconnect, several simultaneous queued/targeted orders, and host acknowledgements. The coordinator test covers Builder survival and terminal Hunter departure with a final replicated notice.
 Relay directory and access-control check: `bin/run test openage::network::tests::relay_service`.
 Local non-network gameplay: `bin/run game --solo`.
@@ -555,9 +564,17 @@ continues advancing its local simulation. Undelivered Builder commands are
 discarded, its old connection is disabled, and the HUD announces the Builder
 departure. If the **guest is Hunter**, its departure ends the host's match.
 If the **host is Builder**, its departure still ends the guest Hunter's match:
-the authoritative simulation has disappeared, and host migration is not
-implemented. This is a known limitation relative to the desired role-based
-policy, especially important for eventual 3–8 player matches.
+the authoritative simulation has disappeared, and the guest cannot rebuild it
+from the presentation-only `WorldState`. The Hunter now has a
+`AuthoritySuccession` election/epoch plan, but the runtime refuses to
+promote it without a restored simulation and independent transport.
+The safer planned 1.17 path moves authority **before** any gameplay:
+the Hunter creates its own relay room, all Builders (including the original
+lobby creator) authenticate new sessions with their unchanged player IDs,
+and `RelayMultiHostLobby::start_fixed()` reuses the initial lottery.
+Once that redirect is wired into the GUI, the initial Builder host will no
+longer be the authoritative host, so leaving will not end the match.
+The redirect and renderer/controller role swap are not yet implemented.
 
 The multi-participant `MatchDisconnectCoordinator` keeps surviving
 Builder sessions after another Builder disconnects, retaining original ownership and queued commands. The connection state now marks a match inactive when player 1 (Hunter) disconnects, refusing all further remote commands. The coordinator still broadcasts a final `ParticipantDisconnected` and world delta to surviving Builders so they can learn why the match ended. The live 3–8-player host worker sends those notices, drops only the
