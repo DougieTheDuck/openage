@@ -99,6 +99,15 @@ void RelayMultiHostLobby::prepare_hunter_rehost(
 	}
 	this->rehost_tickets = std::make_unique<RehostTicketBook>(
 		original_assignment, this->advertised_room_id);
+	this->rehost_succession = std::make_unique<AuthoritySuccession>(
+		original_assignment, original_assignment.host_participant_id);
+	// The new Hunter is local to this process, so it doesn't consume a
+	// remote relay channel. Give that local authority incarnation a
+	// fresh session ID, distinct from any network guest.
+	if (not this->rehost_succession->acknowledge_pregame_rehost(
+		{generate_session_id(), 1}, 2)) {
+		throw Error{MSG(err) << "Could not establish local Hunter rehost epoch"};
+	}
 }
 
 RehostOffer RelayMultiHostLobby::rehost_offer_for(
@@ -111,10 +120,16 @@ RehostOffer RelayMultiHostLobby::rehost_offer_for(
 
 StartMatch RelayMultiHostLobby::start_rehost() {
 	if (not this->rehost_tickets or not this->rehost_tickets->complete()
+	    or not this->rehost_succession or not this->rehost_succession->pregame_rehost_ready()
 	    or this->lobby.size() != this->rehost_tickets->expected_guests() + 1) {
 		throw Error{MSG(err) << "Hunter handoff requires every authenticated Builder"};
 	}
-	return this->start_fixed(this->rehost_tickets->new_participant_slots());
+	auto assignment = this->start_fixed(this->rehost_tickets->new_participant_slots());
+	const auto lease = this->rehost_succession->commit_pregame_hunter_rehost();
+	if (lease.epoch != 2 or lease.authority != 1) {
+		throw Error{MSG(err) << "Invalid Hunter authority after successful rehost"};
+	}
+	return assignment;
 }
 
 size_t RelayMultiHostLobby::poll_admissions(const AssetDigest &digest) {
@@ -134,6 +149,10 @@ size_t RelayMultiHostLobby::poll_admissions(const AssetDigest &digest) {
 					if (not this->rehost_tickets->redeem(
 						proof, peer.session->get_identity())) {
 						throw Error{MSG(err) << "Invalid or reused Hunter rehost ticket"};
+					}
+					if (not this->rehost_succession->acknowledge_pregame_rehost(
+						{peer.session->get_identity().session_id, proof.original_player_id}, 2)) {
+						throw Error{MSG(err) << "Hunter succession rejected a duplicate new session"};
 					}
 					this->lobby.join(peer.participant_id, std::move(peer.accepted_name));
 					peer.admitted = true;
