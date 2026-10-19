@@ -165,8 +165,51 @@ StartMatch RelayMultiHostLobby::start() {
 	}
 	if (roster_changed) this->broadcast_roster();
 	const auto assignment = this->lobby.start();
-	// All guests receive the same assignment over their own accepted
-	// session. Never combine per-connection sequence numbers.
+	this->broadcast_start(assignment);
+	return assignment;
+}
+
+StartMatch RelayMultiHostLobby::start_fixed(
+	const std::map<uint64_t, gamestate::player_id_t> &player_slots) {
+	if (this->started) {
+		throw Error{MSG(err) << "Cannot rehost an already started FVD room"};
+	}
+	const auto before = this->lobby.snapshot();
+	if (before.participants.size() < 2
+	    or player_slots.size() != before.participants.size()) {
+		throw Error{MSG(err) << "Hunter rehost requires all admitted participants"};
+	}
+	// The new lobby creator must be the Hunter, without changing any original
+	// participant's assigned game player ID. Validate the entire bijection
+	// before mutating HostLobby or publishing a new StartMatch.
+	auto hunter = player_slots.find(before.host_participant_id);
+	if (hunter == player_slots.end() or hunter->second != 1) {
+		throw Error{MSG(err) << "FVD rehosted authority must be the Hunter"};
+	}
+	std::vector<bool> seen(before.participants.size() + 1, false);
+	for (const auto &participant : before.participants) {
+		auto found = player_slots.find(participant.participant_id);
+		if (found == player_slots.end() or found->second < 1
+		    or found->second >= seen.size() or seen[found->second]) {
+			throw Error{MSG(err) << "Duplicate or unknown FVD rehost player slot"};
+		}
+		seen[found->second] = true;
+	}
+	// The old match already conducted the lottery; this placeholder only
+	// advances HostLobby's roster revision and freezes further admission.
+	auto assignment = this->lobby.start([](uint64_t) { return uint64_t{0}; });
+	for (auto &entry : assignment.assignments) {
+		entry.player_id = player_slots.at(entry.participant_id);
+		entry.role = entry.player_id == 1 ? PlayerRole::HUNTER : PlayerRole::BUILDER;
+	}
+	validate_start_match_against_roster(before, assignment);
+	this->broadcast_start(assignment);
+	return assignment;
+}
+
+void RelayMultiHostLobby::broadcast_start(const StartMatch &assignment) {
+	// Every session has its own sequence counters. No new Hunter draw is
+	// permitted when control transfers before the first simulation frame.
 	const auto payload = encode_start_match(assignment);
 	for (auto &peer : this->channels_by_slot) {
 		if (not peer.admitted) continue;
@@ -178,7 +221,6 @@ StartMatch RelayMultiHostLobby::start() {
 	for (auto &peer : this->channels_by_slot) {
 		if (not peer.admitted) peer.socket->close();
 	}
-	return assignment;
 }
 
 const std::vector<RelayMultiHostLobby::Peer> &
