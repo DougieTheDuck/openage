@@ -142,6 +142,9 @@ size_t RelayMultiHostLobby::poll_admissions(const AssetDigest &digest) {
 			if (frame) {
 				try {
 					peer.session->validate_incoming(*frame);
+					if (peer.session->get_protocol_version().minor < 4) {
+						throw Error{MSG(err) << "FVD rehost proof requires protocol minor 4"};
+					}
 					if (frame->message_type != MessageType::AUTHORITY_REHOST_PROOF) {
 						throw Error{MSG(err) << "Expected authenticated Hunter rehost proof"};
 					}
