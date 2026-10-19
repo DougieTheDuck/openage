@@ -77,9 +77,17 @@ silently presenting an independently diverging simulation.
 - **WHEN** the host rejects a client action
 - **THEN** the client receives or can derive a rejection and does not treat it as a confirmed world mutation
 
-#### Scenario: Guest disconnects
-- **WHEN** a participant loses connectivity during a match
-- **THEN** remaining clients are informed and do not silently create conflicting ownership or state
+#### Scenario: Builder disconnects
+- **WHEN** a Builder loses connectivity after the match has started
+- **THEN** the match continues for the Hunter and other Builders, existing Builder units and towers remain under their original ownership, and no new commands from the lost Builder's session are accepted
+
+#### Scenario: Hunter disconnects
+- **WHEN** the assigned Hunter (player 1) loses connectivity during a match
+- **THEN** the match ends for everyone; no surviving Builder continues in an independently divergent simulation
+
+#### Scenario: Authoritative Builder host disconnects (current limitation)
+- **WHEN** the Builder hosting the authoritative simulation disconnects before host migration is available
+- **THEN** remote players enter a match-ended state, even if the Hunter is still connected; a future multiplayer milestone MUST resolve this to satisfy the Hunter-only match-ending policy
 
 ### Requirement: Windows direct-IP multiplayer works
 
