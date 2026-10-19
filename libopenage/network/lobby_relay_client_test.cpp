@@ -260,12 +260,49 @@ void lobby_relay_client() {
 	// and old guest kill/replication data is no longer authoritative.
 	TESTEQUALS(host.status().connected, false);
 	TESTEQUALS(host.status().can_start, false);
-	TESTEQUALS(replication->is_host_connected(), true); // Local close does not fake a remote failure.
+	TESTEQUALS(guest.send_guest_command(movement), false);
+	host.close();
+	TESTEQUALS(host.status().phase, std::string{"menu"});
+
+	// Test the opposite failure direction in a fresh relay room. Host loss
+	// must invalidate the guest's authoritative state, including its score.
+	RelayLobbyClient host2{};
+	RelayLobbyClient guest2{};
+	conf.hosting = true;
+	conf.room_id = 0;
+	conf.name = "HostAgain";
+	host2.connect(conf);
+	TESTEQUALS(wait_for(host2, "waiting"), true);
+	guest2.refresh(conf);
+	TESTEQUALS(wait_for(guest2, "menu"), true);
+	conf.room_id = guest2.status().suggested_room_id;
+	TESTEQUALS(conf.room_id != 0, true);
+	conf.name = "GuestAgain";
+	conf.hosting = false;
+	guest2.connect(conf);
+	TESTEQUALS(wait_for(host2, "lobby"), true);
+	TESTEQUALS(wait_for(guest2, "lobby"), true);
+	host2.request_start();
+	TESTEQUALS(wait_for(host2, "assigned"), true);
+	TESTEQUALS(wait_for(guest2, "assigned"), true);
+	auto restart = initial;
+	restart.local_player_id = guest2.status().local_player_id;
+	host2.provide_host_snapshot(restart);
+	TESTEQUALS(wait_for(guest2, "bootstrap"), true);
+	TESTEQUALS(wait_for(host2, "bootstrap"), true);
+	auto last_replication = guest2.get_replication();
+	TESTEQUALS(last_replication != nullptr, true);
+	TESTEQUALS(last_replication->is_host_connected(), true);
+	host2.close();
+	TESTEQUALS(wait_for(guest2, "error"), true);
+	TESTEQUALS(guest2.status().connected, false);
+	TESTEQUALS(last_replication->is_host_connected(), false);
+	TESTEQUALS(last_replication->get_local_kills().has_value(), false);
+	TESTEQUALS(guest2.send_guest_command(movement), false);
+	guest2.close();
 	listener.close();
 	relay.join();
 	if (relay_error) std::rethrow_exception(relay_error);
-	host.close();
-	TESTEQUALS(host.status().phase, std::string{"menu"});
 }
 
 } // namespace openage::network::tests
