@@ -371,6 +371,13 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		return;
 	}
 	if (action != "host" and action != "join" and action != "refresh") return;
+	// A lost match has an old clock, entity world and session identity.
+	// Never reuse that simulation for a freshly authenticated room.
+	if (this->fvd_bootstrap_supplied or this->fvd_replication) {
+		this->fvd_lobby_local_error =
+			"Reset the previous match with F10 before hosting or joining again.";
+		return;
+	}
 	this->fvd_lobby_local_error.clear();
 	this->fvd_gameplay_active = false;
 	this->fvd_assigned_player = 0;
