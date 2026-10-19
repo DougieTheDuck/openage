@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -104,7 +105,7 @@ public:
 	/** Live room summaries, ordered by room ID. */
 	std::vector<RelayRoomSummary> list();
 
-	/** Number of hosts currently waiting for a guest. */
+	/** Number of rooms that still have a host channel available. */
 	size_t room_count() const;
 
 	/** Whether clients must present an authorized token. */
@@ -114,7 +115,9 @@ private:
 	struct PendingRoom {
 		RelayRoomSummary summary;
 		RelayToken host_token;
-		TcpConnection host;
+		std::map<gamestate::player_id_t, TcpConnection> host_slots{};
+		std::vector<RelayToken> admitted_guest_tokens{};
+		gamestate::player_id_t next_host_slot{3};
 	};
 
 	bool authorized(const RelayToken &token) const;
@@ -222,8 +225,17 @@ HostedRelayRoom create_relay_room(const std::string &address,
                                   const std::string &room_name,
                                   const std::string &host_name);
 
-/** Wait until a guest joins a room created by create_relay_room(). */
-void await_relay_room(TcpConnection &connection, uint64_t room_id);
+/** Reserve an additional independently forwarded host connection in a room.
+ * The room stays discoverable until all seven slots are used.
+ * Each additional host connection must use the original creator token.
+ * Returns the reserved provisional participant ID (3..8).
+ */
+gamestate::player_id_t attach_relay_room(
+	TcpConnection &connection, const RelayToken &host_token, uint64_t room_id);
+
+/** Wait for a guest on one reserved host channel (slot 2 for the first). */
+void await_relay_room(TcpConnection &connection, uint64_t room_id,
+                      gamestate::player_id_t slot = 2);
 
 /** Fetch the current public room list, authenticating when required. */
 std::vector<RelayRoomSummary> list_relay_rooms(TcpConnection &connection,
@@ -235,6 +247,12 @@ std::vector<RelayRoomSummary> list_relay_rooms(const std::string &address,
                                                const RelayToken &token);
 
 /** Join a listed room and wait until the relay connects it to the host. */
+/** Join one available room slot, receiving the assigned provisional participant ID. */
+gamestate::player_id_t join_relay_room_slot(TcpConnection &connection,
+                                           const RelayToken &token,
+                                           uint64_t room_id);
+
+/** Legacy two-player convenience wrapper (the slot is not returned). */
 void join_relay_room(TcpConnection &connection,
                      const RelayToken &token,
                      uint64_t room_id);
