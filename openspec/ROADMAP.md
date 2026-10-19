@@ -128,8 +128,11 @@ version compatibility in the networking changes.
 Keep one map, one buildable tower, the current single Builder per player,
 simple Hunter attacks, no resource economy and no competitive ranking.
 Gameplay should be correct and visibly responsive before animation polish.
-No server directory, cross-network NAT solution, host migration, spectator
-system or online account dependency is required.
+No server directory, cross-network NAT solution, general host migration,
+spectator system or online account dependency is required for the initial
+playable build. **Before treating the Hunter-only match-ending rule as fully
+implemented, authoritative continuity for a departing Builder host must be
+solved** (targeted host migration or independent authoritative server).
 
 ## Project verification
 
