@@ -67,6 +67,41 @@ void authority_succession() {
 	TESTEQUALS(succession.acknowledge_lease(1, 2), true);
 	TESTTHROWS(succession.commit_hunter_takeover());
 
+	// Preferred pre-game route: before the authoritative simulation has
+	// started, everyone joins a Hunter-owned room with *new* authenticated
+	// sessions. It must not alter the already drawn player roles.
+	AuthoritySuccession pregame{assignment, 11};
+	TESTEQUALS(pregame.pregame_rehost_ready(), false);
+	TESTTHROWS(pregame.commit_pregame_hunter_rehost());
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({101, 1}, 1), false);
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({0, 1}, 2), false);
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({201, 8}, 2), false);
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({101, 1}, 2), true);
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({101, original_authority}, 2), false);
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({101, 1}, 2), false);
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({102, original_authority}, 2), true);
+	TESTEQUALS(pregame.pregame_rehost_ready(), false);
+	TESTTHROWS(pregame.commit_pregame_hunter_rehost());
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({103, builder}, 2), true);
+	TESTEQUALS(pregame.pregame_rehost_ready(), true);
+	auto pregame_lease = pregame.commit_pregame_hunter_rehost();
+	TESTEQUALS(pregame_lease.epoch, uint64_t{2});
+	TESTEQUALS(pregame_lease.authority, gamestate::player_id_t{1});
+	TESTEQUALS(pregame_lease.checkpoint_revision, uint64_t{0});
+	TESTEQUALS(pregame.accepts_authority_epoch(1, original_authority), false);
+	TESTEQUALS(pregame.accepts_authority_epoch(2, 1), true);
+	TESTTHROWS(pregame.commit_pregame_hunter_rehost());
+	TESTEQUALS(pregame.disconnected(original_authority)
+	           == AuthorityLossAction::CONTINUE, true);
+	TESTEQUALS(pregame.accepts_authority_epoch(2, 1), true);
+	pregame.mark_bootstrap_started();
+	TESTEQUALS(pregame.acknowledge_pregame_rehost({500, 1}, 3), false);
+
+	AuthoritySuccession too_late{assignment, 11};
+	too_late.mark_bootstrap_started();
+	TESTEQUALS(too_late.acknowledge_pregame_rehost({101, 1}, 2), false);
+	TESTTHROWS(too_late.commit_pregame_hunter_rehost());
+
 	// Losing the Hunter ends play after succession as well.
 	TESTEQUALS(succession.disconnected(1) == AuthorityLossAction::END_MATCH, true);
 	TESTEQUALS(succession.accepts_authority_epoch(2, 1), false);
