@@ -373,7 +373,10 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			await_relay_room(*socket, room_id);
 		}
 		else {
-			join_relay_room(*socket, token, settings.room_id);
+			// The relay assigns an immutable provisional participant slot
+			// (2..8) for this room channel. Keep it through StartMatch.
+			this->provisional_participant_id =
+				join_relay_room_slot(*socket, token, settings.room_id);
 		}
 		if (this->stopping) return;
 
@@ -563,20 +566,45 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				.participants = people,
 				.connected = true,
 			});
-			frame = socket->receive_frame();
-			if (not frame) {
-				throw Error{MSG(err) << "Relay host closed before match start"};
+			// Earlier guests receive revised participant snapshots whenever
+			// another guest joins. Only the last validated roster may be
+			// used to authenticate the immutable StartMatch assignments.
+			auto latest_roster = roster;
+			while (not this->stopping) {
+				frame = socket->receive_frame();
+				if (not frame) {
+					throw Error{MSG(err) << "Relay host closed before match start"};
+				}
+				session.validate_incoming(*frame);
+				if (frame->message_type == MessageType::START_MATCH) break;
+				if (frame->message_type != MessageType::PARTICIPANT_SNAPSHOT) {
+					throw Error{MSG(err) << "Expected lobby roster update or StartMatch"};
+				}
+				auto revised = decode_participant_snapshot(frame->payload);
+				if (revised.host_participant_id != latest_roster.host_participant_id
+				    or revised.revision <= latest_roster.revision) {
+					throw Error{MSG(err) << "Stale or mismatched FVD lobby roster"};
+				}
+				latest_roster = std::move(revised);
+				people.clear();
+				for (const auto &person : latest_roster.participants) {
+					if (not people.empty()) people += "\n";
+					people += person.name + (person.is_host ? " (host)" : " (guest)");
+				}
+				this->publish(RelayLobbyStatus{
+					.phase = "lobby",
+					.message = "Connected. Waiting for host to start...",
+					.participants = people,
+					.connected = true,
+				});
 			}
-			session.validate_incoming(*frame);
-			if (frame->message_type != MessageType::START_MATCH) {
-				throw Error{MSG(err) << "Expected the match start assignment"};
-			}
+			if (this->stopping) return;
 			const auto assigned = decode_start_match(frame->payload);
-			validate_start_match_against_roster(roster, assigned);
-			session.bind_match_player(assigned, 2);
+			validate_start_match_against_roster(latest_roster, assigned);
+			session.bind_match_player(assigned, this->provisional_participant_id);
 			const auto guest_player = session.get_identity().player_id;
 			const auto host_player = player_for_participant(assigned, 1);
-			const auto roles = describe_match_roles(roster, assigned);
+			const auto roles = describe_match_roles(latest_roster, assigned);
 			const auto guest_role = local_role_name(assigned, guest_player);
 			this->publish(RelayLobbyStatus{
 				.phase = "assigned",
