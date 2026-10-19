@@ -988,6 +988,12 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			this->active_multi_identities.erase(id);
 			this->pending_multi_snapshots.erase(id);
 			this->pending_multi_updates.erase(id);
+			this->pending_multi_results.erase(id);
+			auto &queued = this->incoming_host_commands;
+			queued.erase(std::remove_if(queued.begin(), queued.end(),
+				[id](const AuthenticatedCommand &command) {
+					return command.identity.player_id == id;
+				}), queued.end());
 			auto &ids = this->current.remote_player_ids;
 			ids.erase(std::remove(ids.begin(), ids.end(), id), ids.end());
 			this->current.disconnected_players.push_back(id);
