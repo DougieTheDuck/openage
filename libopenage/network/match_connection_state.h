@@ -41,6 +41,9 @@ public:
 	/** Whether a participant is still connected to the running match. */
 	bool is_connected(gamestate::player_id_t player_id) const;
 
+	/** Hunter/player 1 is mandatory; no remote orders after Hunter loss. */
+	bool is_match_active() const;
+
 	/** Number of fixed participant slots in the running match. */
 	size_t get_player_count() const;
 
