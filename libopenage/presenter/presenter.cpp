@@ -975,6 +975,7 @@ void Presenter::init_input() {
 					std::pair{"address", "127.0.0.1"},
 					std::pair{"port", "32456"},
 					std::pair{"roomName", "FVD Game"},
+				std::pair{"maxPlayers", "2"},
 					std::pair{"roomId", ""},
 					std::pair{"name", "Player"},
 					std::pair{"token", ""},
