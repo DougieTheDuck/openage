@@ -123,6 +123,18 @@ Item {
                     }
                 }
 
+                Text { text: "Maximum players when hosting (2–8)"; color: "#dfe9e3"; font.pixelSize: 12 }
+                Rectangle {
+                    width: parent.width; height: 36
+                    color: "#17221e"; radius: 4; border.color: "#688478"; border.width: 1
+                    TextInput {
+                        anchors.fill: parent; anchors.margins: 9
+                        text: "2"; color: "white"; font.pixelSize: 14
+                        inputMethodHints: Qt.ImhDigitsOnly
+                        onTextEdited: if (menu.lobby) menu.lobby.maxPlayers = text
+                    }
+                }
+
                 Text { text: "Room ID to join"; color: "#dfe9e3"; font.pixelSize: 12 }
                 Rectangle {
                     width: parent.width; height: 36
