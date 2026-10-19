@@ -492,17 +492,30 @@ movement-path replication remains a separate future optimization.
 ## Disconnect policy
 
 Before match start, a disconnected participant is removed from the lobby and their player slot may be assigned again.
-After match start, the host keeps the disconnected player's entities, ownership and already accepted orders in authoritative state.
-The player ID is not reassigned, no new commands are accepted for the closed session, and the match continues for the remaining participants.
-Every remaining connection receives one `ParticipantDisconnected` notification.
-The host also marks the participant disconnected in the next authoritative world revision, so a recovery snapshot cannot lose this status.
-`network::MatchConnectionState` owns the fixed participant-to-session bindings and rejects a second binding after a participant disconnects.
-If the authoritative host disconnects, clients end the match because no peer may silently replace its simulation.
-The currently wired public-room relay supports only one host and one guest,
-so losing that guest also ends the host's playable session: the host pauses
-and displays a match-ended status. The multi-participant coordinator's
-continue-with-survivors policy applies when more participants are actually
-connected.
+After match start, a Builder disconnect does **not** end the game. Their
+units, towers, ownership and already accepted orders remain in authoritative
+state. Their player ID is not reassigned, no further commands from their closed
+session are accepted, and the remaining Builder(s) and Hunter continue.
+The **Hunter (player 1) disconnecting ends the match for everyone**.
+Every surviving remote is notified of a Builder departure, and their next
+authoritative world revision records the player's disconnected status so
+snapshot recovery cannot erase it. `network::MatchConnectionState` owns fixed
+session bindings and rejects attempts to reassign disconnected participants.
+
+**Current two-player relay implementation:** If the authoritative **host is
+Hunter** and the **guest Builder** disconnects after bootstrap, the host
+continues advancing its local simulation. Undelivered Builder commands are
+discarded, its old connection is disabled, and the HUD announces the Builder
+departure. If the **guest is Hunter**, its departure ends the host's match.
+If the **host is Builder**, its departure still ends the guest Hunter's match:
+the authoritative simulation has disappeared, and host migration is not
+implemented. This is a known limitation relative to the desired role-based
+policy, especially important for eventual 3–8 player matches.
+
+The multi-participant `MatchDisconnectCoordinator` already keeps surviving
+Builder sessions after another Builder disconnects and records disconnection
+revisions; role-triggered Hunter match termination still needs to be wired
+when the full multi-guest match runner is implemented.
 During authenticated gameplay, the guest sends an empty, session-sequenced
 PING once per second, and the host returns an empty, sequenced PONG. Both
 accept ordinary gameplay messages as liveness evidence as well. Network
