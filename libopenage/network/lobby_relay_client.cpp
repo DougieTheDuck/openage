@@ -935,6 +935,7 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			.remote_player_id = remotes.front(),
 			.remote_player_ids = remotes,
 			.match_player_count = assignment.assignments.size(),
+			.multi_host = true,
 			.roles = role_text,
 			.local_role = role,
 		});
