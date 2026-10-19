@@ -234,6 +234,44 @@ void match_disconnect_coordinator() {
 		hunter_initial, std::get<WorldDeltaMessage>(goodbye.at(1)).state);
 	TESTEQUALS(final_world.players.at(0).connected, false);
 	TESTEQUALS(final_world.players.at(2).connected, true);
+
+	// Full eight-person fan-out: after the remote Hunter leaves, all seven
+	// surviving Builder sockets get a final ordered notice and delta.
+	MatchConnectionState full_match{state->get_fvd()->get_player_count()};
+	MatchDisconnectCoordinator full_coordinator{full_match};
+	const SessionIdentity eight_hunter{9001, 1};
+	OutboundMailbox eight_hunter_outbound{4};
+	full_coordinator.register_remote(eight_hunter, eight_hunter_outbound);
+	std::vector<std::unique_ptr<OutboundMailbox>> recipients{};
+	for (gamestate::player_id_t player = 2; player <= 8; ++player) {
+		auto outbound = std::make_unique<OutboundMailbox>(4);
+		const SessionIdentity builder_identity{9000 + player, player};
+		full_coordinator.register_remote(builder_identity, *outbound);
+		full_coordinator.record_snapshot(capture_fvd_state(
+			state, full_match, time::TIME_ZERO, 0, 20, player));
+		recipients.push_back(std::move(outbound));
+	}
+	ConnectionEventMailbox full_closures{3};
+	full_closures.try_push({eight_hunter, DisconnectReason::CONNECTION_LOST}) or TESTFAIL;
+	uint64_t full_revision = 20;
+	TESTEQUALS(full_coordinator.process_closures(
+		full_closures, state, time::TIME_ZERO, full_revision, 3), size_t{1});
+	TESTEQUALS(full_revision, uint64_t{21});
+	TESTEQUALS(full_match.is_match_active(), false);
+	for (size_t i = 0; i < recipients.size(); ++i) {
+		auto builder_player = static_cast<gamestate::player_id_t>(i + 2);
+		auto messages = recipients[i]->drain(4);
+		TESTEQUALS(messages.size(), size_t{2});
+		TESTEQUALS(std::holds_alternative<ParticipantDisconnected>(messages.at(0)), true);
+		TESTEQUALS(std::get<ParticipantDisconnected>(messages.at(0)).player_id,
+		           gamestate::player_id_t{1});
+		TESTEQUALS(std::holds_alternative<WorldDeltaMessage>(messages.at(1)), true);
+		const auto &delta = std::get<WorldDeltaMessage>(messages.at(1)).state;
+		TESTEQUALS(delta.changed.world_revision, uint64_t{21});
+		TESTEQUALS(delta.changed.local_player_id, builder_player);
+		TESTEQUALS(full_match.is_connected(builder_player), true);
+		TESTEQUALS(full_match.accepts_commands({9000 + builder_player, builder_player}), false);
+	}
 }
 
 } // namespace openage::network::tests
