@@ -12,6 +12,9 @@
 
 #include "assets/mod_manager.h"
 #include "event/event_loop.h"
+#include "gamestate/component/internal/ownership.h"
+#include "gamestate/component/types.h"
+#include "gamestate/game_entity.h"
 #include "gamestate/entity_factory.h"
 #include "gamestate/event/drag_select.h"
 #include "gamestate/event/process_command.h"
@@ -95,6 +98,31 @@ void GameSimulation::run() {
 			continue;
 		}
 		time::time_t current_time = this->time_loop->get_clock()->get_time();
+		// The base FVD scenario creates all seven Builders. A smaller online
+		// room must not leave unattended, attackable Builder units in unused
+		// player slots. This mutation occurs only on the simulation owner
+		// thread and only once before recipient snapshots are captured.
+		size_t prune_above = 0;
+		{
+			std::lock_guard lock{this->bootstrap_mutex};
+			if (this->network_prune_unassigned_builders) {
+				prune_above = this->network_admitted_players;
+				this->network_prune_unassigned_builders = false;
+			}
+		}
+		if (prune_above > 0) {
+			auto state = this->game->get_state();
+			std::vector<entity_id_t> unassigned{};
+			for (const auto &[id, entity] : state->get_game_entities()) {
+				if (entity->get_definition() != "fvd.data.entities.Builder") continue;
+				auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+					entity->get_component(component::component_t::OWNERSHIP));
+				if (ownership and ownership->get_owners().get(current_time) > prune_above) {
+					unassigned.push_back(id);
+				}
+			}
+			for (auto id : unassigned) state->remove_game_entity(id, current_time);
+		}
 		// Only the simulation owner thread may submit authenticated network
 		// commands into the mutable game event loop.
 		std::deque<NetworkCommandRequest> incoming;
@@ -265,6 +293,7 @@ void GameSimulation::configure_network_participants(size_t admitted_players) {
 		throw Error{MSG(err) << "Cannot change admitted player slots during a match"};
 	}
 	this->network_admitted_players = admitted_players;
+	this->network_prune_unassigned_builders = true;
 }
 
 void GameSimulation::report_network_participant_disconnect(player_id_t player) {
@@ -350,6 +379,7 @@ void GameSimulation::cancel_network_bootstrap() {
 	this->update_requested.reset();
 	this->update_ready.reset();
 	this->network_admitted_players = 0;
+	this->network_prune_unassigned_builders = false;
 	this->network_disconnected_players.clear();
 	// Commands are validated against the guest session and must not survive
 	// leaving the current match.
