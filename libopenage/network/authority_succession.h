@@ -4,10 +4,12 @@
 
 #include <cstdint>
 #include <optional>
+#include <map>
 #include <vector>
 
 #include "gamestate/types.h"
 #include "network/messages.h"
+#include "network/session.h"
 
 namespace openage::network {
 
@@ -70,6 +72,23 @@ public:
 	 */
 	AuthorityLease commit_hunter_takeover();
 
+	/**
+	 * Preferred continuity route: BEFORE time zero / initial world bootstrap,
+	 * reconnect each participant to the Hunter's independently authenticated
+	 * relay channels. Since no simulation has run, no state restore is needed.
+	 *
+	 * These acknowledgements MUST come from newly accepted sessions on the
+	 * Hunter's relay room, not from the old lobby-host connection. They are
+	 * scoped to the upcoming epoch and cannot be replayed in later matches.
+	 */
+	bool acknowledge_pregame_rehost(SessionIdentity reconnected,
+	                                uint64_t proposed_epoch);
+	bool pregame_rehost_ready() const;
+	AuthorityLease commit_pregame_hunter_rehost();
+
+	/** Called before the initial authoritative world is captured. */
+	void mark_bootstrap_started();
+
 	/** Reject stale commands, deltas and duplicated takeover commits. */
 	bool accepts_authority_epoch(uint64_t epoch,
 	                             gamestate::player_id_t claimed_authority) const;
@@ -85,6 +104,8 @@ private:
 	bool original_host_lost{false};
 	std::optional<uint64_t> restored_revision{};
 	std::vector<gamestate::player_id_t> acknowledgements{};
+	std::map<gamestate::player_id_t, uint64_t> rehost_session_ids{};
+	bool bootstrap_started{false};
 };
 
 } // namespace openage::network
