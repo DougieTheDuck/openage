@@ -361,6 +361,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 		}
 		if (this->stopping) return;
 		const auto token = parse_token(settings.token_hex);
+		gamestate::player_id_t provisional_participant_id{2};
 		if (settings.hosting) {
 			auto room_id = create_relay_room(
 				*socket, token, settings.room_name, settings.name);
@@ -375,7 +376,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 		else {
 			// The relay assigns an immutable provisional participant slot
 			// (2..8) for this room channel. Keep it through StartMatch.
-			this->provisional_participant_id =
+			provisional_participant_id =
 				join_relay_room_slot(*socket, token, settings.room_id);
 		}
 		if (this->stopping) return;
@@ -601,7 +602,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			if (this->stopping) return;
 			const auto assigned = decode_start_match(frame->payload);
 			validate_start_match_against_roster(latest_roster, assigned);
-			session.bind_match_player(assigned, this->provisional_participant_id);
+			session.bind_match_player(assigned, provisional_participant_id);
 			const auto guest_player = session.get_identity().player_id;
 			const auto host_player = player_for_participant(assigned, 1);
 			const auto roles = describe_match_roles(latest_roster, assigned);
