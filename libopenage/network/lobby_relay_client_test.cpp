@@ -290,6 +290,66 @@ void lobby_relay_client() {
 	TESTEQUALS(guest.status().pending_order_count, size_t{0});
 	TESTEQUALS(guest.status().order_feedback.find("Move rejected") != std::string::npos, true);
 
+	// Special orders retain their payloads and command identities in the
+	// authenticated relay, even with several in flight at once. The host
+	// can decide independently; the guest's feedback follows each result.
+	CommandIntent queued_tower{};
+	queued_tower.kind = CommandKind::BUILD_TOWER;
+	queued_tower.entity_ids = {42};
+	queued_tower.target = {25, 26, 0};
+	queued_tower.queue = true;
+	CommandIntent focus{};
+	focus.kind = CommandKind::FOCUS_ATTACK;
+	focus.entity_ids = {55};
+	focus.target_entity = gamestate::entity_id_t{77};
+	focus.target = {30, 31, 0};
+	CommandIntent prioritize{};
+	prioritize.kind = CommandKind::PRIORITIZE_FOUNDATION;
+	prioritize.entity_ids = {42};
+	prioritize.target_entity = gamestate::entity_id_t{88};
+	prioritize.target = {33, 34, 0};
+	TESTEQUALS(guest.send_guest_command(queued_tower), true);
+	TESTEQUALS(guest.send_guest_command(focus), true);
+	TESTEQUALS(guest.send_guest_command(prioritize), true);
+	TESTEQUALS(guest.status().pending_order_count, size_t{3});
+	std::vector<AuthenticatedCommand> special{};
+	for (size_t attempt = 0; attempt < 300 and special.size() < 3; ++attempt) {
+		auto batch = host.take_host_commands();
+		special.insert(special.end(), batch.begin(), batch.end());
+		if (special.size() < 3) {
+			std::this_thread::sleep_for(std::chrono::milliseconds{10});
+		}
+	}
+	TESTEQUALS(special.size(), size_t{3});
+	TESTEQUALS(special[0].intent.command_id, uint64_t{2});
+	TESTEQUALS(special[1].intent.command_id, uint64_t{3});
+	TESTEQUALS(special[2].intent.command_id, uint64_t{4});
+	TESTEQUALS(special[0].intent.kind, CommandKind::BUILD_TOWER);
+	TESTEQUALS(special[0].intent.queue, true);
+	TESTEQUALS(special[1].intent.kind, CommandKind::FOCUS_ATTACK);
+	TESTEQUALS(special[1].intent.target_entity, focus.target_entity);
+	TESTEQUALS(special[2].intent.kind, CommandKind::PRIORITIZE_FOUNDATION);
+	TESTEQUALS(special[2].intent.target_entity, prioritize.target_entity);
+	for (size_t i = 0; i < special.size(); ++i) {
+		CommandResult decision{};
+		decision.command_id = special[i].intent.command_id;
+		decision.status = i == 2 ? CommandStatus::REJECTED : CommandStatus::ACCEPTED;
+		decision.reason = i == 2 ? "foundation unavailable" : "";
+		TESTEQUALS(host.send_command_result(source, active_generation, decision), true);
+	}
+	std::vector<CommandResult> special_results{};
+	for (size_t attempt = 0; attempt < 300 and special_results.size() < 3; ++attempt) {
+		auto batch = guest.take_command_results();
+		special_results.insert(special_results.end(), batch.begin(), batch.end());
+		if (special_results.size() < 3) {
+			std::this_thread::sleep_for(std::chrono::milliseconds{10});
+		}
+	}
+	TESTEQUALS(special_results.size(), size_t{3});
+	TESTEQUALS(guest.status().pending_order_count, size_t{0});
+	TESTEQUALS(guest.status().order_feedback.find("Prioritize foundation rejected")
+	           != std::string::npos, true);
+
 	// If the guest is a Builder, the authoritative Hunter host continues;
 	// if the guest is Hunter, losing them ends the match.
 	const bool host_is_hunter = host.status().local_role == "HUNTER";
