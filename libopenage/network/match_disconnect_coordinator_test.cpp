@@ -196,7 +196,7 @@ void match_disconnect_coordinator() {
 	// A remote Hunter departure is terminal even when Builder sessions are
 	// connected. Surviving Builders receive one final ordered notification
 	// and world delta, but may no longer submit gameplay commands.
-	MatchConnectionState hunter_match{3};
+	MatchConnectionState hunter_match{state->get_fvd()->get_player_count()};
 	MatchDisconnectCoordinator hunter_coordinator{hunter_match};
 	const SessionIdentity hunter_identity{401, 1};
 	const SessionIdentity builder_identity{403, 3};
