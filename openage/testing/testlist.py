@@ -123,6 +123,10 @@ def tests_cpp():
         "FVD concurrent relay pair admission, isolation and cancellation",
     )
     yield (
+        "openage::network::tests::relay_multi_host_lobby",
+        "FVD live three/eight-player relay lobby roster and immutable role assignment",
+    )
+    yield (
         "openage::network::tests::relay_service",
         "FVD relay room discovery, private access and frame forwarding",
     )
