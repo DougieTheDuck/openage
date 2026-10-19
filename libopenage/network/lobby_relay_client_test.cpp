@@ -37,6 +37,32 @@ void lobby_relay_client() {
 	TESTTHROWS(invalid.connect(bad));
 	TESTEQUALS(invalid.status().phase, std::string{"menu"});
 
+	// The match-ending rule belongs to the assigned gameplay role,
+	// not to a guest's connection position in the lobby.
+	RelayLobbyStatus roles{};
+	roles.phase = "bootstrap";
+	roles.connected = true;
+	roles.local_role = "HUNTER";
+	roles.local_player_id = 1;
+	roles.remote_player_id = 2;
+	TESTEQUALS(host_can_continue_after_guest_loss(roles), true);
+	roles.phase = "streaming";
+	TESTEQUALS(host_can_continue_after_guest_loss(roles), true);
+	roles.phase = "playing";
+	TESTEQUALS(host_can_continue_after_guest_loss(roles), true);
+	roles.phase = "assigned";
+	TESTEQUALS(host_can_continue_after_guest_loss(roles), false);
+	roles.phase = "playing";
+	roles.local_role = "BUILDER";
+	roles.local_player_id = 2;
+	roles.remote_player_id = 1;
+	TESTEQUALS(host_can_continue_after_guest_loss(roles), false);
+	roles.local_role = "HUNTER";
+	roles.local_player_id = 1;
+	roles.remote_player_id = 2;
+	roles.connected = false;
+	TESTEQUALS(host_can_continue_after_guest_loss(roles), false);
+
 	RelayRoomDirectory directory{4};
 	auto listener = TcpListener::listen("127.0.0.1", 0);
 	std::exception_ptr relay_error{};
@@ -254,12 +280,29 @@ void lobby_relay_client() {
 	TESTEQUALS(decisions[0].status == CommandStatus::REJECTED, true);
 	TESTEQUALS(decisions[0].reason, answer.reason);
 
+	// If the guest is a Builder, the authoritative Hunter host continues;
+	// if the guest is Hunter, losing them ends the match.
+	const bool host_is_hunter = host.status().local_role == "HUNTER";
 	guest.close();
-	TESTEQUALS(wait_for(host, "error"), true);
-	// Terminal disconnects must not continue admitting remote commands,
-	// and old guest kill/replication data is no longer authoritative.
-	TESTEQUALS(host.status().connected, false);
+	bool host_saw_departure = false;
+	for (size_t attempt = 0; attempt < 300; ++attempt) {
+		if (not host.status().connected) {
+			host_saw_departure = true;
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds{10});
+	}
+	TESTEQUALS(host_saw_departure, true);
 	TESTEQUALS(host.status().can_start, false);
+	if (host_is_hunter) {
+		TESTEQUALS(host.status().phase, std::string{"playing"});
+		TESTEQUALS(host.status().remote_player_id, gamestate::player_id_t{0});
+		TESTEQUALS(host.status().message.find("Builder disconnected") != std::string::npos, true);
+		TESTEQUALS(host.take_host_commands().empty(), true);
+	}
+	else {
+		TESTEQUALS(host.status().phase, std::string{"error"});
+	}
 	TESTEQUALS(guest.send_guest_command(movement), false);
 	host.close();
 	TESTEQUALS(host.status().phase, std::string{"menu"});
