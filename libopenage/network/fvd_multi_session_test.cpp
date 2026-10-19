@@ -223,7 +223,8 @@ void run_multi_client(uint16_t port, size_t players) {
 	move.command_id = 1;
 	move.kind = CommandKind::MOVE;
 	move.entity_ids = {builder->entity_id};
-	move.target = {60, 60, 0};
+	move.target = {static_cast<int>(48 + player),
+	               static_cast<int>(48 + player), 0};
 	connection.send_frame(session.make_frame(
 		MessageType::COMMAND_INTENT, encode_command_intent(move)));
 
