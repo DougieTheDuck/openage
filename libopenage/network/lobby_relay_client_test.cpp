@@ -322,7 +322,9 @@ void lobby_relay_client() {
 
 	// Test the opposite failure direction in a fresh relay room. Host loss
 	// must invalidate the guest's authoritative state, including its score.
-	RelayLobbyClient host2{};
+	// Reuse the exact RelayLobbyClient to exercise generation changes across
+	// F10-style close and reconnect, not merely a different object.
+	RelayLobbyClient &host2 = host;
 	RelayLobbyClient guest2{};
 	conf.hosting = true;
 	conf.room_id = 0;
@@ -341,6 +343,8 @@ void lobby_relay_client() {
 	host2.request_start();
 	TESTEQUALS(wait_for(host2, "assigned"), true);
 	TESTEQUALS(wait_for(guest2, "assigned"), true);
+	TESTEQUALS(host2.get_session_generation() != active_generation, true);
+	TESTEQUALS(host2.send_command_result(source, active_generation, answer), false);
 	auto restart = initial;
 	restart.local_player_id = guest2.status().local_player_id;
 	host2.provide_host_snapshot(restart);
