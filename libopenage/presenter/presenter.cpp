@@ -516,9 +516,17 @@ void Presenter::refresh_fvd_lobby_state() {
 						this->fvd_bootstrap_requested = false;
 					}
 				}
-				this->fvd_bootstrap_supplied =
-					this->fvd_bootstrapped_recipients.size()
-					== (state.multi_host ? state.remote_player_ids.size() : size_t{1});
+				if (state.multi_host) {
+					this->fvd_bootstrap_supplied = std::all_of(
+						state.remote_player_ids.begin(), state.remote_player_ids.end(),
+						[&](gamestate::player_id_t id) {
+							return std::find(this->fvd_bootstrapped_recipients.begin(),
+							                 this->fvd_bootstrapped_recipients.end(), id)
+							       != this->fvd_bootstrapped_recipients.end();
+						});
+				}
+				else this->fvd_bootstrap_supplied =
+					this->fvd_bootstrapped_recipients.size() == 1;
 			}
 		}
 		catch (const std::exception &error) {
