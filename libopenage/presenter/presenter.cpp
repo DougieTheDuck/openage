@@ -590,6 +590,7 @@ void Presenter::refresh_fvd_lobby_state() {
 	update("roleSeconds", static_cast<int>(state.role_seconds_remaining));
 	update("worldRevision", static_cast<qulonglong>(state.snapshot_revision));
 	update("orderFeedback", QString::fromStdString(state.order_feedback));
+	update("departureNotice", QString::fromStdString(state.departure_notice));
 	update("pendingOrders", static_cast<int>(state.pending_order_count));
 	update("builderDisconnected",
 	       not state.connected and state.local_role == "HUNTER"
