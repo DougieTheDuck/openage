@@ -239,7 +239,7 @@ bin/run relay \
 
 Enter the corresponding token on each client before hosting, refreshing or joining.
 
-Focused automated check: `bin/run test openage::network::tests::lobby_relay_client`.
+Focused automated checks: `bin/run test openage::network::tests::lobby_relay_client` and `bin/run test openage::network::tests::match_disconnect_coordinator`. The relay test exercises command-generation rejection after close/reconnect, several simultaneous queued/targeted orders, and host acknowledgements. The coordinator test covers Builder survival and terminal Hunter departure with a final replicated notice.
 Relay directory and access-control check: `bin/run test openage::network::tests::relay_service`.
 Local non-network gameplay: `bin/run game --solo`.
 
@@ -473,7 +473,8 @@ The command carries no player ID or client simulation timestamp.
 The host uses the connection's assigned player, checks entity ownership and ability, and stamps accepted work with authoritative simulation time and a monotonic world revision.
 
 The host returns `CommandResult` for every intent so rejected input remains visible to the client.
-Receiving a rejected result clears that pending input but does not advance `ReplicationTracker` or mutate the replicated world.
+A simulation callback may complete well after the connection closed or a new match started. The host now binds each response to its source `SessionIdentity` (session ID and fixed player ID) and the local `RelayLobbyClient` connection generation. A callback for a departed Builder, a different player, or an earlier F10/rematch generation cannot enqueue a result into a new session.
+The guest keeps a bounded set of outstanding command IDs and their kinds. An unrecognized or duplicate result is a protocol failure, not a silently accepted acknowledgement. Accepted/rejected special orders and the number still awaiting the host are displayed in the gameplay HUD. A rejected result clears that pending input but does not advance `ReplicationTracker` or mutate the replicated world.
 Its world revision identifies the host state that made the decision; only an accepted snapshot or contiguous delta advances client state.
 Accepted mutations appear in ordered `WorldDelta` messages.
 `WorldSnapshot` contains the initial state and is also the recovery boundary if a client misses a revision.
@@ -512,10 +513,8 @@ the authoritative simulation has disappeared, and host migration is not
 implemented. This is a known limitation relative to the desired role-based
 policy, especially important for eventual 3–8 player matches.
 
-The multi-participant `MatchDisconnectCoordinator` already keeps surviving
-Builder sessions after another Builder disconnects and records disconnection
-revisions; role-triggered Hunter match termination still needs to be wired
-when the full multi-guest match runner is implemented.
+The multi-participant `MatchDisconnectCoordinator` keeps surviving
+Builder sessions after another Builder disconnects, retaining original ownership and queued commands. The connection state now marks a match inactive when player 1 (Hunter) disconnects, refusing all further remote commands. The coordinator still broadcasts a final `ParticipantDisconnected` and world delta to surviving Builders so they can learn why the match ended. The 3–8-guest **live** runner must consume those notices and enforce the terminal transition when that integration is added.
 During authenticated gameplay, the guest sends an empty, session-sequenced
 PING once per second, and the host returns an empty, sequenced PONG. Both
 accept ordinary gameplay messages as liveness evidence as well. Network
