@@ -890,9 +890,12 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				// Builder guest leaving. A Hunter guest is the rightful
 				// successor, but cannot run an imaginary reconstruction from
 				// the presentation-only WorldState.
+				const auto prior = this->status();
 				if (not settings.hosting and succession
 				    and succession->host_is_builder()
-				    and this->status().local_role == "HUNTER") {
+				    and prior.local_role == "HUNTER"
+				    and (prior.phase == "bootstrap" or prior.phase == "streaming"
+				         or prior.phase == "playing")) {
 					reason += ". You are the Hunter and designated successor, "
 					          "but there is no restorable simulation checkpoint "
 					          "or surviving peer transport. Match ended safely";
