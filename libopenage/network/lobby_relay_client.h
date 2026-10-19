@@ -11,6 +11,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -183,6 +184,7 @@ private:
 	std::optional<WorldState> pending_host_snapshot{};
 	std::optional<WorldState> pending_host_update{};
 	std::map<gamestate::player_id_t, WorldState> pending_multi_snapshots{};
+	std::set<gamestate::player_id_t> offered_multi_snapshots{};
 	std::map<gamestate::player_id_t, WorldState> pending_multi_updates{};
 	std::deque<CommandIntent> pending_guest_commands{};
 	std::deque<AuthenticatedCommand> incoming_host_commands{};
