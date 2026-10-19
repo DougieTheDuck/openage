@@ -75,6 +75,7 @@ void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 
 	auto towers = local_tower_kills(snapshot);
 	this->reconstructed_world = snapshot;
+	++this->snapshot_generation;
 	this->displayed_tower_kills = std::move(towers);
 	this->displayed_kills.store(snapshot.local_kill_count);
 	this->displayed_kills_valid.store(true);
@@ -84,11 +85,19 @@ void ReplicationTracker::accept_snapshot(const WorldState &snapshot) {
 }
 
 std::optional<WorldState> ReplicationTracker::get_world_state() const {
+	auto presentation = this->get_presentation_state();
+	if (not presentation) {
+		return std::nullopt;
+	}
+	return std::move(presentation->world);
+}
+
+std::optional<ReplicatedPresentationState> ReplicationTracker::get_presentation_state() const {
 	std::lock_guard lock{this->tower_kills_mutex};
 	if (not this->displayed_kills_valid.load()) {
 		return std::nullopt;
 	}
-	return this->reconstructed_world;
+	return ReplicatedPresentationState{this->reconstructed_world, this->snapshot_generation};
 }
 
 DeltaDisposition ReplicationTracker::accept_delta(const WorldDelta &delta) {

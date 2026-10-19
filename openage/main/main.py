@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import typing
 
+from ..game.main import add_network_arguments
 from ..log import info
 
 if typing.TYPE_CHECKING:
@@ -28,6 +29,7 @@ def init_subparser(cli: ArgumentParser):
     cli.add_argument(
         "--solo", "--single-player", action="store_true", help="skip the lobby and start local FVD gameplay"
     )
+    add_network_arguments(cli)
 
     cli.add_argument(
         "--window-size",
@@ -54,7 +56,8 @@ def main(args, error):
     and jumps into the C++ main method.
     """
     # pylint: disable=too-many-locals
-    del error  # unused
+    if args.network_update_interval_ms <= 0:
+        error("network update interval must be positive")
 
     # we have to import stuff inside the function
     # as it depends on generated/compiled code

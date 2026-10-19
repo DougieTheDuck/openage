@@ -96,11 +96,11 @@ void WorldRenderStage::pick_entity(
 	callback(selected_id);
 }
 
-void WorldRenderStage::update() {
+void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 	util::StallProfiler lock_profile{"world.update.lock_wait"};
 	std::unique_lock lock{this->mutex};
 	lock_profile.finish();
-	auto current_time = this->clock->get_real_time();
+	auto current_time = presentation_time.value_or(this->clock->get_real_time());
 	auto &camera_frustum = this->camera->get_frustum_2d();
 	for (auto &obj : this->render_objects) {
 		obj->fetch_updates(current_time);

@@ -19,8 +19,9 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
-#include <sys/socket.h>
-#include <unistd.h>
+	#include <netinet/tcp.h>
+	#include <sys/socket.h>
+	#include <unistd.h>
 #endif
 
 namespace openage::network {
@@ -109,6 +110,15 @@ void make_socket_nonblocking(native_socket_t socket) {
 		                     << last_socket_error()};
 	}
 #endif
+}
+
+void configure_connection_socket(native_socket_t socket) {
+	const int enabled = 1;
+	// Commands and world updates must not wait for another small packet or a delayed ACK.
+	if (setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&enabled), sizeof(enabled)) != 0) {
+		throw Error{MSG(err) << "Could not disable FVD TCP packet batching: " << last_socket_error()};
+	}
+	make_socket_nonblocking(socket);
 }
 
 int wait_for_socket(native_socket_t socket, bool writable) {
@@ -262,7 +272,7 @@ TcpConnection TcpConnection::connect(const std::string &address, uint16_t port) 
 		                     << ":" << port << ": " << last_socket_error()};
 	}
 	try {
-		make_socket_nonblocking(connected);
+		configure_connection_socket(connected);
 	}
 	catch (...) {
 		close_socket(connected);
@@ -581,7 +591,7 @@ TcpConnection TcpListener::accept() {
 	}
 	prevent_sigpipe(accepted);
 	try {
-		make_socket_nonblocking(accepted);
+		configure_connection_socket(accepted);
 	}
 	catch (...) {
 		close_socket(accepted);

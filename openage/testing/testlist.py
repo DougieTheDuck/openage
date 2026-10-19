@@ -150,6 +150,10 @@ def tests_cpp():
     yield "openage::event::tests::eventtrigger"
     yield "openage::input::game::tests::tower_placement_mode"
     yield "openage::presenter::tests::hud_mouse_capture"
+    yield "openage::presenter::tests::guest_interpolation"
+    yield "openage::presenter::tests::guest_clock_jitter"
+    yield "openage::presenter::tests::guest_response_latency"
+    yield "openage::presenter::tests::guest_clock_catchup"
     yield (
         "openage::gamestate::tests::fvd_scenario",
         "FVD plains, starting players and tower placement",

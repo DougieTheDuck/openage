@@ -12,6 +12,7 @@
 
 #include "coord/pixel.h"
 #include "gamestate/types.h"
+#include "presenter/guest_clock.h"
 #include "presenter/hud_mouse_capture.h"
 #include <vector>
 
@@ -141,8 +142,13 @@ public:
 	/** Bind the recipient-specific network stream before starting the presenter. */
 	void set_fvd_replication(const std::shared_ptr<network::ReplicationTracker> &replication);
 
-	/** Present the relay lobby by default (solo CLI skips it). */
-	void set_fvd_lobby_enabled(bool enabled);
+	/**
+	 * Configure the relay lobby and host world replication cadence before starting.
+	 *
+	 * @param enabled Whether to present the online lobby (solo CLI skips it).
+	 * @param update_interval Positive interval between authoritative world captures.
+	 */
+	void set_fvd_lobby_enabled(bool enabled, std::chrono::milliseconds update_interval);
 
 	/**
 	 * Initialize the Qt application managing the graphical views. Required
@@ -235,6 +241,8 @@ protected:
 	bool fvd_bootstrap_supplied{false};
 	bool fvd_guest_visuals_initialized{false};
 	uint64_t fvd_guest_visual_revision{0};
+	uint64_t fvd_guest_snapshot_generation{0};
+	GuestClock fvd_guest_clock{};
 	std::unordered_map<gamestate::entity_id_t,
 		std::shared_ptr<renderer::world::RenderEntity>> fvd_guest_entities{};
 	/** Resolve animated sprite paths from nyan just like the host's Idle system. */
@@ -242,6 +250,7 @@ protected:
 	bool fvd_update_requested{false};
 	uint64_t fvd_next_world_revision{2};
 	std::chrono::steady_clock::time_point fvd_last_update_request{};
+	std::chrono::milliseconds fvd_update_interval{};
 	/** Guest HUD source; local-only matches continue to read their simulation. */
 	std::shared_ptr<network::ReplicationTracker> fvd_replication;
 	/** Most recent screen cursor coordinate, owned by the presenter thread. */

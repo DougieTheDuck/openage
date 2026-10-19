@@ -24,6 +24,7 @@ constexpr size_t MAX_INFLIGHT_COMMANDS = 256;
 // Short stalls are tolerated; a silent relay/peer eventually ends the match.
 constexpr auto LIVE_HEARTBEAT_INTERVAL = std::chrono::seconds{1};
 constexpr auto LIVE_SESSION_TIMEOUT = std::chrono::seconds{15};
+constexpr auto LIVE_POLL_INTERVAL = std::chrono::milliseconds{5};
 
 uint8_t hex_digit(char ch) {
 	if (ch >= '0' and ch <= '9') return static_cast<uint8_t>(ch - '0');
@@ -495,7 +496,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 						if (std::chrono::steady_clock::now() - last_guest_message > LIVE_SESSION_TIMEOUT) {
 							throw Error{MSG(err) << "Relay guest stopped responding (15s); match ended. Press F10 to reset."};
 						}
-						std::this_thread::sleep_for(std::chrono::milliseconds{20});
+						std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
 					}
 					break;
 				}
@@ -622,7 +623,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 					if (std::chrono::steady_clock::now() - last_host_message > LIVE_SESSION_TIMEOUT) {
 						throw Error{MSG(err) << "Authoritative host stopped responding (15s); match ended. Press F10 to reset."};
 					}
-					std::this_thread::sleep_for(std::chrono::milliseconds{20});
+					std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
 					continue;
 				}
 				session.validate_incoming(*update_frame);

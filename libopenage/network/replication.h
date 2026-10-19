@@ -19,6 +19,12 @@ enum class DeltaDisposition {
 	AWAIT_SNAPSHOT,
 };
 
+/** World and recovery boundary captured together under the replication lock. */
+struct ReplicatedPresentationState {
+	WorldState world;
+	uint64_t snapshot_generation;
+};
+
 /**
  * Client-side revision state for authoritative world replication.
  *
@@ -55,6 +61,9 @@ public:
 	/** Complete reconstructed world (copied under the replication lock). */
 	std::optional<WorldState> get_world_state() const;
 
+	/** Include the snapshot generation so presentation can reset after recovery. */
+	std::optional<ReplicatedPresentationState> get_presentation_state() const;
+
 	/** Stop accepting replication after the authoritative host disconnects. */
 	void host_disconnected();
 
@@ -85,6 +94,7 @@ private:
 	bool initialized{false};
 	bool awaiting_snapshot{false};
 	uint64_t revision{0};
+	uint64_t snapshot_generation{0};
 };
 
 } // namespace openage::network

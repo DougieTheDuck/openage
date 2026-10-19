@@ -18,7 +18,8 @@ Engine::Engine(mode mode,
                const util::Path &root_dir,
                const std::vector<std::string> &mods,
                const renderer::window_settings &window_settings,
-               bool fvd_lobby_enabled) :
+               bool fvd_lobby_enabled,
+               std::chrono::milliseconds network_update_interval) :
 	running{true},
 	run_mode{mode},
 	root_dir{root_dir},
@@ -49,7 +50,7 @@ Engine::Engine(mode mode,
 		this->presenter = std::make_shared<presenter::Presenter>(this->root_dir,
 		                                                         this->simulation,
 		                                                         this->time_loop);
-		this->presenter->set_fvd_lobby_enabled(fvd_lobby_enabled);
+		this->presenter->set_fvd_lobby_enabled(fvd_lobby_enabled, network_update_interval);
 	}
 
 	// spawn thread to run time loop

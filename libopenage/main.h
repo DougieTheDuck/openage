@@ -44,6 +44,7 @@ struct window_arguments {
  *     bool gl_debug
  *     bool headless
  *     bool solo
+ *     int network_update_interval_ms
  *     vector[string] mods
  *     window_arguments window_args
  */
@@ -52,6 +53,7 @@ struct main_arguments {
 	bool gl_debug;
 	bool headless;
 	bool solo;
+	int network_update_interval_ms;
 	std::vector<std::string> mods;
 	window_arguments window_args;
 };

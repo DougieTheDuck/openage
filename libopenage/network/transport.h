@@ -18,6 +18,7 @@ namespace openage::network {
  *
  * The connection owns its socket and is movable but not copyable. Methods
  * throw Error for socket failures and malformed frames.
+ * Connected and accepted sockets disable Nagle's algorithm for immediate gameplay sends.
  */
 class TcpConnection {
 public:

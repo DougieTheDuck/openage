@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "coord/pixel.h"
+#include "time/time.h"
 #include "util/path.h"
 
 namespace openage {
@@ -97,8 +98,10 @@ public:
 
 	/**
 	 * Update the render entities and render positions.
+	 *
+	 * @param presentation_time Override the local clock for replicated worlds.
 	 */
-	void update();
+	void update(std::optional<time::time_t> presentation_time = std::nullopt);
 
 	/**
 	 * Resize the FBO for the world rendering. This basically updates the output

@@ -50,7 +50,8 @@ snapshot/acknowledgement runs through that same relay connection. The host can
 now queue complete recipient-specific state captures; the relay worker computes
 and sends versioned `WORLD_DELTA` frames based on the last **transmitted**
 state, and the guest validates/applies them using `ReplicationTracker`. After the five-second reveal, the host resumes its simulation and the
-presenter requests simulation-thread captures about four times per second.
+presenter requests simulation-thread captures every 50 ms by default (20 updates per second).
+The host can tune this cadence with `game --network-update-interval-ms MS`, where `MS` must be positive; this is replication sampling, not a simulation tick rate.
 The guest draws replicated Builder/Horse/Tower/Foundation sprite proxies,
 uses only its assigned faction, and sends basic Move, AttackMove and BuildTower
 intents to the host for simulation-side validation. Host decisions return as
@@ -135,6 +136,8 @@ A BSD-socket implementation can provide the same interface later without changin
 
 `network::TcpListener` binds an endpoint and accepts `network::TcpConnection` objects.
 Connections send and receive complete `Frame` values while handling partial TCP reads and writes internally.
+Connected and accepted sockets use `TCP_NODELAY` so small commands, replies and world updates do not wait for TCP packet coalescing.
+Live host and guest workers poll pending traffic at 5 ms intervals instead of adding a 20 ms idle sleep at each endpoint.
 One thread may read while one thread writes the same connection; `close()` safely interrupts either direction.
 An orderly peer shutdown returns no frame; socket failures and truncated frames raise an `Error`.
 
@@ -483,6 +486,17 @@ Clients apply only contiguous revisions and request a snapshot after a gap.
 
 The initial implementation has no client prediction.
 Clients render the reconstructed authoritative world and may interpolate presentation positions without changing simulation state.
+The guest presenter stores received positions as timestamped continuous curves and advances a separate presentation clock between authoritative samples.
+Playback initializes at the snapshot time and buffers half an observed update interval before consuming movement, leaving room for delivery jitter.
+The reserve adapts to observed delivery jitter, capped at one update interval, so faster updates can tolerate a late packet without accumulating an unbounded delay.
+It measures host clock drift over the stream rather than individual packet gaps, with two-percent rate corrections outside a buffer dead band, so clock drift does not repeatedly exhaust the available samples.
+During steady delivery, visual delay is roughly one and a half update intervals (about 75 ms at the default 20 updates per second), in addition to transport and capture scheduling delay.
+Playback stops at the newest received simulation time without extrapolating movement and rebuilds its buffer after starvation.
+If presentation falls more than four observed update intervals behind, it resets to the current authoritative sample instead of retaining stale input response during a long catch-up; this can produce a position correction after a substantial stall.
+New samples preserve the displayed position and any unplayed keyframes; unchanged positions provide stationary endpoints.
+World sprites and their health bars use the same presentation time while the guest simulation remains paused.
+Repeated position updates preserve the sprite animation start time.
+Recovery snapshots reset presentation curves, including when a subsequent delta reaches the replication tracker before the next rendered frame.
 Individual projectile launch records are sent when they appear, not repeated
 while an arrow remains in flight. Their impact timestamp is sufficient for
 client-side visual expiration; no arrow removal ID is transmitted.

@@ -81,7 +81,7 @@ void HudRenderStage::set_selected(const std::vector<gamestate::entity_id_t> &ent
 	this->selected_entities.insert(entity_ids.begin(), entity_ids.end());
 }
 
-void HudRenderStage::update() {
+void HudRenderStage::update(std::optional<time::time_t> presentation_time) {
 	std::unique_lock lock{this->mutex};
 	auto current_time = this->clock->get_real_time();
 	for (auto &health_object : this->health_objects) {
@@ -117,7 +117,7 @@ void HudRenderStage::update() {
 			continue;
 		}
 		auto selected = this->selected_entities.contains(health_object->get_id());
-		health_object->update_uniforms(current_time, selected);
+		health_object->update_uniforms(presentation_time.value_or(current_time), selected);
 	}
 
 	if (this->drag_object) {

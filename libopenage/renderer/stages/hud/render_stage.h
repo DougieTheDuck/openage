@@ -3,11 +3,13 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <unordered_set>
 #include <vector>
 
 #include "gamestate/types.h"
+#include "time/time.h"
 #include "util/path.h"
 
 namespace openage {
@@ -105,8 +107,11 @@ public:
 
 	/**
 	 * Update the render entities and render positions.
+	 *
+	 * @param presentation_time Override world time for replicated health bars.
+	 *                          Drag selection continues to use the local clock.
 	 */
-	void update();
+	void update(std::optional<time::time_t> presentation_time = std::nullopt);
 
 	/**
 	 * Resize the FBO for the HUD rendering. This basically updates the output

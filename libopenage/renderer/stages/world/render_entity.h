@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "coord/phys.h"
@@ -61,6 +62,27 @@ public:
 	            const coord::phys3 position,
 	            const std::string animation_path,
 	            const time::time_t time = 0.0);
+
+	/**
+	 * Append an authoritative position sample to the presentation curve.
+	 *
+	 * Retains the presented position and unplayed keyframes from interpolate_from.
+	 * Without interpolate_from, initializes a stationary curve (spawn or recovery).
+	 * Discards played position history so storage does not grow with match length.
+	 * Repeated animation paths preserve their animation start time.
+	 * Updating the render entity with this method is thread-safe.
+	 *
+	 * @param ref_id Game entity ID.
+	 * @param position Authoritative position at time.
+	 * @param animation_path Path to the animation definition.
+	 * @param time Authoritative time of the new sample.
+	 * @param interpolate_from Current presentation time, or none to reset.
+	 */
+	void update_sample(uint32_t ref_id,
+	                   const coord::phys3 &position,
+	                   const std::string &animation_path,
+	                   time::time_t time,
+	                   std::optional<time::time_t> interpolate_from);
 
 	/**
 	 * Update the health displayed for the game entity.

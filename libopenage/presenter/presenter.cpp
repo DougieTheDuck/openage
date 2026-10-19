@@ -88,7 +88,11 @@ Presenter::Presenter(const util::Path &root_dir,
 
 Presenter::~Presenter() = default;
 
-void Presenter::set_fvd_lobby_enabled(bool enabled) {
+void Presenter::set_fvd_lobby_enabled(bool enabled, std::chrono::milliseconds update_interval) {
+	if (update_interval <= std::chrono::milliseconds::zero()) {
+		throw Error{MSG(err) << "Network update interval must be positive"};
+	}
+	this->fvd_update_interval = update_interval;
 	this->fvd_lobby_enabled = enabled;
 	if (enabled) {
 		this->fvd_lobby_client = std::make_unique<network::RelayLobbyClient>();
@@ -332,6 +336,8 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		this->fvd_replication.reset();
 		this->fvd_guest_visuals_initialized = false;
 		this->fvd_guest_visual_revision = 0;
+		this->fvd_guest_clock = GuestClock{};
+		this->fvd_guest_snapshot_generation = 0;
 		for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
 		this->fvd_guest_entities.clear();
 		this->fvd_guest_sprite_paths.clear();
@@ -384,6 +390,8 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	this->fvd_replication.reset();
 	this->fvd_guest_visuals_initialized = false;
 	this->fvd_guest_visual_revision = 0;
+	this->fvd_guest_clock = GuestClock{};
+	this->fvd_guest_snapshot_generation = 0;
 	for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
 	this->fvd_guest_entities.clear();
 	this->fvd_guest_sprite_paths.clear();
@@ -550,7 +558,7 @@ void Presenter::refresh_fvd_lobby_state() {
 			}
 			if (not this->fvd_update_requested) {
 				const auto now = std::chrono::steady_clock::now();
-				if (now - this->fvd_last_update_request >= std::chrono::milliseconds{250}) {
+				if (now - this->fvd_last_update_request >= this->fvd_update_interval) {
 					this->simulation->request_network_update(
 						state.remote_player_id, this->fvd_next_world_revision++);
 					this->fvd_update_requested = true;
@@ -592,8 +600,19 @@ void Presenter::refresh_fvd_lobby_state() {
 void Presenter::refresh_fvd_guest_visuals() {
 	if (not this->fvd_lobby_enabled or this->fvd_lobby_hosting
 	    or not this->fvd_replication or not this->world_renderer) return;
-	auto world = this->fvd_replication->get_world_state();
-	if (not world or world->world_revision == this->fvd_guest_visual_revision) return;
+	auto replicated = this->fvd_replication->get_presentation_state();
+	if (not replicated) {
+		return;
+	}
+	const auto *world = &replicated->world;
+	const bool reset = replicated->snapshot_generation != this->fvd_guest_snapshot_generation;
+	if (not reset and world->world_revision == this->fvd_guest_visual_revision) {
+		return;
+	}
+	const auto received_at = std::chrono::steady_clock::now();
+	const auto previous_time = this->fvd_guest_clock.update(
+		world->simulation_time, received_at, reset);
+	const auto presentation_time = this->fvd_guest_clock.get_time(received_at);
 
 	// The guest's paused local simulation loads terrain/assets only.
 	// Turn off its independent units before creating authoritative proxies.
@@ -639,6 +658,7 @@ void Presenter::refresh_fvd_guest_visuals() {
 
 		present.insert(entity.entity_id);
 		auto &visual = this->fvd_guest_entities[entity.entity_id];
+		const bool new_entity = not visual;
 		if (not visual) {
 			visual = std::make_shared<renderer::world::RenderEntity>();
 			this->world_renderer->add_render_entity(visual);
@@ -646,12 +666,10 @@ void Presenter::refresh_fvd_guest_visuals() {
 			// health-bar registration path.
 			if (this->hud_renderer) this->hud_renderer->add_health_entity(visual);
 		}
-		// Render on the paused guest clock using the same resolved animation
-		// as the host and positions from authenticated world replication.
-		visual->update(entity.entity_id, entity.position, path->second, time::TIME_ZERO);
+		visual->update_sample(entity.entity_id, entity.position, path->second, world->simulation_time, new_entity or not previous_time ? std::nullopt : std::make_optional(presentation_time));
 		if (entity.health and entity.maximum_health and *entity.maximum_health > 0) {
 			curve::Segmented<int64_t> health{nullptr, 0, "", nullptr, *entity.health};
-			visual->update_health(health, *entity.maximum_health, time::TIME_ZERO);
+			visual->update_health(health, *entity.maximum_health, world->simulation_time);
 		}
 	}
 	for (auto it = this->fvd_guest_entities.begin();
@@ -663,6 +681,7 @@ void Presenter::refresh_fvd_guest_visuals() {
 		else ++it;
 	}
 	this->fvd_guest_visual_revision = world->world_revision;
+	this->fvd_guest_snapshot_generation = replicated->snapshot_generation;
 }
 
 void Presenter::init_input() {
@@ -967,6 +986,7 @@ void Presenter::render() {
 	this->refresh_fvd_lobby_state();
 	if (this->fvd_reset_pending) return;
 	this->refresh_fvd_guest_visuals();
+	const std::optional<time::time_t> guest_time = this->fvd_replication ? std::make_optional(this->fvd_guest_clock.get_time(std::chrono::steady_clock::now())) : std::nullopt;
 	// TODO: Pass current time to update() instead of fetching it in renderer
 	{
 		util::StallProfiler profile{"render.camera_update"};
@@ -978,7 +998,7 @@ void Presenter::render() {
 	}
 	{
 		util::StallProfiler profile{"render.world_update"};
-		this->world_renderer->update();
+		this->world_renderer->update(guest_time);
 	}
 	if (this->game_controller) {
 		auto selected = this->game_controller->get_selection_details();
@@ -1050,7 +1070,7 @@ void Presenter::render() {
 					// hides it at impact_time without an arrow removal packet.
 					auto replicated = this->fvd_replication->get_world_state();
 					if (replicated) {
-						now = replicated->simulation_time;
+						now = *guest_time;
 						arrows.reserve(replicated->arrows.size());
 						for (const auto &arrow : replicated->arrows) {
 							if (not network::arrow_visible_at(arrow, now)) {
@@ -1279,7 +1299,7 @@ void Presenter::render() {
 	}
 	{
 		util::StallProfiler profile{"render.hud_update"};
-		this->hud_renderer->update();
+		this->hud_renderer->update(guest_time);
 	}
 	{
 		util::StallProfiler profile{"render.gui"};

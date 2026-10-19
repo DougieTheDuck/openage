@@ -70,6 +70,37 @@ void RenderEntity::update(const uint32_t ref_id,
 	this->last_update = time;
 }
 
+void RenderEntity::update_sample(uint32_t ref_id,
+                                 const coord::phys3 &position,
+                                 const std::string &animation_path,
+                                 time::time_t time,
+                                 std::optional<time::time_t> interpolate_from) {
+	std::unique_lock lock{this->mutex};
+	if (interpolate_from and *interpolate_from > time) {
+		throw Error{MSG(err) << "Position sample precedes presentation time"};
+	}
+
+	const auto start = interpolate_from ? this->position.get(*interpolate_from) : position.to_scene3();
+	curve::Continuous<coord::scene3> samples{nullptr, 0, "", nullptr, start};
+	if (interpolate_from) {
+		samples.set_last(*interpolate_from, start);
+		for (const auto &frame : this->position.get_container()) {
+			if (frame.time() > *interpolate_from and frame.time() < time) {
+				samples.set_last(frame.time(), frame.val());
+			}
+		}
+	}
+	samples.set_last(time, position.to_scene3());
+	this->position.sync(samples);
+	if (not interpolate_from or this->animation_path.get(time) != animation_path) {
+		// Movement samples must not restart looping sprite animations.
+		this->animation_path.set_last(interpolate_from.value_or(time), animation_path);
+	}
+	this->ref_id = ref_id;
+	this->changed = true;
+	this->last_update = time;
+}
+
 uint32_t RenderEntity::get_id() {
 	std::shared_lock lock{this->mutex};
 

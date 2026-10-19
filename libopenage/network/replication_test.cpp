@@ -12,6 +12,7 @@ void replication() {
 	TESTEQUALS(tracker.get_local_kills().has_value(), false);
 	TESTEQUALS(tracker.get_tower_kills(100).has_value(), false);
 	TESTEQUALS(tracker.get_world_state().has_value(), false);
+	TESTEQUALS(tracker.get_presentation_state().has_value(), false);
 	TESTTHROWS(ReplicationTracker{0});
 	TESTTHROWS(ReplicationTracker{9});
 	TESTEQUALS(tracker.is_host_connected(), true);
@@ -34,6 +35,7 @@ void replication() {
 	TESTTHROWS(tracker.accept_snapshot(foreign_snapshot));
 	TESTEQUALS(tracker.get_local_kills().has_value(), false);
 	tracker.accept_snapshot(initial);
+	const auto initial_generation = tracker.get_presentation_state()->snapshot_generation;
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{1});
 	TESTEQUALS(tracker.get_tower_kills(100).value(), uint64_t{1});
 	TESTEQUALS(tracker.get_tower_kills(200).has_value(), false);
@@ -61,6 +63,7 @@ void replication() {
 	TESTEQUALS(tracker.get_tower_kills(101).value(), uint64_t{1});
 	TESTEQUALS(tracker.get_tower_kills(200).has_value(), false);
 	TESTEQUALS(tracker.get_world_state()->entities.size(), size_t{2});
+	TESTEQUALS(tracker.get_presentation_state()->snapshot_generation, initial_generation);
 
 	auto invalid = delta;
 	invalid.changed.base_revision = 6;
@@ -92,6 +95,7 @@ void replication() {
 		{101, 2, "fvd.data.entities.Tower", {3, 3, 0}, 100, 100, 4},
 	};
 	tracker.accept_snapshot(recovered);
+	TESTEQUALS(tracker.get_presentation_state()->snapshot_generation, initial_generation + 1);
 	TESTEQUALS(tracker.is_awaiting_snapshot(), false);
 	TESTEQUALS(tracker.get_revision(), uint64_t{9});
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{7});
@@ -112,6 +116,11 @@ void replication() {
 	auto heartbeat = make_world_delta(recovered, no_change);
 	TESTEQUALS(heartbeat.local_kills_changed, false);
 	TESTEQUALS(tracker.accept_delta(heartbeat) == DeltaDisposition::APPLY, true);
+	// Recovery remains visible even if a delta arrives before the next render frame.
+	TESTEQUALS(tracker.get_presentation_state()->snapshot_generation, initial_generation + 1);
+	TESTEQUALS(tracker.get_presentation_state()->world.world_revision, uint64_t{10});
+	tracker.accept_snapshot(no_change);
+	TESTEQUALS(tracker.get_presentation_state()->snapshot_generation, initial_generation + 2);
 	TESTEQUALS(tracker.get_local_kills().value(), uint64_t{7});
 
 	auto bad_snapshot = recovered;
@@ -126,6 +135,7 @@ void replication() {
 	TESTEQUALS(tracker.get_local_kills().has_value(), false);
 	TESTEQUALS(tracker.get_tower_kills(101).has_value(), false);
 	TESTEQUALS(tracker.get_world_state().has_value(), false);
+	TESTEQUALS(tracker.get_presentation_state().has_value(), false);
 	TESTEQUALS(tracker.get_revision(), uint64_t{10});
 	TESTTHROWS(tracker.accept_snapshot(recovered));
 	TESTTHROWS(tracker.accept_delta(heartbeat));

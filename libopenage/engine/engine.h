@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
@@ -74,12 +75,15 @@ public:
 	 * @param root_dir openage root directory.
 	 * @param mods The mods to load.
 	 * @param window_settings The settings to customize the display window (e.g. size, display mode, vsync).
+	 * @param fvd_lobby_enabled Whether to start in the online FVD lobby.
+	 * @param network_update_interval Host world replication interval.
 	 */
 	Engine(mode mode,
 	       const util::Path &root_dir,
 	       const std::vector<std::string> &mods,
 	       const renderer::window_settings &window_settings = {},
-	       bool fvd_lobby_enabled = false);
+	       bool fvd_lobby_enabled = false,
+	       std::chrono::milliseconds network_update_interval = std::chrono::milliseconds{50});
 
 	// engine should not be copied or moved
 	Engine(const Engine &) = delete;

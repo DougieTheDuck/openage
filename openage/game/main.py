@@ -16,6 +16,17 @@ if typing.TYPE_CHECKING:
     from argparse import ArgumentParser
 
 
+def add_network_arguments(cli: ArgumentParser) -> None:
+    """Add the host replication setting shared by both game entry points."""
+    cli.add_argument(
+        "--network-update-interval-ms",
+        type=int,
+        default=50,
+        metavar="MS",
+        help="host world replication interval in milliseconds (default: 50)",
+    )
+
+
 def init_subparser(cli: ArgumentParser) -> None:
     """Initializes the parser for game-specific args."""
     cli.set_defaults(entrypoint=main)
@@ -30,6 +41,7 @@ def init_subparser(cli: ArgumentParser) -> None:
     cli.add_argument(
         "--solo", "--single-player", action="store_true", help="skip the lobby and start local FVD gameplay"
     )
+    add_network_arguments(cli)
 
     cli.add_argument("--check-updates", action="store_true", help="Check if the assets are up to date")
 
@@ -57,7 +69,8 @@ def main(args, error):
     Makes sure that the assets have been converted,
     and jumps into the C++ main method.
     """
-    del error  # unused
+    if args.network_update_interval_ms <= 0:
+        error("network update interval must be positive")
 
     # we have to import stuff inside the function
     # as it depends on generated/compiled code

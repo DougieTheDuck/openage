@@ -31,6 +31,7 @@ def run_game(args, root_path):
         # headless mode
         args_cpp.headless = args.headless
         args_cpp.solo = args.solo
+        args_cpp.network_update_interval_ms = args.network_update_interval_ms
 
         # mods
         if args.modpacks is not None:
