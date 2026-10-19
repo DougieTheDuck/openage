@@ -1112,16 +1112,26 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 					}
 				}
 				catch (const std::exception &) {
+					disconnect_peer(id); // Notify survivors, including Hunter loss.
 					if (id == 1) {
 						throw Error{MSG(err) << "Hunter disconnected; match ended"};
 					}
-					disconnect_peer(id);
 				}
 			}
 			std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
 		}
 	}
 	catch (const std::exception &error) {
+		std::shared_ptr<RelayMultiHostLobby> active{};
+		{
+			std::lock_guard lock{this->mutex};
+			active = this->multi_host_lobby;
+			this->active_multi_identities.clear();
+			this->incoming_host_commands.clear();
+			this->pending_multi_results.clear();
+			this->pending_multi_updates.clear();
+		}
+		if (active) active->close(); // Unblock every guest immediately on Hunter loss.
 		if (not this->stopping) {
 			this->publish(RelayLobbyStatus{
 				.phase = "error",
