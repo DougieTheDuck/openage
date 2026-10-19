@@ -905,16 +905,20 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			.participants = participants_text(),
 			.connected = true,
 		});
+		size_t previous_count = 1;
 		while (not this->stopping) {
-			const auto changed = lobby->poll_admissions(provisional_gameplay_digest());
-			if (changed or (lobby->participant_count() > 1 and this->status().phase == "waiting")) {
+			lobby->poll_admissions(provisional_gameplay_digest());
+			const auto count = lobby->participant_count();
+			if (count != previous_count
+			    or (count > 1 and this->status().phase == "waiting")) {
+				previous_count = count;
 				this->publish(RelayLobbyStatus{
 					.phase = "lobby",
 					.message = "Guests joined. Start when everyone is ready ("
 					           + std::to_string(lobby->participant_count()) + "/"
 					           + std::to_string(settings.player_capacity) + ").",
 					.participants = participants_text(),
-					.can_start = lobby->participant_count() >= 2,
+					.can_start = count >= 2,
 					.connected = true,
 				});
 			}
