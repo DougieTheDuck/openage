@@ -694,6 +694,24 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 					this->guest_command_results.push_back(std::move(result));
 					continue;
 				}
+				if (update_frame->message_type == MessageType::PARTICIPANT_DISCONNECTED) {
+					const auto departed = decode_participant_disconnected(update_frame->payload);
+					if (departed.player_id == guest_player) {
+						throw Error{MSG(err) << "FVD host sent a self-disconnect notice to the guest"};
+					}
+					if (departed.player_id == 1) {
+						// Hunter loss ends the game. The connection cannot
+						// fall back to a locally simulated divergent world.
+						throw Error{MSG(err) << "Hunter disconnected; match ended"};
+					}
+					{
+						std::lock_guard lock{this->mutex};
+						this->current.departure_notice = "Builder player "
+							+ std::to_string(departed.player_id)
+							+ " disconnected; match continues.";
+					}
+					continue; // The next authoritative delta carries the persistent flag.
+				}
 				if (update_frame->message_type == MessageType::WORLD_DELTA) {
 					auto delta = decode_world_delta(update_frame->payload);
 					const auto disposition = tracker->accept_delta(delta);
