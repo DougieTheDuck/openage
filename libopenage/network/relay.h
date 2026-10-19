@@ -23,6 +23,9 @@ constexpr uint16_t RELAY_PROTOCOL_MINOR = 1;
 /** Protocol minor version that introduced public relay rooms. */
 constexpr uint16_t RELAY_DIRECTORY_PROTOCOL_MINOR = 2;
 
+/** Multi-slot room registration was introduced in minor version 3. */
+constexpr uint16_t RELAY_MULTIGUEST_PROTOCOL_MINOR = 3;
+
 /** Size of a lobby-issued relay admission token. */
 constexpr size_t RELAY_TOKEN_SIZE = 32;
 
