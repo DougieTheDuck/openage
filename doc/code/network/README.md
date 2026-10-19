@@ -41,7 +41,10 @@ Gameplay inputs are suppressed behind the overlay.
 
 **Current limitations:** The screen supports **one guest per host**.
 The relay address must still be known because there is no embedded relay server, global service directory or hardcoded public relay.
-The first guest consumes the advertised room, and multi-guest room forwarding remains pending.
+The playable two-peer lobby still uses one relay pair. A separate multi-slot
+room implementation now admits up to seven guest channels and broadcasts a
+shared roster/role assignment; its live gameplay handoff is not connected
+to the presenter yet.
 On a fresh room-list request, the relay drops advertised rooms whose host TCP
 connection has closed, and refuses a join if its host has already disconnected.
 The UI's room list is refreshed by **Refresh Games**, not pushed in real time.
@@ -130,8 +133,12 @@ player slots 1..N from the eight slots created by the FVD scenario. The new
 with independent TCP handshakes, concurrent authenticated Builder intents,
 per-recipient deltas, and a Builder departing while survivors continue.
 It uses direct loopback sockets rather than the public room directory, which
-still admits only one guest per room. Full multi-guest room admission, dynamic
-scenario removal of unused Builder units, and live GUI fanout remain pending.
+now supports up to seven independently forwarded guest channels per room via
+`RelayMultiHostLobby`. Its 3/8-person integration test covers roster revisions,
+role assignment, private bootstrap frames, and sequenced command round trips.
+The main GUI still uses `RelayLobbyClient`'s two-peer hosting path: dynamic
+scenario removal of unused Builder units and live GUI world-state fanout
+remain pending.
 
 ## Transport
 
@@ -161,7 +168,15 @@ The relay forwards complete FVD frames in both directions and does not create a 
 
 `network::RelayRoomDirectory` owns a bounded set of host-created rooms.
 `RelayCreateRoom` advertises a room name and host name and returns a relay-generated room ID.
-`RelayListRooms` returns the live rooms in ID order, and `RelayJoinRoom` consumes one room by attaching its first guest.
+`RelayListRooms` returns the live rooms in ID order. Legacy two-peer hosts
+publish only one slot, so the first join consumes their room. Multi-guest
+hosts use `RelayAttachRoom` to reserve further channels (provisional IDs
+3..8), and each `RelayJoinRoom` consumes exactly one available host socket,
+leaving the room advertised until the final slot is paired. The relay sends
+`RelayRoomAttached` after validating an additional host channel.
+Each host/guest pair retains an independent TCP session and frame sequence.
+Public rooms generate a nonzero private creator token for host-channel
+attachment, rather than using the public zero guest token.
 The relay sends `RelayReady` with the room ID and provisional guest player ID 2 after both sockets are paired.
 Normal `ClientHello` and gameplay frames follow `RelayReady` unchanged.
 Room listing sends a pre-session heartbeat to waiting hosts so cleanly disconnected rooms can be removed instead of remaining advertised.
@@ -273,7 +288,8 @@ Payloads are limited to 1 MiB.
 The handshake uses session and sequence zero.
 After acceptance, each direction starts at sequence one and the receiver rejects duplicates, regressions and a session ID that does not match the connection.
 
-The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping`, `Pong`, `SnapshotRequest`, `RelayConnect`, `RelayReady`, `RelayReject`, `MatchReady`, `RelayCreateRoom`, `RelayRoomCreated`, `RelayListRooms`, `RelayRoomList` and `RelayJoinRoom`.
+The current messages are `ClientHello`, `ServerAccept`, `ServerReject`, `ParticipantSnapshot`, `StartMatch`, `CommandIntent`, `CommandResult`, `WorldSnapshot`, `WorldDelta`, `ParticipantDisconnected`, `Ping`, `Pong`, `SnapshotRequest`, `RelayConnect`, `RelayReady`, `RelayReject`, `MatchReady`, `RelayCreateRoom`, `RelayRoomCreated`, `RelayListRooms`, `RelayRoomList`, `RelayJoinRoom`, `RelayAttachRoom` and
+`RelayRoomAttached` (protocol 7.3).
 Payload schemas use fixed-width network-order integers, length-prefixed UTF-8 strings and length-prefixed arrays.
 
 ### Relay admission payloads
