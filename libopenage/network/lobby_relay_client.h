@@ -17,10 +17,12 @@
 #include "network/messages.h"
 #include "network/command_mailbox.h"
 #include "network/transport.h"
+#include "network/rehost_ticket.h"
 
 namespace openage::network {
 
 class ReplicationTracker;
+class RelayMultiHostLobby;
 
 /**
  * One host or guest request to a relay-managed public room directory.
@@ -35,6 +37,10 @@ struct RelayLobbyConfig {
 	bool hosting{false};
 	/** Maximum people in a hosted room, including the host (2..8). */
 	size_t player_capacity{2};
+	/** An already drawn match is rehosted, never subjected to a second lottery. */
+	std::optional<StartMatch> rehost_start{};
+	/** Private one-use proof to join the Hunter's replacement room. */
+	std::optional<RehostOffer> rehost_offer{};
 };
 
 struct RelayLobbyStatus {
@@ -105,6 +111,8 @@ public:
 	void connect(RelayLobbyConfig settings);
 	void refresh(RelayLobbyConfig settings);
 	void request_start();
+	/** The local machine actually runs the authoritative simulation. */
+	bool is_authority() const;
 
 	/** Supply a snapshot captured on the host simulation thread. */
 	void provide_host_snapshot(WorldState snapshot);
@@ -153,6 +161,18 @@ private:
 	void publish(RelayLobbyStatus next);
 	void publish_stream_revision(uint64_t revision, bool local_host);
 	void run_multi_host(RelayLobbyConfig settings);
+	void run_rehosted_guest(RelayLobbyConfig settings,
+	                        const RehostOffer &offer);
+	void begin_hunter_rehost(RelayLobbyConfig settings,
+	                         const StartMatch &assignment,
+	                         ConnectionSession &old_session,
+	                         TcpConnection &old_socket);
+	void forward_rehost_offers(
+		const StartMatch &assignment,
+		const std::map<gamestate::player_id_t,
+		               std::pair<ConnectionSession *, TcpConnection *>> &old_peers,
+		const RelayLobbyConfig &settings);
+	std::shared_ptr<RelayLobbyClient> replacement() const;
 	bool reveal_finished_locked() const;
 
 	mutable std::mutex mutex;
@@ -176,7 +196,9 @@ private:
 	/** Largest revision submitted, including an update in flight. */
 	uint64_t last_host_offered_revision{0};
 	std::shared_ptr<ReplicationTracker> guest_replication{};
-	std::shared_ptr<class RelayMultiHostLobby> multi_host_lobby{};
+	std::shared_ptr<RelayMultiHostLobby> multi_host_lobby{};
+	std::shared_ptr<RelayMultiHostLobby> prepared_rehost_lobby{};
+	std::shared_ptr<RelayLobbyClient> handoff_client{};
 	bool hosting{false};
 	std::optional<std::chrono::steady_clock::time_point> roles_assigned_at{};
 	std::thread worker{};
