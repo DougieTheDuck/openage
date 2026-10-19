@@ -169,7 +169,8 @@ public:
 
 	/** Enqueue guest input for owner-thread authentication and execution. */
 	bool submit_network_command(network::AuthenticatedCommand command,
-	                            std::function<void(bool)> result_callback);
+	                            std::function<void(bool)> result_callback,
+	                            std::function<bool()> session_is_active = {});
 
 	/**
 	 * Recreate the FVD game and its event/entity factories on the owning
@@ -269,6 +270,7 @@ private:
 	struct NetworkCommandRequest {
 		network::AuthenticatedCommand command;
 		std::function<void(bool)> callback;
+		std::function<bool()> session_is_active;
 	};
 	std::deque<NetworkCommandRequest> network_commands{};
 
