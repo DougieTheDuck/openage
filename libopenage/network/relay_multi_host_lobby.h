@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -12,6 +13,7 @@
 #include "network/handshake.h"
 #include "network/lobby.h"
 #include "network/relay.h"
+#include "network/rehost_ticket.h"
 #include "network/session.h"
 #include "network/transport.h"
 
@@ -32,6 +34,8 @@ public:
 		std::shared_ptr<TcpConnection> socket{};
 		std::unique_ptr<ConnectionSession> session{};
 		bool admitted{false};
+		std::string accepted_name{};
+		std::chrono::steady_clock::time_point proof_deadline{};
 	};
 
 	RelayMultiHostLobby(const std::string &address,
@@ -59,6 +63,13 @@ public:
 	 */
 	StartMatch start_fixed(
 		const std::map<uint64_t, gamestate::player_id_t> &player_slots);
+
+	/** Enable ticket-only admission before anyone joins the new room. */
+	void prepare_hunter_rehost(const StartMatch &original_assignment);
+	/** Private per-Builder invitation for delivery over their old session. */
+	RehostOffer rehost_offer_for(gamestate::player_id_t original_player_id) const;
+	/** Starts only when every expected Builder redeemed their own ticket. */
+	StartMatch start_rehost();
 	/** After start, each Peer::session is rebound to the assigned player. */
 	const std::vector<Peer> &channels() const;
 	void close();
@@ -68,6 +79,7 @@ private:
 	void broadcast_start(const StartMatch &assignment);
 	uint64_t advertised_room_id{0};
 	HostLobby lobby;
+	std::unique_ptr<RehostTicketBook> rehost_tickets{};
 	std::vector<Peer> channels_by_slot{};
 	bool started{false};
 };
