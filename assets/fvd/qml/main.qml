@@ -265,9 +265,10 @@ Item {
 				visible: root.lobby !== null && root.lobby.orderFeedback.length > 0
 				width: parent.width
 				wrapMode: Text.WordWrap
-				color: root.lobby.orderFeedback.indexOf("rejected") >= 0 ? "#ffb6a8" : "#b5d9c4"
+				color: root.lobby !== null && root.lobby.orderFeedback.indexOf("rejected") >= 0
+				       ? "#ffb6a8" : "#b5d9c4"
 				font.pixelSize: 12
-				text: root.lobby.orderFeedback
+				text: root.lobby === null ? "" : root.lobby.orderFeedback
 				      + (root.lobby.pendingOrders > 0 ? " (" + root.lobby.pendingOrders + " awaiting host)" : "")
 			}
 			Text {
