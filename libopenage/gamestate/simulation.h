@@ -256,6 +256,7 @@ private:
 	};
 	uint64_t bootstrap_generation{0};
 	size_t network_admitted_players{0};
+	bool network_prune_unassigned_builders{false};
 	std::vector<gamestate::player_id_t> network_disconnected_players{};
 	std::optional<BootstrapRequest> bootstrap_requested{};
 	std::optional<network::WorldState> bootstrap_ready{};
