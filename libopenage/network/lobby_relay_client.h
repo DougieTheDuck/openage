@@ -49,6 +49,8 @@ struct RelayLobbyStatus {
 	std::vector<gamestate::player_id_t> remote_player_ids{};
 	/** Fixed match size, including the host and guests, after role draw. */
 	size_t match_player_count{0};
+	/** Host uses the multi-guest world fanout path even when only one guest joins. */
+	bool multi_host{false};
 	/** Remote Builders that have been disconnected during this match. */
 	std::vector<gamestate::player_id_t> disconnected_players{};
 	uint64_t snapshot_revision{0};
