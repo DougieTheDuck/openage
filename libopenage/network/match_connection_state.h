@@ -23,6 +23,13 @@ public:
 	/** Create connected participant slots for one started match. */
 	explicit MatchConnectionState(size_t player_count);
 
+	/**
+	 * Disable unused scenario slots before remote sessions are bound.
+	 * The lobby assigns contiguous match player IDs 1..admitted_count,
+	 * even though the FVD scenario currently creates eight player slots.
+	 */
+	void restrict_to_participants(size_t admitted_count);
+
 	/** Bind one accepted remote session to its fixed participant slot. */
 	void bind_remote(const SessionIdentity &identity);
 
