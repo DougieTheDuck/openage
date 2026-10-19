@@ -56,6 +56,8 @@ struct RelayLobbyStatus {
 	std::string local_role{};
 	/** Feedback for the latest guest order (from an authenticated host result). */
 	std::string order_feedback{};
+	/** The latest Builder departure received from the authoritative host. */
+	std::string departure_notice{};
 	/** Number of guest orders waiting for an authoritative decision. */
 	size_t pending_order_count{0};
 	/** Seconds remaining in the five-second role reveal. */
