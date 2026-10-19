@@ -7,6 +7,7 @@
 #include <exception>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -207,7 +208,7 @@ void run_multi_client(uint16_t port, size_t players) {
 	ReplicationTracker tracker{player};
 	tracker.accept_snapshot(decode_world_state(first->payload));
 	auto world = tracker.get_world_state().value();
-	TESTEQUALS(world.players.size(), state_t::size_type{8});
+	TESTEQUALS(world.players.size(), size_t{8});
 	auto builder = std::find_if(world.entities.begin(), world.entities.end(),
 		[player](const auto &entity) {
 			return entity.owner_id == player
