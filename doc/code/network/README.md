@@ -57,8 +57,10 @@ intents to the host for simulation-side validation. Host decisions return as
 `COMMAND_RESULT` messages. The full-screen role dialog disappears after
 the reveal; F10 disconnects and rebuilds the world for another room.
 **Two players only**. Guest focus attacks, foundation prioritization, queued
-tower orders, and snapshot recovery are implemented. Complete HUD parity,
-disconnect policy, and Internet transport security remain unfinished.
+tower orders, and snapshot recovery are implemented. Live authenticated
+PING/PONG heartbeats detect silent disconnections after 15 seconds, and frame
+writes are also bounded to 15 seconds. Complete HUD parity, authenticated
+resume after TCP loss, and Internet transport security remain unfinished.
 The initial FVD scenario still creates all eight configured players; only
 two of them correspond to admitted lobby participants, so dynamic scenario
 initialization and unused-slot removal are also required before real matches.
@@ -496,6 +498,19 @@ Every remaining connection receives one `ParticipantDisconnected` notification.
 The host also marks the participant disconnected in the next authoritative world revision, so a recovery snapshot cannot lose this status.
 `network::MatchConnectionState` owns the fixed participant-to-session bindings and rejects a second binding after a participant disconnects.
 If the authoritative host disconnects, clients end the match because no peer may silently replace its simulation.
+The currently wired public-room relay supports only one host and one guest,
+so losing that guest also ends the host's playable session: the host pauses
+and displays a match-ended status. The multi-participant coordinator's
+continue-with-survivors policy applies when more participants are actually
+connected.
+During authenticated gameplay, the guest sends an empty, session-sequenced
+PING once per second, and the host returns an empty, sequenced PONG. Both
+accept ordinary gameplay messages as liveness evidence as well. Network
+jitter and short periods without traffic are tolerated, but a peer that
+sends no authenticated frames for 15 seconds is considered lost. Blocking
+TCP frame sends have the same bounded 15-second deadline. Non-empty
+heartbeats, invalid protocol sequence numbers and session mismatches
+remain fatal rather than being treated as recoverable packet loss.
 On TCP EOF or a fatal socket/protocol failure from the host, the client calls
 `ReplicationTracker::host_disconnected()`, stops issuing gameplay commands,
 and displays a match-ended/disconnected state. The tracker will then reject
@@ -507,6 +522,11 @@ Failure to enqueue a connection lifecycle event is fatal to the host session bec
 Guest commands now include target-specific focus attacks and queued
 construction; SnapshotRequest automatically recovers missing world revisions
 without disconnecting. Host still validates ownership and target IDs.
+Heartbeat exchanges are not a resume handshake: if TCP itself fails or the
+15-second timeout expires, the session ends and all in-flight commands
+are abandoned. Automatic reconnection would require a newly authenticated
+session plus a fresh world snapshot and command-generation safeguards;
+it is intentionally **not** attempted by this change.
 
 ### Rematching without restarting the client
 
