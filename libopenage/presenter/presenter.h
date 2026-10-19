@@ -239,6 +239,11 @@ protected:
 	uint64_t fvd_lobby_suggested_room_id{0};
 	bool fvd_bootstrap_requested{false};
 	bool fvd_bootstrap_supplied{false};
+	bool fvd_participant_slots_configured{false};
+	gamestate::player_id_t fvd_capture_recipient{0};
+	std::vector<gamestate::player_id_t> fvd_bootstrapped_recipients{};
+	size_t fvd_capture_cursor{0};
+	std::vector<gamestate::player_id_t> fvd_recorded_departures{};
 	bool fvd_guest_visuals_initialized{false};
 	uint64_t fvd_guest_visual_revision{0};
 	uint64_t fvd_guest_snapshot_generation{0};
