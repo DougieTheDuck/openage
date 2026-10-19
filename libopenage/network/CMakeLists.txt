@@ -27,6 +27,8 @@ add_sources(libopenage
 	relay.cpp
 	relay_multi_host_lobby.cpp
 	relay_multi_host_lobby_test.cpp
+	rehost_ticket.cpp
+	rehost_ticket_test.cpp
 	relay_process_test.cpp
 	relay_registry_test.cpp
 	relay_service.cpp
