@@ -726,6 +726,7 @@ std::optional<RelayPair> RelayRoomDirectory::admit(TcpConnection &connection) {
 		if (found == this->rooms.end()
 		    or not this->authorized(attach.token)
 		    or not tokens_equal(found->second.host_token, attach.token)
+		    or is_zero_token(found->second.host_token)
 		    or found->second.next_host_slot > MAX_STATE_PLAYERS) {
 			reject_relay_connection(connection, "invalid or full host room attachment");
 			return std::nullopt;
