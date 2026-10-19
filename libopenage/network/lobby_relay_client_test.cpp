@@ -268,7 +268,15 @@ void lobby_relay_client() {
 	answer.status = CommandStatus::REJECTED;
 	answer.world_revision = 4;
 	answer.reason = "unauthorized unit";
-	host.send_command_result(answer);
+	const auto active_generation = host.get_session_generation();
+	const auto source = submitted[0].identity;
+	// A delayed callback cannot reply as a different player or a prior
+	// session generation, even if its command ID is reused.
+	TESTEQUALS(host.send_command_result(
+		{source.session_id + 1, source.player_id}, active_generation, answer), false);
+	TESTEQUALS(host.send_command_result(
+		source, active_generation + 1, answer), false);
+	TESTEQUALS(host.send_command_result(source, active_generation, answer), true);
 	std::vector<CommandResult> decisions{};
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
 		decisions = guest.take_command_results();
@@ -279,6 +287,8 @@ void lobby_relay_client() {
 	TESTEQUALS(decisions[0].command_id, answer.command_id);
 	TESTEQUALS(decisions[0].status == CommandStatus::REJECTED, true);
 	TESTEQUALS(decisions[0].reason, answer.reason);
+	TESTEQUALS(guest.status().pending_order_count, size_t{0});
+	TESTEQUALS(guest.status().order_feedback.find("Move rejected") != std::string::npos, true);
 
 	// If the guest is a Builder, the authoritative Hunter host continues;
 	// if the guest is Hunter, losing them ends the match.
@@ -293,6 +303,7 @@ void lobby_relay_client() {
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(host_saw_departure, true);
+	TESTEQUALS(host.send_command_result(source, active_generation, answer), false);
 	TESTEQUALS(host.status().can_start, false);
 	if (host_is_hunter) {
 		TESTEQUALS(host.status().phase, std::string{"playing"});
@@ -306,6 +317,8 @@ void lobby_relay_client() {
 	TESTEQUALS(guest.send_guest_command(movement), false);
 	host.close();
 	TESTEQUALS(host.status().phase, std::string{"menu"});
+	TESTEQUALS(host.send_command_result(source, active_generation, answer), false);
+	TESTEQUALS(host.get_session_generation() != active_generation, true);
 
 	// Test the opposite failure direction in a fresh relay room. Host loss
 	// must invalidate the guest's authoritative state, including its score.
