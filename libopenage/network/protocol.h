@@ -64,6 +64,8 @@ enum class MessageType : uint16_t {
 	RELAY_LIST_ROOMS = 20,
 	RELAY_ROOM_LIST = 21,
 	RELAY_JOIN_ROOM = 22,
+	RELAY_ATTACH_ROOM = 23,
+	RELAY_ROOM_ATTACHED = 24,
 };
 
 /** Whether a message type is defined by this protocol version. */
