@@ -910,6 +910,7 @@ void Presenter::init_input() {
 				this->fvd_lobby_state->insert("roleSeconds", 0);
 				this->fvd_lobby_state->insert("worldRevision", static_cast<qulonglong>(0));
 				this->fvd_lobby_state->insert("orderFeedback", QString{});
+				this->fvd_lobby_state->insert("departureNotice", QString{});
 				this->fvd_lobby_state->insert("pendingOrders", 0);
 				this->fvd_lobby_state->insert("builderDisconnected", false);
 				this->fvd_lobby_state->insert("enabled", true);
