@@ -58,6 +58,14 @@ struct RelayLobbyStatus {
 };
 
 /**
+ * In the current two-peer relay the host may continue only when its own
+ * player is Hunter and the departed guest is a Builder. Bootstrap must
+ * already be acknowledged. A departing authoritative host always ends the
+ * guest's session, regardless of the host's gameplay role.
+ */
+bool host_can_continue_after_guest_loss(const RelayLobbyStatus &status);
+
+/**
  * Background relay transport for the pre-match screen. Only the worker
  * touches its ConnectionSession, preserving sequence ordering.
  *
