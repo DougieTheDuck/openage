@@ -39,12 +39,14 @@ outstanding simulation snapshot requests to prevent stale cross-match results. F
 handshakes report their errors in the menu; socket work is on a separate thread.
 Gameplay inputs are suppressed behind the overlay.
 
-**Current limitations:** The screen supports **one guest per host**.
-The relay address must still be known because there is no embedded relay server, global service directory or hardcoded public relay.
-The playable two-peer lobby still uses one relay pair. A separate multi-slot
-room implementation now admits up to seven guest channels and broadcasts a
-shared roster/role assignment; its live gameplay handoff is not connected
-to the presenter yet.
+**Current limitations:** The screen can host **2–8 people**, selected using
+"Maximum players". The default remains two, preserving the existing tested
+single-guest path. When hosting a larger room, `RelayLobbyClient` uses
+`RelayMultiHostLobby` and sends each guest its own initial snapshot and
+live world-delta stream. All guest orders enter one authoritative simulation,
+and command replies are returned only to their authenticated sender.
+The relay address must still be known because there is no embedded relay
+server, global service directory or hardcoded public relay.
 On a fresh room-list request, the relay drops advertised rooms whose host TCP
 connection has closed, and refuses a join if its host has already disconnected.
 The UI's room list is refreshed by **Refresh Games**, not pushed in real time.
@@ -60,14 +62,17 @@ uses only its assigned faction, and sends basic Move, AttackMove and BuildTower
 intents to the host for simulation-side validation. Host decisions return as
 `COMMAND_RESULT` messages. The full-screen role dialog disappears after
 the reveal; F10 disconnects and rebuilds the world for another room.
-**Two players only**. Guest focus attacks, foundation prioritization, queued
-tower orders, and snapshot recovery are implemented. Live authenticated
+The multi-guest host/guest path is implemented but still requires its first
+Windows GUI and network smoke tests. Guest focus attacks, foundation
+prioritization, queued tower orders and snapshot recovery are implemented. Live authenticated
 PING/PONG heartbeats detect silent disconnections after 15 seconds, and frame
 writes are also bounded to 15 seconds. Complete HUD parity, authenticated
 resume after TCP loss, and Internet transport security remain unfinished.
-The initial FVD scenario still creates all eight configured players; only
-two of them correspond to admitted lobby participants, so dynamic scenario
-initialization and unused-slot removal are also required before real matches.
+For a multi-guest room, the game-simulation thread removes starting Builders
+for never-admitted slots before bootstrap and marks those slots disconnected
+in every recipient's authoritative world state. Builders who join and later
+disconnect retain their existing units and towers. The legacy two-player
+hosting path is left unchanged for regression stability.
 It does not launch two independent local worlds or misrepresent them as
 synchronized multiplayer.
 The provisional asset handshake digest must be replaced by a manifest digest
@@ -136,9 +141,14 @@ It uses direct loopback sockets rather than the public room directory, which
 now supports up to seven independently forwarded guest channels per room via
 `RelayMultiHostLobby`. Its 3/8-person integration test covers roster revisions,
 role assignment, private bootstrap frames, and sequenced command round trips.
-The main GUI still uses `RelayLobbyClient`'s two-peer hosting path: dynamic
-scenario removal of unused Builder units and live GUI world-state fanout
-remain pending.
+The GUI selects the original two-player hosting path when its room capacity
+is 2, or the new multi-host path for 3–8. The presenter captures
+recipient-specific bootstraps and round-robin world states on the simulation
+owner thread, allowing the relay worker to maintain an independent
+`WorldDeltaBaseline` and command/result queue for every guest. The
+`lobby_relay_client` integration test now also starts a three-client room,
+tests individual private snapshots and order replies, and verifies a Builder
+departure followed by another successful surviving player's command.
 
 ## Transport
 
@@ -550,7 +560,10 @@ implemented. This is a known limitation relative to the desired role-based
 policy, especially important for eventual 3–8 player matches.
 
 The multi-participant `MatchDisconnectCoordinator` keeps surviving
-Builder sessions after another Builder disconnects, retaining original ownership and queued commands. The connection state now marks a match inactive when player 1 (Hunter) disconnects, refusing all further remote commands. The coordinator still broadcasts a final `ParticipantDisconnected` and world delta to surviving Builders so they can learn why the match ended. The 3–8-guest **live** runner must consume those notices and enforce the terminal transition when that integration is added.
+Builder sessions after another Builder disconnects, retaining original ownership and queued commands. The connection state now marks a match inactive when player 1 (Hunter) disconnects, refusing all further remote commands. The coordinator still broadcasts a final `ParticipantDisconnected` and world delta to surviving Builders so they can learn why the match ended. The live 3–8-player host worker sends those notices, drops only the
+disconnected Builder's session and pending commands, and continues with the
+remaining guests. Hunter loss ends the match. Builder-host loss still requires
+authority migration as tracked under 1.17.
 During authenticated gameplay, the guest sends an empty, session-sequenced
 PING once per second, and the host returns an empty, sequenced PONG. Both
 accept ordinary gameplay messages as liveness evidence as well. Network
