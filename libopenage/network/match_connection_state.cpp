@@ -16,6 +16,22 @@ MatchConnectionState::MatchConnectionState(size_t player_count) :
 	}
 }
 
+void MatchConnectionState::restrict_to_participants(size_t admitted_count) {
+	if (admitted_count < 2 or admitted_count > this->participants.size()) {
+		throw Error{MSG(err) << "FVD admitted player count must be between 2 and "
+		                     << this->participants.size()};
+	}
+	if (std::any_of(this->participants.begin(), this->participants.end(),
+	                [](const auto &participant) {
+		                return participant.remote_identity.has_value();
+	                })) {
+		throw Error{MSG(err) << "FVD admitted players cannot change after binding remote sessions"};
+	}
+	for (size_t i = 0; i < this->participants.size(); ++i) {
+		this->participants[i].connected = i < admitted_count;
+	}
+}
+
 void MatchConnectionState::bind_remote(const SessionIdentity &identity) {
 	if (identity.session_id == 0 or identity.player_id == 0
 	    or identity.player_id > this->participants.size()) {
@@ -45,7 +61,7 @@ void MatchConnectionState::bind_remote(const SessionIdentity &identity) {
 
 bool MatchConnectionState::accepts_commands(const SessionIdentity &identity) const {
 	if (identity.session_id == 0 or identity.player_id == 0
-	    or identity.player_id > this->participants.size()) {
+	    or identity.player_id > this->participants.size() or not this->is_match_active()) {
 		return false;
 	}
 
@@ -78,6 +94,12 @@ bool MatchConnectionState::is_connected(
 		                     << " is outside the match participant range"};
 	}
 	return this->participants.at(player_id - 1).connected;
+}
+
+bool MatchConnectionState::is_match_active() const {
+	// Player 1 is always the Hunter. Other players may disconnect without
+	// ending the match; only Hunter loss makes further orders invalid.
+	return this->participants.front().connected;
 }
 
 size_t MatchConnectionState::get_player_count() const {

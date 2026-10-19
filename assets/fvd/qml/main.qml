@@ -46,6 +46,19 @@ Item {
 		font.bold: true
 	}
 
+	Text {
+		anchors.top: parent.top
+		anchors.right: parent.right
+		anchors.topMargin: 56
+		anchors.rightMargin: 13
+		z: 10
+		visible: root.lobby !== null && root.lobby.departureNotice.length > 0
+		text: root.lobby !== null ? root.lobby.departureNotice : ""
+		color: "#f4c78c"
+		font.pixelSize: 13
+		font.bold: true
+	}
+
 	// Tile-accurate 2D build preview, using the same camera projection as
 	// world sprites. Mouse input still passes through to the game.
 	Canvas {
@@ -176,11 +189,13 @@ Item {
 			color: "#ffffff"
 			font.pixelSize: 14
 			text: root.placing
-			    ? "Build: click | Shift+click queue | Right-click foundation to retask | Esc cancel"
-			    : root.attacking ? "Attack-move: click map | Right-click or Esc cancels"
+			    ? "Build: click to place | Shift+click to queue | Right-click or Esc cancels"
+			    : root.attacking ? "Attack-move: click destination | Right-click or Esc cancels"
 			    : root.canAttack
-			    ? "Hunter: Right-click enemy to focus | Right-click ground to move | A: Attack-move"
-			    : "Flat plains | 1: Hunter | 2-8: Builders | Drag to select | Right-click to move"
+			    ? "Hunter: right-click enemy to focus attack | Right-click ground to move | A: Attack-move"
+			    : root.canBuild
+			    ? "Builder: right-click foundation to prioritize | B: Build Tower | Shift+click queues"
+			    : "Drag to select your units | Right-click to move"
 			horizontalAlignment: Text.AlignHCenter
 		}
 	}
@@ -260,6 +275,16 @@ Item {
 					radius: parent.radius
 					color: "#84ddb2"
 				}
+			}
+			Text {
+				visible: root.lobby !== null && root.lobby.orderFeedback.length > 0
+				width: parent.width
+				wrapMode: Text.WordWrap
+				color: root.lobby !== null && root.lobby.orderFeedback.indexOf("rejected") >= 0
+				       ? "#ffb6a8" : "#b5d9c4"
+				font.pixelSize: 12
+				text: root.lobby === null ? "" : root.lobby.orderFeedback
+				      + (root.lobby.pendingOrders > 0 ? " (" + root.lobby.pendingOrders + " awaiting host)" : "")
 			}
 			Text {
 				visible: !root.hunter && (root.placing || root.queuedTowers > 0)

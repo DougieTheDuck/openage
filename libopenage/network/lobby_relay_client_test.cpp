@@ -268,7 +268,15 @@ void lobby_relay_client() {
 	answer.status = CommandStatus::REJECTED;
 	answer.world_revision = 4;
 	answer.reason = "unauthorized unit";
-	host.send_command_result(answer);
+	const auto active_generation = host.get_session_generation();
+	const auto source = submitted[0].identity;
+	// A delayed callback cannot reply as a different player or a prior
+	// session generation, even if its command ID is reused.
+	TESTEQUALS(host.send_command_result(
+		{source.session_id + 1, source.player_id}, active_generation, answer), false);
+	TESTEQUALS(host.send_command_result(
+		source, active_generation + 1, answer), false);
+	TESTEQUALS(host.send_command_result(source, active_generation, answer), true);
 	std::vector<CommandResult> decisions{};
 	for (size_t attempt = 0; attempt < 300; ++attempt) {
 		decisions = guest.take_command_results();
@@ -279,6 +287,68 @@ void lobby_relay_client() {
 	TESTEQUALS(decisions[0].command_id, answer.command_id);
 	TESTEQUALS(decisions[0].status == CommandStatus::REJECTED, true);
 	TESTEQUALS(decisions[0].reason, answer.reason);
+	TESTEQUALS(guest.status().pending_order_count, size_t{0});
+	TESTEQUALS(guest.status().order_feedback.find("Move rejected") != std::string::npos, true);
+
+	// Special orders retain their payloads and command identities in the
+	// authenticated relay, even with several in flight at once. The host
+	// can decide independently; the guest's feedback follows each result.
+	CommandIntent queued_tower{};
+	queued_tower.kind = CommandKind::BUILD_TOWER;
+	queued_tower.entity_ids = {42};
+	queued_tower.target = {25, 26, 0};
+	queued_tower.queue = true;
+	CommandIntent focus{};
+	focus.kind = CommandKind::FOCUS_ATTACK;
+	focus.entity_ids = {55};
+	focus.target_entity = gamestate::entity_id_t{77};
+	focus.target = {30, 31, 0};
+	CommandIntent prioritize{};
+	prioritize.kind = CommandKind::PRIORITIZE_FOUNDATION;
+	prioritize.entity_ids = {42};
+	prioritize.target_entity = gamestate::entity_id_t{88};
+	prioritize.target = {33, 34, 0};
+	TESTEQUALS(guest.send_guest_command(queued_tower), true);
+	TESTEQUALS(guest.send_guest_command(focus), true);
+	TESTEQUALS(guest.send_guest_command(prioritize), true);
+	TESTEQUALS(guest.status().pending_order_count, size_t{3});
+	std::vector<AuthenticatedCommand> special{};
+	for (size_t attempt = 0; attempt < 300 and special.size() < 3; ++attempt) {
+		auto batch = host.take_host_commands();
+		special.insert(special.end(), batch.begin(), batch.end());
+		if (special.size() < 3) {
+			std::this_thread::sleep_for(std::chrono::milliseconds{10});
+		}
+	}
+	TESTEQUALS(special.size(), size_t{3});
+	TESTEQUALS(special[0].intent.command_id, uint64_t{2});
+	TESTEQUALS(special[1].intent.command_id, uint64_t{3});
+	TESTEQUALS(special[2].intent.command_id, uint64_t{4});
+	TESTEQUALS(special[0].intent.kind == CommandKind::BUILD_TOWER, true);
+	TESTEQUALS(special[0].intent.queue, true);
+	TESTEQUALS(special[1].intent.kind == CommandKind::FOCUS_ATTACK, true);
+	TESTEQUALS(special[1].intent.target_entity == focus.target_entity, true);
+	TESTEQUALS(special[2].intent.kind == CommandKind::PRIORITIZE_FOUNDATION, true);
+	TESTEQUALS(special[2].intent.target_entity == prioritize.target_entity, true);
+	for (size_t i = 0; i < special.size(); ++i) {
+		CommandResult decision{};
+		decision.command_id = special[i].intent.command_id;
+		decision.status = i == 2 ? CommandStatus::REJECTED : CommandStatus::ACCEPTED;
+		decision.reason = i == 2 ? "foundation unavailable" : "";
+		TESTEQUALS(host.send_command_result(source, active_generation, decision), true);
+	}
+	std::vector<CommandResult> special_results{};
+	for (size_t attempt = 0; attempt < 300 and special_results.size() < 3; ++attempt) {
+		auto batch = guest.take_command_results();
+		special_results.insert(special_results.end(), batch.begin(), batch.end());
+		if (special_results.size() < 3) {
+			std::this_thread::sleep_for(std::chrono::milliseconds{10});
+		}
+	}
+	TESTEQUALS(special_results.size(), size_t{3});
+	TESTEQUALS(guest.status().pending_order_count, size_t{0});
+	TESTEQUALS(guest.status().order_feedback.find("Prioritize foundation rejected")
+	           != std::string::npos, true);
 
 	// If the guest is a Builder, the authoritative Hunter host continues;
 	// if the guest is Hunter, losing them ends the match.
@@ -293,6 +363,7 @@ void lobby_relay_client() {
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(host_saw_departure, true);
+	TESTEQUALS(host.send_command_result(source, active_generation, answer), false);
 	TESTEQUALS(host.status().can_start, false);
 	if (host_is_hunter) {
 		TESTEQUALS(host.status().phase, std::string{"playing"});
@@ -306,10 +377,14 @@ void lobby_relay_client() {
 	TESTEQUALS(guest.send_guest_command(movement), false);
 	host.close();
 	TESTEQUALS(host.status().phase, std::string{"menu"});
+	TESTEQUALS(host.send_command_result(source, active_generation, answer), false);
+	TESTEQUALS(host.get_session_generation() != active_generation, true);
 
 	// Test the opposite failure direction in a fresh relay room. Host loss
 	// must invalidate the guest's authoritative state, including its score.
-	RelayLobbyClient host2{};
+	// Reuse the exact RelayLobbyClient to exercise generation changes across
+	// F10-style close and reconnect, not merely a different object.
+	RelayLobbyClient &host2 = host;
 	RelayLobbyClient guest2{};
 	conf.hosting = true;
 	conf.room_id = 0;
@@ -328,6 +403,8 @@ void lobby_relay_client() {
 	host2.request_start();
 	TESTEQUALS(wait_for(host2, "assigned"), true);
 	TESTEQUALS(wait_for(guest2, "assigned"), true);
+	TESTEQUALS(host2.get_session_generation() != active_generation, true);
+	TESTEQUALS(host2.send_command_result(source, active_generation, answer), false);
 	auto restart = initial;
 	restart.local_player_id = guest2.status().local_player_id;
 	host2.provide_host_snapshot(restart);

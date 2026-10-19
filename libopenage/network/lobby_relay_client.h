@@ -8,6 +8,7 @@
 #include <deque>
 #include <vector>
 #include <memory>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -53,6 +54,12 @@ struct RelayLobbyStatus {
 	std::string roles{};
 	/** Role assigned to this client by the host, not chosen locally. */
 	std::string local_role{};
+	/** Feedback for the latest guest order (from an authenticated host result). */
+	std::string order_feedback{};
+	/** The latest Builder departure received from the authoritative host. */
+	std::string departure_notice{};
+	/** Number of guest orders waiting for an authoritative decision. */
+	size_t pending_order_count{0};
 	/** Seconds remaining in the five-second role reveal. */
 	uint8_t role_seconds_remaining{0};
 };
@@ -106,8 +113,14 @@ public:
 	/** Drain remote intents paired with the immutable accepted guest identity. */
 	std::vector<AuthenticatedCommand> take_host_commands();
 
-	/** Queue one authoritative decision for delivery to the guest. */
-	void send_command_result(CommandResult result);
+	/**
+	 * The simulation may finish a command after a disconnect or rematch.
+	 * Replies must match both the original session identity and generation.
+	 * False means that session no longer exists; the result is discarded.
+	 */
+	uint64_t get_session_generation() const;
+	bool send_command_result(const SessionIdentity &identity,
+	                         uint64_t generation, CommandResult result);
 
 	/** Consume command decisions (or rejections) on the guest presenter. */
 	std::vector<CommandResult> take_command_results();
@@ -137,7 +150,10 @@ private:
 	std::deque<AuthenticatedCommand> incoming_host_commands{};
 	std::deque<CommandResult> pending_command_results{};
 	std::deque<CommandResult> guest_command_results{};
+	std::map<uint64_t, CommandKind> guest_outstanding_commands{};
 	uint64_t next_guest_command_id{1};
+	uint64_t session_generation{0};
+	std::optional<SessionIdentity> active_remote_identity{};
 	bool guest_snapshot_requested{false};
 	/** Largest revision submitted, including an update in flight. */
 	uint64_t last_host_offered_revision{0};

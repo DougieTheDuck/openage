@@ -517,8 +517,10 @@ void Presenter::refresh_fvd_lobby_state() {
 	}
 	if (this->fvd_gameplay_active and this->fvd_lobby_hosting) {
 		for (auto &command : this->fvd_lobby_client->take_host_commands()) {
-			auto command_id = command.intent.command_id;
-			auto reply = [this, command_id](bool accepted) {
+			const auto command_id = command.intent.command_id;
+			const auto identity = command.identity;
+			const auto generation = this->fvd_lobby_client->get_session_generation();
+			auto reply = [this, command_id, identity, generation](bool accepted) {
 				network::CommandResult result{};
 				result.command_id = command_id;
 				result.status = accepted ? network::CommandStatus::ACCEPTED
@@ -526,7 +528,10 @@ void Presenter::refresh_fvd_lobby_state() {
 				result.world_revision = this->fvd_lobby_client->status().snapshot_revision;
 				result.simulation_time = this->time_loop->get_clock()->get_time();
 				if (not accepted) result.reason = "Host rejected command (ownership or target)";
-				this->fvd_lobby_client->send_command_result(std::move(result));
+				// A callback from a prior match, or a Builder who already left,
+				// must never deliver a result into a new authenticated session.
+				this->fvd_lobby_client->send_command_result(
+					identity, generation, std::move(result));
 			};
 			if (not this->simulation->submit_network_command(
 				std::move(command), reply)) reply(false);
@@ -592,6 +597,9 @@ void Presenter::refresh_fvd_lobby_state() {
 	update("localRole", QString::fromStdString(state.local_role));
 	update("roleSeconds", static_cast<int>(state.role_seconds_remaining));
 	update("worldRevision", static_cast<qulonglong>(state.snapshot_revision));
+	update("orderFeedback", QString::fromStdString(state.order_feedback));
+	update("departureNotice", QString::fromStdString(state.departure_notice));
+	update("pendingOrders", static_cast<int>(state.pending_order_count));
 	update("builderDisconnected",
 	       not state.connected and state.local_role == "HUNTER"
 	       and state.remote_player_id == 0 and state.phase == "playing");
@@ -920,6 +928,9 @@ void Presenter::init_input() {
 				this->fvd_lobby_state->insert("localRole", QString{});
 				this->fvd_lobby_state->insert("roleSeconds", 0);
 				this->fvd_lobby_state->insert("worldRevision", static_cast<qulonglong>(0));
+				this->fvd_lobby_state->insert("orderFeedback", QString{});
+				this->fvd_lobby_state->insert("departureNotice", QString{});
+				this->fvd_lobby_state->insert("pendingOrders", 0);
 				this->fvd_lobby_state->insert("builderDisconnected", false);
 				this->fvd_lobby_state->insert("enabled", true);
 				this->gui->set_context_property("fvdLobby", this->fvd_lobby_state.get());

@@ -68,6 +68,51 @@ Clients bootstrap from a full snapshot, apply only contiguous ordered deltas,
 and request another snapshot after a revision gap.
 The first version uses no client-side prediction.
 
+## Live 3–8-player integration boundary (1.16c)
+
+The three/eight-player `fvd_multi_session` test exercises the current
+authoritative command bridge, unique TCP `ConnectionSession` objects, per-peer
+`WorldDeltaBaseline` instances and `MatchDisconnectCoordinator` without
+depending on the public relay UI. This validates the multi-session core,
+**not** live 3–8-player public rooms. The current `RelayRoomDirectory`
+consumes the waiting host socket when the first guest joins, and
+`RelayLobbyClient` maintains only one game transport and one remote
+recipient. Raising lobby's `max_players` alone would create false capacity.
+
+The remaining integration must:
+
+1. Keep an advertised room joinable until 2–8 participants are admitted
+   (bounded to seven independently authenticated host/guest channels).
+   Each channel must have its own TCP sequence state, and a disconnect must
+   close only that channel.
+2. Maintain a single host-owned `HostLobby` roster. Broadcast the updated
+   `PARTICIPANT_SNAPSHOT` to all admitted guests; `START_MATCH` must include
+   the exact same final roster and unique role/slot mapping.
+3. Configure the authoritative connection state from the admitted roster
+   before bootstrap, so unused scenario slots are disconnected. Remove or
+   suppress the seven-minus-N unused scenario Builders for the finished game.
+4. Capture recipient-specific bootstrap snapshots sequentially on the
+   simulation thread and require each guest's `MATCH_READY` before starting
+   the common host clock. For live updates, keep **one delta baseline per
+   recipient** and never share another player's private kill count.
+5. Process authenticated intents from all live peers on the single host
+   simulation thread, validating ownership against persistent connection
+   state and resolving simultaneous construction conflicts in one event
+   order. Bind deferred command results to their originating peer's
+   session ID and connection generation.
+6. On Builder loss, mark their fixed slot disconnected, preserve entities,
+   and send `PARTICIPANT_DISCONNECTED` followed by one revisioned delta
+   to remaining peers. On Hunter loss, distribute the terminal notice and
+   stop the match. A lost authoritative **Builder host** still requires
+   separate continuity work under 1.17.
+7. Exercise the public-room runner with 3, 4 and 8 local game processes
+   including at least one human Hunter, concurrent tower sites, deaths,
+   stale-command rejections, guest loss, host loss and F10 rematches.
+   Verify Windows and separate physical PCs before marking 1.16c complete.
+
+Avoid replacing the working two-player code path until the new multi-guest
+runner has automated coverage, to prevent regression of the playable build.
+
 ## Risks
 
 Network timing and simulation time-indexed curves could be mistakenly

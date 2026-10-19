@@ -8,6 +8,7 @@ add_sources(libopenage
 	connection_mailbox.cpp
 	connection_mailbox_test.cpp
 	fvd_loopback_test.cpp
+	fvd_multi_session_test.cpp
 	handshake.cpp
 	handshake_test.cpp
 	lobby.cpp
