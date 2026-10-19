@@ -999,7 +999,54 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		while (not this->stopping) {
 			bool all_ready = true;
 			for (const auto &[id, peer] : peers) {
-				if (ready.at(id) or dropped_during_bootstrap[id]) continue;
+				if (dropped_during_bootstrap[id]) continue;
+				if (ready.at(id)) {
+					// Faster guests can finish the handshake well before
+					// slower ones. Keep their authenticated sessions alive
+					// and queue any post-reveal input until the host clock
+					// starts, rather than ignoring their heartbeats.
+					try {
+						for (size_t i = 0; i < 16; ++i) {
+							auto frame = peer->socket->try_receive_frame();
+							if (not frame) break;
+							peer->session->validate_incoming(*frame);
+							last_seen[id] = std::chrono::steady_clock::now();
+							if (frame->message_type == MessageType::PING
+							    and frame->payload.empty()) {
+								peer->socket->send_frame(peer->session->make_frame(
+									MessageType::PONG, {}));
+							}
+							else if (frame->message_type == MessageType::COMMAND_INTENT) {
+								auto intent = decode_command_intent(frame->payload);
+								std::lock_guard lock{this->mutex};
+								if (this->incoming_host_commands.size() >= MAX_INFLIGHT_COMMANDS) {
+									throw Error{MSG(err) << "Pre-start guest command queue full"};
+								}
+								this->incoming_host_commands.push_back({
+									peer->session->get_identity(), std::move(intent)});
+							}
+							else if (frame->message_type == MessageType::SNAPSHOT_REQUEST) {
+								auto request = decode_snapshot_request(frame->payload);
+								const auto &initial = baselines.at(id).current_snapshot();
+								if (request.last_applied_revision > initial.world_revision) {
+									throw Error{MSG(err) << "Future bootstrap revision requested"};
+								}
+								peer->socket->send_frame(peer->session->make_frame(
+									MessageType::WORLD_SNAPSHOT, encode_world_state(initial)));
+							}
+							else throw Error{MSG(err) << "Unexpected post-bootstrap guest frame"};
+						}
+						if (not peer->socket->is_open() or not peer->socket->peer_connected()
+						    or std::chrono::steady_clock::now() - last_seen.at(id)
+						       > LIVE_SESSION_TIMEOUT) {
+							drop_before_ready(id);
+						}
+					}
+					catch (const std::exception &) {
+						drop_before_ready(id);
+					}
+					continue;
+				}
 				all_ready = false;
 				if (not peer->socket->is_open() or not peer->socket->peer_connected()) {
 					drop_before_ready(id);
