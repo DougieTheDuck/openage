@@ -311,16 +311,19 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	patch(next.reservations, changed.reservations, delta.removed_reservations, reservation_key);
 	patch(next.constructions, changed.constructions, delta.removed_constructions, construction_key);
 	patch(next.attack_orders, changed.attack_orders, delta.removed_attack_orders, attack_key);
-	// No arrow removal IDs are sent. The impact timestamp provides a
-	// deterministic expiry point even when the target or firing tower dies.
+	// A projectile can fly entirely between two recipient captures.
+	// Retain launch records for a short replay window after impact, using
+	// arrow_id for duplicate suppression. Local presentation may replay a
+	// late visual; it MUST NOT apply any damage from the event.
+	const auto event_grace = time::time_t::from_int(3);
 	for (const auto &arrow : changed.arrows) {
-		if (arrow.impact_time <= changed.simulation_time) {
-			throw Error{MSG(err) << "FVD delta contains an already-expired arrow"};
+		if (arrow.impact_time + event_grace <= changed.simulation_time) {
+			throw Error{MSG(err) << "FVD delta includes an excessively stale arrow event"};
 		}
 	}
 	patch(next.arrows, changed.arrows, std::vector<uint64_t>{}, arrow_key);
 	std::erase_if(next.arrows, [&](const ArrowState &arrow) {
-		return arrow.impact_time <= changed.simulation_time;
+		return arrow.impact_time + event_grace <= changed.simulation_time;
 	});
 	if (std::none_of(next.players.begin(), next.players.end(), [&](const auto &player) {
 		return player.player_id == next.local_player_id;
