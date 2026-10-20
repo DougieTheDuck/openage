@@ -257,7 +257,8 @@ bool FVD::apply_damage(const std::shared_ptr<GameState> &state,
 	live->set_attribute(time, HEALTH, new_hp);
 
 	if (auto render = entity->get_render_entity()) {
-		const int64_t max_health = definition == this->tower ? 100 : 25;
+		const int64_t max_health = definition == this->tower ? 100
+		                           : definition == this->horse ? 90 : 25;
 		render->update_health(*live->get_attribute(time, HEALTH), max_health, time);
 	}
 	if (new_hp > 0) {
