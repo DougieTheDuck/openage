@@ -516,9 +516,23 @@ void Presenter::refresh_fvd_lobby_state() {
 	if (state.phase == "assigned" and this->simulation and not this->fvd_bootstrap_supplied) {
 		try {
 			if (this->fvd_lobby_hosting) {
-				if (state.multi_host and not this->fvd_participant_slots_configured) {
-					this->simulation->configure_network_participants(state.match_player_count);
+				// Prune unoccupied starting Builders in EVERY network match,
+				// including the legacy two-peer Hunter-creator path. Only
+				// applying this for multi_host left all seven default
+				// Builders alive whenever the lobby creator drew Hunter.
+				if (not this->fvd_participant_slots_configured) {
+					const auto participant_count = state.match_player_count != 0
+						? state.match_player_count
+						: (state.local_player_id != 0 and state.remote_player_id != 0
+						       ? size_t{2} : size_t{0});
+					if (participant_count < 2 or participant_count > network::MAX_STATE_PLAYERS) {
+						throw Error{MSG(err) << "Cannot start network match without valid player count"};
+					}
+					this->simulation->configure_network_participants(participant_count);
 					this->fvd_participant_slots_configured = true;
+					log::log(INFO << "[FVD/match] starting_builders_prune_scheduled"
+					              << " participants=" << participant_count
+					              << " builders=" << participant_count - 1);
 				}
 				// One request at a time across all recipient-private streams.
 				if (not this->fvd_bootstrap_requested) {
