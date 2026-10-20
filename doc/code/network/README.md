@@ -385,12 +385,12 @@ scores and revision continuity remain recipient-specific.
 | 52 | 4 | Reserved tile count, at most 16,384 |
 | 56 | 4 | Active construction count, at most 1,024 |
 | 60 | 4 | Active Hunter attack-order count, at most 16,384 |
-| 64 | 4 | In-flight arrow count, at most 2,048 |
+| 64 | 4 | Recent arrow launch-event count (active or within 3 seconds after impact), at most 2,048 |
 | 68 | variable | Player, entity, reservation, construction, attack-order and arrow records in that order |
 
 A player record contains an 8-byte player ID, a 2-byte Hunter or Builder role and 2 flag bytes.
 Player flag bit 0 is set while that participant remains connected to the running match.
-An entity record contains an 8-byte entity ID, 8-byte owner ID, a length-prefixed nyan definition of at most 256 UTF-8 bytes, three signed Q16.16 position coordinates, 2 flag bytes, 2 reserved zero bytes, signed 8-byte current and maximum health values and an unsigned 8-byte individual tower-kill count.
+An entity record contains an 8-byte entity ID, 8-byte owner ID, a length-prefixed nyan definition of at most 256 UTF-8 bytes, three signed Q16.16 position coordinates, 2 flag bytes, 2 reserved zero bytes, signed 8-byte current and maximum health values, an unsigned 8-byte individual tower-kill count, and a 2-byte count of up to 16 future motion keys. Each motion key stores an 8-byte signed fixed-point time and three signed 8-byte position coordinates; times must be strictly increasing and later than the message's simulation time.
 Health flag bit 0 is set when both health values apply; entities without a `Live` ability carry zero values and clear the flag.
 Tower-kills flag bit 1 is set only for a Tower owned by the recipient; otherwise the kill-count field is zero and the flag is clear.
 A reservation record contains two signed 8-byte tile coordinates and the 8-byte ID of the Builder holding the tile.
@@ -399,7 +399,7 @@ An attack-order record contains an 8-byte horse ID, three signed Q16.16 destinat
 Attack-order flag bits 0, 1 and 2 indicate a target ID, arrival at the requested destination and an explicit focus target respectively.
 An arrow record contains 8-byte arrow, owner and target IDs, three signed Q16.16 launch coordinates, three signed Q16.16 destination coordinates and signed 8-byte launch and impact times.
 Completed towers remain in the entity list and have no active construction record or reserved tiles.
-Killed entities disappear from the next complete state, while arrows disappear at their impact time and the resulting health or death is present in that same state.
+Killed entities disappear from the next complete state. Arrow launch events remain available for up to 3 seconds after impact, then expire without a tombstone; projectile damage is already reflected in the authoritative health/death state. Guests may play an overdue shot visually once without calculating any hit or damage.
 The host builds state separately for each connection, so the payload contains only its recipient's lifetime Builder kill total and its own Towers' individual kills, never an opponent's score.
 The Builder total includes historical kills from destroyed towers; individual Tower counts are displayed only when selecting that Tower.
 On a guest, construct `ReplicationTracker` with the immutable player ID from the accepted session.
@@ -420,11 +420,12 @@ projectiles locally from their launch/impact timestamps. Version 5 peers are
 incompatible with the shortened delta payload.
 Protocol major version 7 adds `MATCH_READY` and strict, one-time role
 rebinding after `START_MATCH`. Earlier versions are incompatible.
+Protocol major version 8 extends every entity record with its future motion-key count and curve keys. Clients with the old record framing cannot connect.
 Protocol minor version 1 supports optional relay admission within the same protocol major version.
 Protocol minor version 2 adds relay room creation, discovery and joining.
 The encoder rejects any complete payload larger than the 1 MiB frame limit.
 
-### Incremental WorldDelta payload (protocol 5)
+### Incremental WorldDelta payload (introduced in protocol 5, extended in 8)
 
 A delta has a 28-byte header, a length-delimited partial WorldState section
 (encoded using the same individual record representation as a snapshot) and
@@ -448,15 +449,16 @@ is retained. An empty player list is valid in a delta but not a snapshot.
 Removal lists follow in this order: player IDs (u64), entity IDs (u64),
 reservation coordinates (two signed i64), construction order IDs (u64),
 and Hunter attack-order horse IDs (u64). Arrows have no removal list:
-the client stops rendering each arrow once its simulation time reaches
-the supplied impact time and prunes it from the reconstructed world state
-when applying subsequent updates.
+the client stops normal flight rendering at the supplied impact time, but
+keeps a short 3-second launch record to support one-shot visual replay when
+recipient updates arrive after impact. The next clock update expires the
+record without any arrow tombstone.
 The decoder bounds every count, requires exact payload length, and rejects
 unsupported flags and malformed records. Applying a delta rejects unknown or
 duplicate removals, conflicting updates/removals, noncontiguous revisions,
 map or recipient mismatches and unauthorized tower score disclosures.
 
-Snapshots remain complete and use the unchanged version-4 snapshot body format;
+Snapshots remain complete and use the current version-8 entity record format;
 they replace every record and reset the host and guest delta baselines. A
 WorldDelta with no changes still advances the authoritative world revision
 without copying every entity. Re-sending the entire world as a delta is no
@@ -541,11 +543,21 @@ New samples preserve the displayed position and any unplayed keyframes; unchange
 World sprites and their health bars use the same presentation time while the guest simulation remains paused.
 Repeated position updates preserve the sprite animation start time.
 Recovery snapshots reset presentation curves, including when a subsequent delta reaches the replication tracker before the next rendered frame.
-Individual projectile launch records are sent when they appear, not repeated
-while an arrow remains in flight. Their impact timestamp is sufficient for
-client-side visual expiration; no arrow removal ID is transmitted.
-Unit positions are sampled and transmitted only when they change; curve or
-movement-path replication remains a separate future optimization.
+Individual projectile launch records are sent when first observed by a
+recipient, and retained for 3 seconds after impact so even short flights
+between captures can be delivered; they expire without an arrow tombstone.
+Guest renderers can play a late shot once from that event while never
+reapplying hit damage. Recent launch history is capped at 2,048 events:
+full no-loss handling at higher throughput remains an open OpenSpec task.
+
+Entity snapshots also include up to 16 future keyframes from the simulation's
+continuous position curve. The Hunter compares its next position sample with
+the trajectory the recipient already holds, omitting an entity patch if
+that plan still predicts the new position and all other entity properties
+are unchanged. The guest advances its reconstructed position from that
+same curve on each world revision, using updates as authoritative retasks
+and corrections. No independent client pathfinding or damage simulation
+is performed. Performance and animation-facing parity still need live tests.
 
 ## FVD authority and relay diagnostics
 
