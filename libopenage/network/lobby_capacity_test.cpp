@@ -86,6 +86,13 @@ void run_capacity_case(size_t count, bool force_builder_creator) {
 			relay_error = std::current_exception();
 		}
 	}};
+	// Close the listener BEFORE jthread joins on an assertion failure.
+	// Otherwise the relay's accept() could block forever and hide the
+	// useful TESTEQUALS failure (the old "[last/total]" symptom).
+	struct CloseListener {
+		TcpListener &socket;
+		~CloseListener() { socket.close(); }
+	} close_listener{listener};
 	std::vector<std::unique_ptr<RelayLobbyClient>> clients{};
 	clients.reserve(count);
 	for (size_t i = 0; i < count; ++i) {
