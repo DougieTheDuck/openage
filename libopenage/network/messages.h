@@ -42,6 +42,8 @@ constexpr uint32_t MAX_STATE_RESERVATIONS = 16384;
 constexpr uint32_t MAX_STATE_CONSTRUCTIONS = 1024;
 constexpr uint32_t MAX_STATE_ATTACK_ORDERS = 16384;
 constexpr uint32_t MAX_STATE_ARROWS = 2048;
+/** Bounded future position keyframes sent per entity and snapshot. */
+constexpr uint16_t MAX_ENTITY_MOTION_KEYS = 16;
 
 /** Largest displayable command rejection reason. */
 constexpr uint32_t MAX_REJECTION_REASON_SIZE = 4096;
@@ -115,7 +117,13 @@ struct CommandResult {
 	std::string reason{};
 };
 
-/** One authoritative entity position. */
+/** A future keyframe in the authoritative linear position curve. */
+struct MotionKeyframe {
+	time::time_t time{};
+	coord::phys3 position{0, 0, 0};
+};
+
+/** One authoritative entity position and its future movement curve. */
 struct EntityState {
 	gamestate::entity_id_t entity_id{0};
 	gamestate::player_id_t owner_id{0};
@@ -125,6 +133,8 @@ struct EntityState {
 	std::optional<int64_t> maximum_health{};
 	/** The receiving player's own Tower kills; omitted for other entities. */
 	std::optional<uint64_t> tower_kills{};
+	/** Future authoritative position keys; empty for stationary entities. */
+	std::vector<MotionKeyframe> motion_keys{};
 };
 
 /** FVD role assigned to one playable player. */
