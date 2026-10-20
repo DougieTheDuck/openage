@@ -3,7 +3,9 @@
 #pragma once
 
 #include <shared_mutex>
+#include <cstddef>
 #include <deque>
+#include <memory>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -39,7 +41,22 @@ class TimeLoop;
 namespace gamestate {
 class EntityFactory;
 class Game;
+class GameState;
 class TerrainFactory;
+
+/**
+ * Remove the starting Builder entities whose assigned player slots are not
+ * in a network match. The scenario starts with seven Builders for solo play;
+ * network matches retain exactly (admitted_players - 1).
+ *
+ * Invoke only on the authoritative simulation owner thread, before the
+ * first WORLD_SNAPSHOT. The renderer's entity deactivation is included.
+ * @return Number of unassigned starting Builder entities removed.
+ */
+size_t prune_unassigned_fvd_builders(
+	const std::shared_ptr<GameState> &state,
+	size_t admitted_players,
+	const time::time_t &at);
 
 namespace event {
 class Commander;
