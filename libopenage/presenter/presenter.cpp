@@ -771,7 +771,20 @@ void Presenter::refresh_fvd_guest_visuals() {
 			// health-bar registration path.
 			if (this->hud_renderer) this->hud_renderer->add_health_entity(visual);
 		}
-		visual->update_sample(entity.entity_id, entity.position, path->second, world->simulation_time, new_entity or not previous_time ? std::nullopt : std::make_optional(presentation_time));
+		std::vector<std::pair<time::time_t, coord::phys3>> future_motion{};
+		future_motion.reserve(entity.motion_keys.size());
+		for (const auto &key : entity.motion_keys) {
+			// The renderer follows the host's actual event-scheduled path.
+			// Ordinary position samples remain authoritative corrections.
+			if (key.time > world->simulation_time) {
+				future_motion.emplace_back(key.time, key.position);
+			}
+		}
+		visual->update_sample(
+			entity.entity_id, entity.position, path->second, world->simulation_time,
+			new_entity or not previous_time ? std::nullopt
+			                                : std::make_optional(presentation_time),
+			future_motion);
 		if (entity.health and entity.maximum_health and *entity.maximum_health > 0) {
 			curve::Segmented<int64_t> health{nullptr, 0, "", nullptr, *entity.health};
 			visual->update_health(health, *entity.maximum_health, world->simulation_time);
