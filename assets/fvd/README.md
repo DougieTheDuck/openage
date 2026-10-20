@@ -68,7 +68,7 @@ Horses are controlled by the human Hunter. Select one or drag to select a group,
 Attack-moving horses detect Builders and completed enemy towers within three tiles and approach to melee range before striking.
 Towers always take automatic targeting priority over Builders when both are nearby, even if a Builder is closer.
 To override automatic tower priority in local gameplay, select Hunter horses and right-click an enemy Builder or completed tower: the horses focus that exact target until it dies or you give another order.
-Right-click empty terrain remains ordinary Move. Focus-attack has not yet been added to the multiplayer command protocol.
+Right-click empty terrain remains ordinary Move. The FOCUS_ATTACK command is supported by the multiplayer protocol; real-client focus and target-feedback parity remains to be verified.
 They resume their original destination after an engagement, or stay there alert for nearby towers after arriving.
 If a selected horse dies before a group command is issued, its surviving teammates still carry out the order.
 Right-click issues an ordinary Move without seeking enemies; Escape cancels attack-move targeting.
@@ -76,8 +76,14 @@ The gather point remains unimplemented.
 Completed towers automatically target nearby horses and fire scheduled arrows.
 Only authoritative impacts damage health; killing blows credit the tower's Builder.
 Tower arrows now appear as brief camera-projected golden streaks with a small ballistic arc, drawn in the QML overlay from the authoritative launch time and flight duration. Visual shots are bounded for large battles, but all damage events still resolve normally.
-Network replication of those shot visuals remains outstanding; this overlay currently follows only the local authoritative simulation.
+Shot launch/impact times and trajectory endpoints are already replicated in world snapshots/deltas. The guest renders arrow streaks from those timed events without simulating damage locally; visual parity under latency and recovery still needs real-client verification.
 Combat tuning is in scenario.nyan and entity health in entities.nyan.
+Online guest sprites now also receive the authoritative position curve's upcoming
+keyframes, so known movement routes can play back on the same timeline as the
+Hunter rather than being invented from only sampled positions. Until the
+curve-aware delta optimization is complete, the host continues to send
+authoritative sample corrections as well. See
+`openspec/changes/complete-gameplay-replication/` for parity acceptance.
 Current sustained-fire target: three towers kill a stationary 90-HP Hunter
 horse in roughly 11.4 seconds, four towers in about 9 seconds (2 damage
 per arrow, 0.8-second reload, 0.2-second flight). Three Hunter horses
