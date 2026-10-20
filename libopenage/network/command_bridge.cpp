@@ -192,6 +192,15 @@ WorldState capture_fvd_state(
 			entity->get_definition(),
 			position->get_positions().get(time),
 		};
+		// Position curves are calculated on the simulation thread already:
+		// copy only upcoming segments, never past history. Idle entities
+		// naturally emit zero future keys. An update can replace this plan
+		// when routing, collisions or player orders change the trajectory.
+		for (const auto &key : position->get_positions().get_container()) {
+			if (key.time() <= time) continue;
+			if (entity_state.motion_keys.size() == MAX_ENTITY_MOTION_KEYS) break;
+			entity_state.motion_keys.push_back({key.time(), key.val()});
+		}
 		if (health) {
 			entity_state.health = health->first;
 			entity_state.maximum_health = health->second;
