@@ -504,7 +504,11 @@ void lobby_relay_client() {
 	}
 	for (auto *player : players) {
 		TESTEQUALS(wait_for(*player, "bootstrap"), true);
+		// Guests and the Hunter must agree on the first authoritative
+		// world revision before any live delta is transmitted.
+		TESTEQUALS(player->status().snapshot_revision, uint64_t{1});
 	}
+	TESTEQUALS(hunter_authority->status().snapshot_revision, uint64_t{1});
 	for (auto *builder : builders) {
 		TESTEQUALS(builder->get_replication() != nullptr, true);
 		TESTEQUALS(builder->get_replication()->get_local_kills().value(),
@@ -720,6 +724,8 @@ void lobby_relay_client() {
 	promoted_hunter.provide_host_snapshot(std::move(authority_bootstrap));
 	TESTEQUALS(wait_for(promoted_hunter, "bootstrap"), true);
 	TESTEQUALS(wait_for(former_creator, "bootstrap"), true);
+	TESTEQUALS(promoted_hunter.status().snapshot_revision, uint64_t{1});
+	TESTEQUALS(former_creator.status().snapshot_revision, uint64_t{1});
 	TESTEQUALS(former_creator.get_replication()->get_world_state()->players.size(),
 	           size_t{2});
 	former_creator.close();
