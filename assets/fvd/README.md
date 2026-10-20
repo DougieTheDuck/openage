@@ -77,7 +77,16 @@ Completed towers automatically target nearby horses and fire scheduled arrows.
 Only authoritative impacts damage health; killing blows credit the tower's Builder.
 Tower arrows now appear as brief camera-projected golden streaks with a small ballistic arc, drawn in the QML overlay from the authoritative launch time and flight duration. Visual shots are bounded for large battles, but all damage events still resolve normally.
 Network replication of those shot visuals remains outstanding; this overlay currently follows only the local authoritative simulation.
-Combat tuning is in scenario.nyan.
+Combat tuning is in scenario.nyan and entity health in entities.nyan.
+Current sustained-fire target: three towers kill a stationary 90-HP Hunter
+horse in roughly 11.4 seconds, four towers in about 9 seconds (2 damage
+per arrow, 0.8-second reload, 0.2-second flight). Three Hunter horses
+already deal 3 melee damage each, reduced to 2 by tower armour, on a
+0.6-second cooldown; they destroy a fully built 100-HP tower in roughly
+9.6 seconds of uninterrupted melee. Travel, range, retargeting and
+projectile timing can increase actual time-to-kill.
+Run `bin/run test openage::gamestate::tests::fvd_combat_balance` to check
+the tuned scenario and the live three-horse tower-destruction timeline.
 Selecting an owned Tower shows its individual kills; selecting the Builder
 shows the lifetime total of all their towers, including ones now destroyed.
 Scores are authoritative and per-tower kills replicate only to their owner.
@@ -87,7 +96,7 @@ Press keys 1 through 8 to switch the controlled player and return the camera to 
 Drag with the left mouse button to select your Builder and right-click to move it.
 The lower-left HUD displays the controlled player and selected entity.
 Selecting a tower shows its live HP and its damage and armour fields instead of a build action.
-Tower damage and armour read the configured gameplay values, currently 8 arrow damage and 1 armour.
+Tower damage and armour read the configured gameplay values, currently 2 arrow damage and 1 armour.
 Only a selected Builder can enter tower placement mode, using the B key or Build Tower HUD button.
 Select a Builder, click **Build Tower** (or press **B**) and move the cursor to see a footprint preview (green for available, red for occupied, reserved or out of bounds).
 Click once to replace the active construction order, or **hold Shift while clicking** to queue multiple sites for the same Builder. Shift-click keeps placement mode active until Esc or right-click.
