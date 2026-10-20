@@ -1313,6 +1313,12 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			this->current.message = "All players synchronized. Waiting for role reveal.";
 			this->current.snapshot_revision = 1;
 		}
+		log::log(INFO << "[FVD/authority] bootstrap_complete room=" << lobby->room_id()
+		              << " hunter_player=1 revision=1"
+		              << " acknowledged_builders="
+		              << std::count_if(ready.begin(), ready.end(), [](const auto &item) {
+			              return item.second;
+		              }));
 
 		std::map<gamestate::player_id_t, bool> live{};
 		for (const auto &[id, peer] : peers) {
