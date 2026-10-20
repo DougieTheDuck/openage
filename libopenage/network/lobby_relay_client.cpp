@@ -973,6 +973,8 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			socket->close();
 		}
 		if (not this->stopping) {
+			log::log(WARN << "[FVD/match] session_error context=two_peer"
+			              << " reason=" << error.what());
 			std::shared_ptr<ReplicationTracker> replication;
 			bool builder_departure = false;
 			{
@@ -1434,6 +1436,10 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		}
 	}
 	catch (const std::exception &error) {
+		if (not this->stopping) {
+			log::log(WARN << "[FVD/match] session_error context=multi_host"
+			              << " reason=" << error.what());
+		}
 		std::shared_ptr<RelayMultiHostLobby> active{};
 		{
 			std::lock_guard lock{this->mutex};
