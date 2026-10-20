@@ -334,6 +334,11 @@ void GameSimulation::request_network_bootstrap(player_id_t recipient) {
 		throw Error{MSG(err) << "FVD bootstrap requires a paused authoritative simulation"};
 	}
 	std::lock_guard lock{this->bootstrap_mutex};
+	if (this->network_admitted_players < 2
+	    or recipient > this->network_admitted_players) {
+		throw Error{MSG(err) << "Cannot snapshot a network match before its"
+		                     << " admitted participant count is configured"};
+	}
 	if (this->bootstrap_requested or this->bootstrap_ready) {
 		throw Error{MSG(err) << "FVD bootstrap capture already pending"};
 	}
