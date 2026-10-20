@@ -30,18 +30,6 @@ auto arrow_key = [](const ArrowState &r) { return r.arrow_id; };
 bool same(const PlayerState &a, const PlayerState &b) {
 	return a.player_id == b.player_id and a.role == b.role and a.connected == b.connected;
 }
-bool same(const EntityState &a, const EntityState &b) {
-	if (a.entity_id != b.entity_id or a.owner_id != b.owner_id
-	    or a.definition != b.definition or a.position != b.position
-	    or a.health != b.health or a.maximum_health != b.maximum_health
-	    or a.tower_kills != b.tower_kills
-	    or a.motion_keys.size() != b.motion_keys.size()) return false;
-	for (size_t i = 0; i < a.motion_keys.size(); ++i) {
-		if (a.motion_keys[i].time != b.motion_keys[i].time
-		    or a.motion_keys[i].position != b.motion_keys[i].position) return false;
-	}
-	return true;
-}
 // Evaluate the last transmitted linear movement plan without running any
 // gameplay systems on the guest. The host uses exactly the same prediction
 // to decide whether a fresh sampled position really needs transmission.
