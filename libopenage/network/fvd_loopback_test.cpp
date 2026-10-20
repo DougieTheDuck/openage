@@ -36,6 +36,7 @@
 #include "network/messages.h"
 #include "network/protocol.h"
 #include "network/replication.h"
+#include "network/construction_presentation.h"
 #include "network/world_delta.h"
 #include "network/session.h"
 #include "network/transport.h"
@@ -762,6 +763,11 @@ void run_guest(uint16_t port) {
 	TESTEQUALS(
 		find_entity(planned, planned.constructions.front().site_entity_id).definition,
 		"fvd.data.entities.Foundation");
+	const auto planned_sites = make_construction_presentation(planned);
+	TESTEQUALS(planned_sites.sites.size(), size_t{1});
+	TESTEQUALS(planned_sites.sites.front().owner_id, gamestate::player_id_t{2});
+	TESTEQUALS(planned_sites.sites.front().phase == SitePresentationPhase::PLANNED, true);
+	TESTEQUALS(planned_sites.reservations.empty(), false);
 
 	auto constructing_frame = client.receive_frame();
 	constructing_frame.has_value() or TESTFAIL;
@@ -781,6 +787,10 @@ void run_guest(uint16_t port) {
 	TESTEQUALS(guest_build.phase_start_time, planned.constructions.front().phase_end_time);
 	TESTEQUALS(guest_build.progress_percent(guest_build.phase_start_time), 0);
 	TESTEQUALS(guest_build.progress_percent(guest_build.phase_end_time), 100);
+	const auto building_sites = make_construction_presentation(constructing);
+	TESTEQUALS(building_sites.sites.size(), size_t{1});
+	TESTEQUALS(building_sites.sites.front().phase == SitePresentationPhase::BUILDING, true);
+	TESTEQUALS(building_sites.sites.front().owner_id, gamestate::player_id_t{2});
 
 	auto completed_frame = client.receive_frame();
 	completed_frame.has_value() or TESTFAIL;
@@ -791,6 +801,10 @@ void run_guest(uint16_t port) {
 	completed.constructions.empty() or TESTFAIL;
 	completed.reservations.empty() or TESTFAIL;
 	find_defined_entity(completed, "fvd.data.entities.Tower");
+	const auto finished_sites = make_construction_presentation(completed);
+	TESTEQUALS(finished_sites.sites.size(), size_t{1});
+	TESTEQUALS(finished_sites.sites.front().phase == SitePresentationPhase::COMPLETE, true);
+	TESTEQUALS(finished_sites.reservations.empty(), true);
 
 	auto spawned_frame = client.receive_frame();
 	spawned_frame.has_value() or TESTFAIL;

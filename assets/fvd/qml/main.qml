@@ -11,6 +11,8 @@ Item {
 	readonly property bool placing: hud !== null && hud.placing
 	readonly property bool placementValid: hud !== null && hud.placementValid
 	readonly property var placementFootprint: hud === null ? [] : hud.placementFootprint
+	readonly property var siteMarkers: hud === null ? [] : hud.siteMarkers
+	readonly property var reservedFootprints: hud === null ? [] : hud.reservedFootprints
 	readonly property int queuedTowers: hud === null ? 0 : hud.queuedTowers
 	readonly property string constructionStatus: hud === null ? "" : hud.constructionStatus
 	readonly property int constructionPercent: hud === null ? -1 : hud.constructionPercent
@@ -57,6 +59,62 @@ Item {
 		color: "#f4c78c"
 		font.pixelSize: 13
 		font.bold: true
+	}
+
+	// Pure presentation of host-authored foundations, towers and reserved
+	// footprint cells. Never blocks world input or predicts a build outcome.
+	Canvas {
+		id: constructionSites
+		anchors.fill: parent
+		z: -1
+		visible: root.siteMarkers.length > 0 || root.reservedFootprints.length > 0
+		onVisibleChanged: requestPaint()
+		Connections {
+			target: root
+			function onSiteMarkersChanged() { constructionSites.requestPaint() }
+			function onReservedFootprintsChanged() { constructionSites.requestPaint() }
+		}
+		onPaint: {
+			var ctx = getContext("2d")
+			ctx.clearRect(0, 0, width, height)
+			var reserved = root.reservedFootprints
+			ctx.lineWidth = 1
+			ctx.fillStyle = "rgba(90, 175, 205, 0.12)"
+			ctx.strokeStyle = "rgba(124, 201, 223, 0.42)"
+			for (var i = 0; i < reserved.length; ++i) {
+				var tile = reserved[i]
+				ctx.beginPath()
+				ctx.moveTo(tile.ax, tile.ay)
+				ctx.lineTo(tile.bx, tile.by)
+				ctx.lineTo(tile.cx, tile.cy)
+				ctx.lineTo(tile.dx, tile.dy)
+				ctx.closePath()
+				ctx.fill()
+				ctx.stroke()
+			}
+			var sites = root.siteMarkers
+			ctx.font = "bold 11px sans-serif"
+			ctx.textAlign = "center"
+			ctx.textBaseline = "middle"
+			for (var j = 0; j < sites.length; ++j) {
+				var site = sites[j]
+				var text = "P" + site.owner + " " + site.phase.toUpperCase()
+				var labelWidth = ctx.measureText(text).width + 12
+				var left = site.x - labelWidth / 2
+				var top = site.y - 34
+				var outline = site.phase === "Queued" ? "#f1c66c"
+				            : site.phase === "Planned" ? "#8cccf5"
+				            : site.phase === "Building" ? "#92e1ae"
+				            : "#cedbd1"
+				ctx.fillStyle = "rgba(20, 34, 30, 0.9)"
+				ctx.strokeStyle = outline
+				ctx.lineWidth = 1
+				ctx.fillRect(left, top, labelWidth, 18)
+				ctx.strokeRect(left, top, labelWidth, 18)
+				ctx.fillStyle = outline
+				ctx.fillText(text, site.x, top + 9)
+			}
+		}
 	}
 
 	// Tile-accurate 2D build preview, using the same camera projection as

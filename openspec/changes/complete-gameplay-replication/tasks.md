@@ -49,9 +49,13 @@
   - [x] Transmit actual phase start/end timestamps (wire protocol v9), use
     host-authored timed progress in the guest HUD, and test wire roundtrip,
     construction-only deltas and loopback playback. **Awaiting build/run.**
-  - [ ] Visualize ownership, reservations and queued/planned foundation
-    previews for every participant, then verify cancellation/retasking
-    and all-player presentation in live processes.
+  - [x] Derive uniform host/guest site overlays from authoritative Towers,
+    Foundations, active orders and Builder-owned reserved tiles. Show owner
+    labels and queued/planned/building/complete phases, correct guest queue
+    totals, and test cancellation/retasking and loopback phases.
+    **Awaiting build/run and live visual acceptance.**
+  - [ ] Visually verify all 2/4/8-player screens and real camera movement,
+    conflicting reservations, cancellation and retasking on Windows/Linux.
 - [ ] 1.7 Replicate Hunter spawn timing, any future rally behavior, active
   orders and target highlights via authoritative time-indexed state.
 - [ ] 1.8 Every new gameplay feature must add its wire/presentation

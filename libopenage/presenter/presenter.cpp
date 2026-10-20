@@ -24,6 +24,9 @@
 #include "gamestate/api/animation.h"
 #include "gamestate/api/property.h"
 #include "gamestate/api/types.h"
+#include "gamestate/component/internal/ownership.h"
+#include "gamestate/component/internal/position.h"
+#include "gamestate/component/types.h"
 #include "gamestate/fvd.h"
 #include "gamestate/game.h"
 #include "gamestate/game_entity.h"
@@ -39,6 +42,7 @@
 #include "input/input_manager.h"
 #include "log/log.h"
 #include "network/replication.h"
+#include "network/construction_presentation.h"
 #include "network/lobby_relay_client.h"
 #include "renderer/camera/camera.h"
 #include "renderer/gui/gui.h"
@@ -1033,6 +1037,8 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("armor", QString{"Not defined"});
 			this->fvd_hud_state->insert("canBuild", false);
 			this->fvd_hud_state->insert("placementFootprint", QVariantList{});
+			this->fvd_hud_state->insert("siteMarkers", QVariantList{});
+			this->fvd_hud_state->insert("reservedFootprints", QVariantList{});
 			this->fvd_hud_state->insert("placementValid", false);
 			this->fvd_hud_state->insert("queuedTowers", 0);
 			this->fvd_hud_state->insert("constructionStatus", QString{});
@@ -1313,9 +1319,22 @@ void Presenter::render() {
 				    or not this->fvd_hud_state->value("arrowStreaks").toList().empty()) {
 					this->fvd_hud_state->insert("arrowStreaks", arrow_streaks);
 				}
-				// Preview the exact footprint checked by can_place_tower().
-				// The preview is cosmetic; the simulation validates the
-				// authoritative command again at its execution time.
+				// World-space tile projection is shared by placement and
+				// authoritative construction/reservation overlays.
+				const Eigen::Matrix4f camera_matrix =
+					this->camera->get_projection_matrix() * this->camera->get_view_matrix();
+				const auto viewport = this->camera->get_viewport_size();
+				auto project_tile = [&](double ne, double se) {
+					const auto position = coord::phys3{
+						coord::phys_t::from_double(ne),
+						coord::phys_t::from_double(se), 0};
+					const auto world = position.to_scene3().to_world_space();
+					const Eigen::Vector4f clip = camera_matrix
+						* Eigen::Vector4f{world.x(), world.y(), world.z(), 1.0f};
+					return Eigen::Vector2f{
+						(clip.x() / clip.w() * 0.5f + 0.5f) * viewport[0],
+						(0.5f - clip.y() / clip.w() * 0.5f) * viewport[1]};
+				};
 				QVariantList footprint;
 				bool valid = false;
 				if (this->game_controller->is_tower_placement_active()
@@ -1355,20 +1374,6 @@ void Presenter::render() {
 							state, static_cast<gamestate::player_id_t>(controlled),
 							selected.ids, mouse, now);
 					}
-					const Eigen::Matrix4f camera_matrix =
-						this->camera->get_projection_matrix() * this->camera->get_view_matrix();
-					const auto viewport = this->camera->get_viewport_size();
-					auto project_tile = [&](double ne, double se) {
-						const auto position = coord::phys3{
-							coord::phys_t::from_double(ne),
-							coord::phys_t::from_double(se), 0};
-						const auto world = position.to_scene3().to_world_space();
-						const Eigen::Vector4f clip = camera_matrix
-							* Eigen::Vector4f{world.x(), world.y(), world.z(), 1.0f};
-						return Eigen::Vector2f{
-							(clip.x() / clip.w() * 0.5f + 0.5f) * viewport[0],
-							(0.5f - clip.y() / clip.w() * 0.5f) * viewport[1]};
-					};
 					for (const auto &tile : fvd->get_tower_footprint(site)) {
 						const auto a = project_tile(tile.ne, tile.se);
 						const auto b = project_tile(tile.ne + 1.0, tile.se);
@@ -1388,17 +1393,115 @@ void Presenter::render() {
 				this->fvd_hud_state->insert("placementValid", valid);
 				auto replica_for_hud = this->fvd_replication
 					? this->fvd_replication->get_world_state() : std::nullopt;
+				// Both the Hunter and every Builder see the same authoritative
+				// world sites. Host and solo read live simulation records; guests
+				// use only accepted replication, never their paused local world.
+				network::ConstructionPresentation construction_view{};
+				std::optional<network::WorldState> host_construction_world{};
+				const network::WorldState *construction_world = replica_for_hud
+					? &*replica_for_hud : nullptr;
+				if (not construction_world and not this->fvd_replication) {
+					host_construction_world.emplace();
+					auto &host_world = *host_construction_world;
+					auto game_state = this->simulation->get_game()->get_state();
+					for (const auto &[id, entity] : game_state->get_game_entities()) {
+						const auto &definition = entity->get_definition();
+						if (definition != "fvd.data.entities.Builder"
+						    and definition != "fvd.data.entities.Foundation"
+						    and definition != "fvd.data.entities.Tower") continue;
+						auto position = std::dynamic_pointer_cast<gamestate::component::Position>(
+							entity->get_component(gamestate::component::component_t::POSITION));
+						auto ownership = std::dynamic_pointer_cast<gamestate::component::Ownership>(
+							entity->get_component(gamestate::component::component_t::OWNERSHIP));
+						if (not position or not ownership) {
+							throw Error{MSG(err) << "FVD construction marker lacks game components"};
+						}
+						host_world.entities.push_back({
+							id, ownership->get_owners().get(now), definition,
+							position->get_positions().get(now)});
+					}
+					for (const auto &reservation : fvd->get_reserved_tiles()) {
+						host_world.reservations.push_back({
+							reservation.tile, reservation.builder_id});
+					}
+					for (const auto &order : fvd->get_construction_state()) {
+						host_world.constructions.push_back({
+							order.order_id, order.owner, order.builder_id, order.target,
+							order.phase == gamestate::FVDConstructionPhase::PLANNED
+								? network::ConstructionPhase::PLANNED
+								: network::ConstructionPhase::UNDER_CONSTRUCTION,
+							order.phase_end_time, order.phase_start_time, order.site_entity_id});
+					}
+					construction_world = &host_world;
+				}
+				if (construction_world) {
+					construction_view = network::make_construction_presentation(*construction_world);
+				}
+				QVariantList reserved_footprints;
+				for (const auto &reserved : construction_view.reservations) {
+					const auto &tile = reserved.tile;
+					const auto center = project_tile(tile.ne + 0.5, tile.se + 0.5);
+					if (center.x() < -90 or center.y() < -90
+					    or center.x() > viewport[0] + 90
+					    or center.y() > viewport[1] + 90) continue;
+					const auto a = project_tile(tile.ne, tile.se);
+					const auto b = project_tile(tile.ne + 1.0, tile.se);
+					const auto c = project_tile(tile.ne + 1.0, tile.se + 1.0);
+					const auto d = project_tile(tile.ne, tile.se + 1.0);
+					reserved_footprints.push_back(QVariantMap{
+						{"ax", a.x()}, {"ay", a.y()},
+						{"bx", b.x()}, {"by", b.y()},
+						{"cx", c.x()}, {"cy", c.y()},
+						{"dx", d.x()}, {"dy", d.y()}});
+				}
+				QVariantList site_markers;
+				for (const auto &site : construction_view.sites) {
+					const auto center = project_tile(site.site.ne + 0.5, site.site.se + 0.5);
+					if (center.x() < -90 or center.y() < -90
+					    or center.x() > viewport[0] + 90
+					    or center.y() > viewport[1] + 90) continue;
+					QString phase{};
+					switch (site.phase) {
+					case network::SitePresentationPhase::QUEUED:
+						phase = "Queued";
+						break;
+					case network::SitePresentationPhase::PLANNED:
+						phase = "Planned";
+						break;
+					case network::SitePresentationPhase::BUILDING:
+						phase = "Building";
+						break;
+					case network::SitePresentationPhase::COMPLETE:
+						phase = "Tower";
+						break;
+					}
+					site_markers.push_back(QVariantMap{
+						{"x", center.x()}, {"y", center.y()},
+						{"owner", static_cast<int>(site.owner_id)}, {"phase", phase}});
+				}
+				if (not reserved_footprints.isEmpty()
+				    or not this->fvd_hud_state->value("reservedFootprints").toList().empty()) {
+					this->fvd_hud_state->insert("reservedFootprints", reserved_footprints);
+				}
+				if (not site_markers.isEmpty()
+				    or not this->fvd_hud_state->value("siteMarkers").toList().empty()) {
+					this->fvd_hud_state->insert("siteMarkers", site_markers);
+				}
 				QString construction_status{};
 				int construction_percent = -1;
 				int queued_towers = 0;
 				if (builder and controlled >= 2 and selected.ids.size() == 1) {
 					if (replica_for_hud) {
 						auto builder_id = selected.ids.front();
+						for (const auto &site : construction_view.sites) {
+							if (site.phase == network::SitePresentationPhase::QUEUED
+							    and site.builder_id == builder_id
+							    and site.owner_id == controlled) ++queued_towers;
+						}
 						for (const auto &order : replica_for_hud->constructions) {
 							if (order.builder_id != builder_id
 							    or order.owner_id != controlled) continue;
 							if (order.phase == network::ConstructionPhase::PLANNED) {
-								++queued_towers;
 								if (construction_status.isEmpty())
 									construction_status = QString{"Walking to tower site"};
 							}

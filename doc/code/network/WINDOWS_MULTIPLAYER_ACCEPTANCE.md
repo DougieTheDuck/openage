@@ -53,7 +53,14 @@ PowerShell with exit code 0 indicates success.
    The Hunter must own authority *even when the lobby creator is Builder*.
    Both must see the same initial map and Builder/Hunter entities.
 4. Have the Builder move, then issue a tower build (B, then click), and
-   observe both screens. At simulation time 20 seconds a Hunter horse
+   observe both screens. Check the translucent footprint reservation and
+   the same `P2 PLANNED` / `P2 BUILDING` / `P2 TOWER` site labels on
+   Hunter and Builder, including while moving the camera. Shift-click
+   additional sites and confirm they appear as `P2 QUEUED` on both screens
+   and the Builder HUD shows the correct count. Cancel or retask the
+   Builder and confirm every canceled site label and reserved footprint
+   disappears on both screens, with no stale marker after recovery.
+    At simulation time 20 seconds a Hunter horse
    should appear, with later horses at one-second intervals. As the
    Hunter, select multiple horses and use A then click to AttackMove;
    confirm movement, tower arrows, damage and deaths converge on both
@@ -82,7 +89,9 @@ player count before hosting. Each guest must join the **same** room.
 - Two or more Builders should simultaneously select their own units and
   queue tower construction at the **same open tile**. Verify **at most one**
   construction reservation appears, that rejected/pending orders resolve,
-  and all player screens converge.
+  and all player screens converge. Check each reservation and site label
+  shows the correct owner on Hunter and every Builder screen; distinguish
+  queued foundations from the Builder's current planned/building site.
 - Other Builders should queue distinct towers and move while the Hunter
   selects several horses and AttackMoves. Verify ownership, arrows, health,
   death and kill totals agree across game processes.

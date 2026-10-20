@@ -2,6 +2,8 @@
 
 #include "replication.h"
 
+#include "construction_presentation.h"
+
 #include "testing/testing.h"
 
 namespace openage::network::tests {
@@ -152,6 +154,70 @@ void replication() {
 	TESTEQUALS(other_player.get_local_kills().value(), uint64_t{12});
 	TESTEQUALS(other_player.get_tower_kills(200).value(), uint64_t{12});
 	TESTEQUALS(other_player.get_tower_kills(100).has_value(), false);
+
+	// Every participant sees identical site identities and ownership. A
+	// queued foundation has a reservation but no active construction order.
+	WorldState sites_world{};
+	sites_world.map_size = 128;
+	sites_world.local_player_id = 2;
+	sites_world.world_revision = 1;
+	sites_world.players = {{1, PlayerRole::HUNTER},
+	                       {2, PlayerRole::BUILDER}, {3, PlayerRole::BUILDER}};
+	sites_world.entities = {
+		{10, 2, "fvd.data.entities.Builder", {8, 8, 0}},
+		{11, 3, "fvd.data.entities.Builder", {9, 9, 0}},
+		{20, 2, "fvd.data.entities.Foundation", {15.5, 15.5, 0}},
+		{21, 2, "fvd.data.entities.Foundation", {18.5, 18.5, 0}},
+		{22, 3, "fvd.data.entities.Tower", {25.5, 25.5, 0}},
+		{23, 3, "fvd.data.entities.Tower", {30.5, 30.5, 0}},
+	};
+	sites_world.reservations = {
+		{{15, 15}, 10}, {{18, 18}, 10}, {{25, 25}, 11}};
+	sites_world.constructions = {
+		{7, 2, 10, {18, 18}, ConstructionPhase::PLANNED,
+		 time::time_t::from_int(12), time::time_t::from_int(12), 21},
+		{8, 3, 11, {25, 25}, ConstructionPhase::UNDER_CONSTRUCTION,
+		 time::time_t::from_int(20), time::time_t::from_int(10), 22},
+	};
+	const auto views = make_construction_presentation(sites_world);
+	TESTEQUALS(views.sites.size(), size_t{4});
+	TESTEQUALS(views.reservations.size(), size_t{3});
+	TESTEQUALS(views.sites[0].phase == SitePresentationPhase::QUEUED, true);
+	TESTEQUALS(views.sites[0].builder_id, gamestate::entity_id_t{10});
+	TESTEQUALS(views.sites[1].phase == SitePresentationPhase::PLANNED, true);
+	TESTEQUALS(views.sites[2].phase == SitePresentationPhase::BUILDING, true);
+	TESTEQUALS(views.sites[2].owner_id, gamestate::player_id_t{3});
+	TESTEQUALS(views.sites[3].phase == SitePresentationPhase::COMPLETE, true);
+	auto hunter_view = sites_world;
+	hunter_view.local_player_id = 1;
+	const auto hunter_sites = make_construction_presentation(hunter_view);
+	TESTEQUALS(hunter_sites.sites.size(), views.sites.size());
+	TESTEQUALS(hunter_sites.sites[0].entity_id, views.sites[0].entity_id);
+	TESTEQUALS(hunter_sites.sites[2].owner_id, views.sites[2].owner_id);
+
+	// Cancellation removes both the queued marker and its footprint,
+	// including after applying a revision-contiguous network delta.
+	auto after_cancel = sites_world;
+	after_cancel.world_revision = 2;
+	after_cancel.entities.erase(after_cancel.entities.begin() + 2);
+	after_cancel.reservations.erase(after_cancel.reservations.begin());
+	auto cancel_delta = make_world_delta(sites_world, after_cancel);
+	auto applied_cancel = apply_world_delta(sites_world, cancel_delta);
+	auto remaining_sites = make_construction_presentation(applied_cancel);
+	TESTEQUALS(remaining_sites.sites.size(), size_t{3});
+	TESTEQUALS(remaining_sites.reservations.size(), size_t{2});
+	TESTEQUALS(remaining_sites.sites.front().entity_id, gamestate::entity_id_t{21});
+
+	// Prioritizing the queued site replaces the previous active order.
+	auto retasked_world = sites_world;
+	retasked_world.constructions.front().site_entity_id = 20;
+	retasked_world.constructions.front().target = {15, 15};
+	auto retasked = make_construction_presentation(retasked_world);
+	TESTEQUALS(retasked.sites.front().phase == SitePresentationPhase::PLANNED, true);
+	TESTEQUALS(retasked.sites[1].phase == SitePresentationPhase::QUEUED, true);
+	auto mismatched = retasked_world;
+	mismatched.constructions[0].owner_id = 3;
+	TESTTHROWS(make_construction_presentation(mismatched));
 }
 
 } // namespace openage::network::tests
