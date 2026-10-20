@@ -338,6 +338,8 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		this->fvd_guest_visual_revision = 0;
 		this->fvd_guest_clock = GuestClock{};
 		this->fvd_guest_snapshot_generation = 0;
+		this->fvd_last_guest_arrow_id = 0;
+		this->fvd_guest_late_arrows.clear();
 		for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
 		this->fvd_guest_entities.clear();
 		this->fvd_guest_sprite_paths.clear();
@@ -397,6 +399,8 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	this->fvd_guest_visual_revision = 0;
 	this->fvd_guest_clock = GuestClock{};
 	this->fvd_guest_snapshot_generation = 0;
+	this->fvd_last_guest_arrow_id = 0;
+	this->fvd_guest_late_arrows.clear();
 	for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
 	this->fvd_guest_entities.clear();
 	this->fvd_guest_sprite_paths.clear();
@@ -718,6 +722,17 @@ void Presenter::refresh_fvd_guest_visuals() {
 	const auto previous_time = this->fvd_guest_clock.update(
 		world->simulation_time, received_at, reset);
 	const auto presentation_time = this->fvd_guest_clock.get_time(received_at);
+	if (reset) this->fvd_guest_late_arrows.clear();
+	for (const auto &shot : world->arrows) {
+		if (shot.arrow_id <= this->fvd_last_guest_arrow_id) continue;
+		this->fvd_last_guest_arrow_id = shot.arrow_id;
+		// A launch fully elapsed between recipient captures. Replay the
+		// shot's visual just once, never its authoritative impact damage.
+		if (shot.impact_time <= world->simulation_time
+		    and this->fvd_guest_late_arrows.size() < network::MAX_STATE_ARROWS) {
+			this->fvd_guest_late_arrows.push_back({shot, received_at});
+		}
+	}
 
 	// The guest's paused local simulation loads terrain/assets only.
 	// Turn off its independent units before creating authoritative proxies.
