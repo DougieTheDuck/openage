@@ -124,6 +124,10 @@ void lobby_relay_client() {
 	TESTEQUALS(wait_for(host, "assigned"), true);
 	TESTEQUALS(wait_for(guest, "assigned"), true);
 	TESTEQUALS(host.status().roles, guest.status().roles);
+	// Even the legacy two-peer path must tell the presenter how many
+	// starting Builders to keep in the authoritative simulation.
+	TESTEQUALS(host.status().match_player_count, size_t{2});
+	TESTEQUALS(guest.status().match_player_count, size_t{2});
 	TESTEQUALS(host.status().rooms.empty(), true);
 	TESTEQUALS(host.status().suggested_room_id, uint64_t{0});
 	TESTEQUALS(guest.status().rooms.empty(), true);
@@ -180,6 +184,8 @@ void lobby_relay_client() {
 	TESTEQUALS(replication->get_world_state()->players.size(), size_t{2});
 	TESTEQUALS(authority.status().snapshot_revision, uint64_t{1});
 	TESTEQUALS(remote.status().snapshot_revision, uint64_t{1});
+	TESTEQUALS(authority.status().match_player_count, size_t{2});
+	TESTEQUALS(remote.status().match_player_count, size_t{2});
 	TESTEQUALS(authority.status().roles, remote.status().roles);
 	TESTEQUALS(authority.status().local_role != remote.status().local_role, true);
 
