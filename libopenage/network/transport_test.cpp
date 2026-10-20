@@ -10,6 +10,7 @@
 #if !defined(_WIN32)
 #include <fcntl.h>
 #include <sys/resource.h>
+#include <sys/select.h>
 #include <unistd.h>
 #endif
 
@@ -155,7 +156,7 @@ void transport_high_fd() {
 	auto client = TcpConnection::connect("127.0.0.1", listener.get_port());
 	auto received = client.receive_frame();
 	TESTEQUALS(received.has_value(), true);
-	TESTEQUALS(received->message_type, MessageType::PING);
+	TESTEQUALS(received->message_type == MessageType::PING, true);
 	TESTEQUALS(received->session_id, uint64_t{73});
 	client.close();
 	listener.close();
