@@ -138,6 +138,7 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->pending_host_snapshot.reset();
 		this->pending_host_update.reset();
 		this->pending_multi_snapshots.clear();
+		this->offered_multi_snapshots.clear();
 		this->pending_multi_updates.clear();
 		this->pending_multi_results.clear();
 		this->active_multi_identities.clear();
@@ -225,7 +226,7 @@ void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
 	this->last_host_offered_revision = snapshot.world_revision;
 	if (not this->active_multi_identities.empty()) {
 		auto recipient = snapshot.local_player_id;
-		if (this->pending_multi_snapshots.contains(recipient)) {
+		if (not this->offered_multi_snapshots.insert(recipient).second) {
 			throw Error{MSG(err) << "Duplicate multi-guest bootstrap snapshot"};
 		}
 		this->pending_multi_snapshots.emplace(recipient, std::move(snapshot));
@@ -436,6 +437,7 @@ void RelayLobbyClient::close() {
 		this->pending_host_snapshot.reset();
 		this->pending_host_update.reset();
 		this->pending_multi_snapshots.clear();
+		this->offered_multi_snapshots.clear();
 		this->pending_multi_updates.clear();
 		this->pending_multi_results.clear();
 		this->pending_guest_commands.clear();
