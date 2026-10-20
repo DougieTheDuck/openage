@@ -42,6 +42,10 @@ Clock synchronization and recovery SHALL not replay stale motion.
   position and launch/impact times, render the ballistic arc locally,
   and expire it without a per-frame stream or removal packet
 - **AND** damage only occurs via later authoritative entity state.
+- **AND** short-lived shots are not silently dropped merely because
+  their lifetime fits between two recipient snapshots: the host SHALL
+  retain uniquely identified effect events until each recipient has had
+  an opportunity to receive them or a bounded recovery policy applies.
 
 #### Scenario: Snapshot recovery
 - **WHEN** a client cannot apply a revision-contiguous delta
