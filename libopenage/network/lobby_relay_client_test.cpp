@@ -672,64 +672,69 @@ void lobby_relay_client() {
 	// match, the replacement Hunter owns a prepared relay room with one
 	// available Builder channel. It must NOT launch the legacy 2-player
 	// hosting worker and advertise a second room, waiting for manual Start.
-	HostLobby old_lobby{1, "Original Builder Host"};
-	old_lobby.join(2, "New Hunter");
-	const auto old_assignment = old_lobby.start(
-		[](uint64_t) { return uint64_t{1}; }); // Guest draws Hunter.
-	TESTEQUALS(player_for_participant(old_assignment, 1), gamestate::player_id_t{2});
-	TESTEQUALS(player_for_participant(old_assignment, 2), gamestate::player_id_t{1});
-	auto private_room = std::make_shared<RelayMultiHostLobby>(
-		"127.0.0.1", listener.get_port(), RelayToken{},
-		"2-player authority handoff", "New Hunter", 2);
-	private_room->prepare_hunter_rehost(old_assignment);
-	const auto new_room_id = private_room->room_id();
+	// Repeat the deterministic Builder-created Hunter rehost because
+	// Linux exposed intermittent bootstrap revision-zero failures (7/10).
+	// Assert the first authoritative revision in every independent room.
+	for (size_t attempt = 0; attempt < 10; ++attempt) {
+		HostLobby old_lobby{1, "Original Builder Host"};
+		old_lobby.join(2, "New Hunter");
+		const auto old_assignment = old_lobby.start(
+			[](uint64_t) { return uint64_t{1}; }); // Guest draws Hunter.
+		TESTEQUALS(player_for_participant(old_assignment, 1), gamestate::player_id_t{2});
+		TESTEQUALS(player_for_participant(old_assignment, 2), gamestate::player_id_t{1});
+		auto private_room = std::make_shared<RelayMultiHostLobby>(
+			"127.0.0.1", listener.get_port(), RelayToken{},
+			"2-player authority handoff", "New Hunter", 2);
+		private_room->prepare_hunter_rehost(old_assignment);
+		const auto new_room_id = private_room->room_id();
 
-	RelayLobbyClient promoted_hunter{};
-	RelayLobbyConfig promoted_config{};
-	promoted_config.address = "127.0.0.1";
-	promoted_config.port = listener.get_port();
-	promoted_config.name = "New Hunter";
-	promoted_config.room_name = "2-player authority handoff";
-	promoted_config.hosting = true;
-	promoted_config.player_capacity = 2;
-	promoted_config.rehost_start = old_assignment;
-	promoted_config.prepared_rehost_lobby = private_room;
-	promoted_hunter.connect(promoted_config);
-	TESTEQUALS(wait_for(promoted_hunter, "waiting"), true);
-	TESTEQUALS(promoted_hunter.is_authority(), true);
+		RelayLobbyClient promoted_hunter{};
+		RelayLobbyConfig promoted_config{};
+		promoted_config.address = "127.0.0.1";
+		promoted_config.port = listener.get_port();
+		promoted_config.name = "New Hunter";
+		promoted_config.room_name = "2-player authority handoff";
+		promoted_config.hosting = true;
+		promoted_config.player_capacity = 2;
+		promoted_config.rehost_start = old_assignment;
+		promoted_config.prepared_rehost_lobby = private_room;
+		promoted_hunter.connect(promoted_config);
+		TESTEQUALS(wait_for(promoted_hunter, "waiting"), true);
+		TESTEQUALS(promoted_hunter.is_authority(), true);
 
-	RelayLobbyClient former_creator{};
-	RelayLobbyConfig former_config{};
-	former_config.address = "127.0.0.1";
-	former_config.port = listener.get_port();
-	former_config.name = "Original Builder Host";
-	former_config.hosting = false;
-	former_config.room_id = new_room_id;
-	former_config.rehost_offer = private_room->rehost_offer_for(2);
-	former_creator.connect(former_config);
-	TESTEQUALS(wait_for(promoted_hunter, "assigned"), true);
-	TESTEQUALS(wait_for(former_creator, "assigned"), true);
-	TESTEQUALS(promoted_hunter.status().multi_host, true);
-	TESTEQUALS(promoted_hunter.status().local_player_id, gamestate::player_id_t{1});
-	TESTEQUALS(former_creator.status().local_player_id, gamestate::player_id_t{2});
-	TESTEQUALS(former_creator.status().local_role, std::string{"BUILDER"});
-	TESTEQUALS(directory.room_count(), size_t{0}); // No phantom second room.
+		RelayLobbyClient former_creator{};
+		RelayLobbyConfig former_config{};
+		former_config.address = "127.0.0.1";
+		former_config.port = listener.get_port();
+		former_config.name = "Original Builder Host";
+		former_config.hosting = false;
+		former_config.room_id = new_room_id;
+		former_config.rehost_offer = private_room->rehost_offer_for(2);
+		former_creator.connect(former_config);
+		TESTEQUALS(wait_for(promoted_hunter, "assigned"), true);
+		TESTEQUALS(wait_for(former_creator, "assigned"), true);
+		TESTEQUALS(promoted_hunter.status().multi_host, true);
+		TESTEQUALS(promoted_hunter.status().local_player_id, gamestate::player_id_t{1});
+		TESTEQUALS(former_creator.status().local_player_id, gamestate::player_id_t{2});
+		TESTEQUALS(former_creator.status().local_role, std::string{"BUILDER"});
+		TESTEQUALS(directory.room_count(), size_t{0}); // No phantom second room.
 
-	WorldState authority_bootstrap{};
-	authority_bootstrap.map_size = 128;
-	authority_bootstrap.world_revision = 1;
-	authority_bootstrap.local_player_id = 2;
-	authority_bootstrap.players = {
-		{1, PlayerRole::HUNTER, true}, {2, PlayerRole::BUILDER, true}};
-	promoted_hunter.provide_host_snapshot(std::move(authority_bootstrap));
-	TESTEQUALS(wait_for(promoted_hunter, "bootstrap"), true);
-	TESTEQUALS(wait_for(former_creator, "bootstrap"), true);
-	TESTEQUALS(promoted_hunter.status().snapshot_revision, uint64_t{1});
-	TESTEQUALS(former_creator.status().snapshot_revision, uint64_t{1});
-	TESTEQUALS(former_creator.get_replication()->get_world_state()->players.size(),
-	           size_t{2});
-	former_creator.close();
-	promoted_hunter.close();
+		WorldState authority_bootstrap{};
+		authority_bootstrap.map_size = 128;
+		authority_bootstrap.world_revision = 1;
+		authority_bootstrap.local_player_id = 2;
+		authority_bootstrap.players = {
+			{1, PlayerRole::HUNTER, true}, {2, PlayerRole::BUILDER, true}};
+		promoted_hunter.provide_host_snapshot(std::move(authority_bootstrap));
+		TESTEQUALS(wait_for(promoted_hunter, "bootstrap"), true);
+		TESTEQUALS(wait_for(former_creator, "bootstrap"), true);
+		TESTEQUALS(promoted_hunter.status().snapshot_revision, uint64_t{1});
+		TESTEQUALS(former_creator.status().snapshot_revision, uint64_t{1});
+		TESTEQUALS(former_creator.get_replication()->get_world_state()->players.size(),
+		           size_t{2});
+		former_creator.close();
+		promoted_hunter.close();
+	}
 	listener.close();
 	relay.join();
 	if (relay_error) std::rethrow_exception(relay_error);
