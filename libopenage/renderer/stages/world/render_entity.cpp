@@ -74,7 +74,8 @@ void RenderEntity::update_sample(uint32_t ref_id,
                                  const coord::phys3 &position,
                                  const std::string &animation_path,
                                  time::time_t time,
-                                 std::optional<time::time_t> interpolate_from) {
+                                 std::optional<time::time_t> interpolate_from,
+                                 const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys) {
 	std::unique_lock lock{this->mutex};
 	if (interpolate_from and *interpolate_from > time) {
 		throw Error{MSG(err) << "Position sample precedes presentation time"};
@@ -91,6 +92,14 @@ void RenderEntity::update_sample(uint32_t ref_id,
 		}
 	}
 	samples.set_last(time, position.to_scene3());
+	auto previous_time = time;
+	for (const auto &[at, next_position] : future_keys) {
+		if (at <= previous_time) {
+			throw Error{MSG(err) << "Replicated movement curve is not strictly future-ordered"};
+		}
+		samples.set_last(at, next_position.to_scene3());
+		previous_time = at;
+	}
 	this->position.sync(samples);
 	if (not interpolate_from or this->animation_path.get(time) != animation_path) {
 		// Movement samples must not restart looping sprite animations.
