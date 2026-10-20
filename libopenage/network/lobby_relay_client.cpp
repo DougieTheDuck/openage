@@ -588,6 +588,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				.connected = true,
 				.local_player_id = host_player,
 				.remote_player_id = guest_player,
+				.match_player_count = 2,
 				.roles = roles,
 				.local_role = host_role,
 			});
@@ -623,6 +624,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 						.connected = true,
 						.local_player_id = host_player,
 						.remote_player_id = guest_player,
+						.match_player_count = 2,
 						.snapshot_revision = snapshot->world_revision,
 						.roles = roles,
 						.local_role = host_role,
@@ -830,6 +832,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				.connected = true,
 				.local_player_id = guest_player,
 				.remote_player_id = host_player,
+				.match_player_count = 2,
 				.roles = roles,
 				.local_role = guest_role,
 			});
@@ -858,6 +861,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				.connected = true,
 				.local_player_id = guest_player,
 				.remote_player_id = host_player,
+				.match_player_count = 2,
 				.snapshot_revision = revision,
 				.roles = roles,
 				.local_role = guest_role,
