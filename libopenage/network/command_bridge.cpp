@@ -196,9 +196,13 @@ WorldState capture_fvd_state(
 		// copy only upcoming segments, never past history. Idle entities
 		// naturally emit zero future keys. An update can replace this plan
 		// when routing, collisions or player orders change the trajectory.
-		for (const auto &key : position->get_positions().get_container()) {
-			if (key.time() <= time) continue;
-			if (entity_state.motion_keys.size() == MAX_ENTITY_MOTION_KEYS) break;
+		const auto &positions = position->get_positions().get_container();
+		const auto prior = positions.last(time);
+		for (auto index = prior + 1;
+		     index < positions.size()
+		     and entity_state.motion_keys.size() < MAX_ENTITY_MOTION_KEYS;
+		     ++index) {
+			const auto &key = positions.get(index);
 			entity_state.motion_keys.push_back({key.time(), key.val()});
 		}
 		if (health) {
