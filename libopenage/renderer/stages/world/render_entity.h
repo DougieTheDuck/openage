@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "coord/phys.h"
 #include "coord/scene.h"
@@ -77,12 +79,15 @@ public:
 	 * @param animation_path Path to the animation definition.
 	 * @param time Authoritative time of the new sample.
 	 * @param interpolate_from Current presentation time, or none to reset.
+	 * @param future_keys Host-authored future movement keyframes; no
+	 *                    guesswork or extrapolation is necessary between keys.
 	 */
 	void update_sample(uint32_t ref_id,
 	                   const coord::phys3 &position,
 	                   const std::string &animation_path,
 	                   time::time_t time,
-	                   std::optional<time::time_t> interpolate_from);
+	                   std::optional<time::time_t> interpolate_from,
+	                   const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys = {});
 
 	/**
 	 * Update the health displayed for the game entity.
