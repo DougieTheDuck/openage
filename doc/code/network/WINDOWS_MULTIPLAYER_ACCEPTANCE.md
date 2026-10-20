@@ -9,15 +9,15 @@ until the observations below have been recorded.
 
 Build the FVD branch, then run:
 
-\`\`\`powershell
+```powershell
 bin/run test openage::network::tests::lobby_capacity
 bin/run test openage::network::tests::lobby_relay_client
 bin/run test openage::network::tests::fvd_multi_session
 bin/run test openage::network::tests::relay_multi_host_lobby
 $LASTEXITCODE
-\`\`\`
+```
 
-The new \`lobby_capacity\` test executes 4 and 8 **actual RelayLobbyClient
+The new `lobby_capacity` test executes 4 and 8 **actual RelayLobbyClient
 workers** under both ordinary lobby start and a forced Hunter-owned handoff
 with an original Builder creator. For each it checks private world snapshots
 and kill totals, concurrent queued Builder orders and private results,
@@ -26,9 +26,9 @@ and terminal Hunter disconnection. This is a network/protocol harness:
 accepted/rejected contested-tile decisions are injected by the test,
 not computed by the full tower-reservation simulation.
 
-\`fvd_multi_session\` additionally submits concurrent Builder movement through
+`fvd_multi_session` additionally submits concurrent Builder movement through
 the authoritative game simulation and tests disconnect continuation.
-\`lobby_relay_client\` exercises the complete two/three-player worker flow.
+`lobby_relay_client` exercises the complete two/three-player worker flow.
 The runner uses zero-based progress and prints failures only: returning to
 PowerShell with exit code 0 indicates success.
 
@@ -36,14 +36,14 @@ PowerShell with exit code 0 indicates success.
 
 1. Run the **same FVD branch build and gameplay assets** on both PCs.
    Launch a persistent relay on PC A:
-   \`\`\`powershell
+   ```powershell
    bin/run relay --listen 0.0.0.0 --port 32456 --max-connections 128
-   \`\`\`
+   ```
    Allow **inbound TCP 32456** in PC A's Windows Firewall on the trusted
    network. PC B must reach PC A at its LAN IPv4 address. On PC A the
-   game may use \`127.0.0.1\`; on PC B it must use **PC A's LAN IP**, not
-   \`127.0.0.1\`. The relay must remain running in its own terminal.
-2. Start \`bin/run game\` on both PCs. In each lobby enter its appropriate
+   game may use `127.0.0.1`; on PC B it must use **PC A's LAN IP**, not
+   `127.0.0.1`. The relay must remain running in its own terminal.
+2. Start `bin/run game` on both PCs. In each lobby enter its appropriate
    relay address, port 32456, and a different player name. On either PC,
    choose **Host Game** for 2 players. On the other, use **Refresh Games**
    and **Join Room**. When both names appear, the lobby creator presses
@@ -62,7 +62,7 @@ PowerShell with exit code 0 indicates success.
 5. Restart each executable or reset locally with the temporary developer
    F10 leave shortcut. Repeat until the **original lobby creator draws
    Builder**, then start the match and confirm
-   \`handoff_committed epoch=2\` and \`authority_active epoch=2\` in the
+   `handoff_committed epoch=2` and `authority_active epoch=2` in the
    Hunter's game log. F10 is *not* an agreed rematch protocol.
 6. Close the Builder game. The Hunter's game must keep advancing.
    In a two-human match there are no other Builders, so use the
@@ -100,16 +100,16 @@ player count before hosting. Each guest must join the **same** room.
 ## Diagnostics and pass criteria
 
 Save relevant **game** and **relay** log excerpts with room ID and player
-counts. Game logs use \`[FVD/authority]\` for \`role_draw\`,
-\`handoff_requested\`, \`handoff_proof_accepted\`,
-\`handoff_committed\`, and \`authority_active\`.
-The relay reports \`[FVD/relay] pair_connected\`,
-\`forwarding_started\` and \`forwarding_ended\`. It cannot know which
+counts. Game logs use `[FVD/authority]` for `role_draw`,
+`handoff_requested`, `handoff_proof_accepted`,
+`handoff_committed`, and `authority_active`.
+The relay reports `[FVD/relay] pair_connected`,
+`forwarding_started` and `forwarding_ended`. It cannot know which
 participant is Hunter. Secrets and tickets are never logged.
 
 A test is **PASS** only when its visual/gameplay conditions and network
-checks both succeed. Unexpected \`session_error\`, stalled \`assigned\`
-or \`bootstrap\`, missing \`MATCH_READY\`, stalled world revisions or
+checks both succeed. Unexpected `session_error`, stalled `assigned`
+or `bootstrap`, missing `MATCH_READY`, stalled world revisions or
 stale orders are **FAIL**. An intentional test disconnect may generate a
 WARN without being a failure. Record OS/build identifier, participant
 count, original host's assigned role, test result and relevant log lines.
