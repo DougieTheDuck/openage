@@ -1302,6 +1302,13 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			std::this_thread::sleep_for(LIVE_POLL_INTERVAL);
 		}
 		if (this->stopping) return;
+		const auto acknowledged_builders =
+			std::count_if(ready.begin(), ready.end(), [](const auto &item) {
+				return item.second;
+			});
+		if (acknowledged_builders == 0) {
+			throw Error{MSG(err) << "Hunter bootstrap failed: no Builder acknowledged revision 1"};
+		}
 		{
 			// Publish the acknowledged bootstrap revision at the same time
 			// as the phase transition. The time-zero Hunter rehost follows
@@ -1315,10 +1322,7 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		}
 		log::log(INFO << "[FVD/authority] bootstrap_complete room=" << lobby->room_id()
 		              << " hunter_player=1 revision=1"
-		              << " acknowledged_builders="
-		              << std::count_if(ready.begin(), ready.end(), [](const auto &item) {
-			              return item.second;
-		              }));
+		              << " acknowledged_builders=" << acknowledged_builders);
 
 		std::map<gamestate::player_id_t, bool> live{};
 		for (const auto &[id, peer] : peers) {
