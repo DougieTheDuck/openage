@@ -12,6 +12,7 @@
 
 #include "coord/pixel.h"
 #include "gamestate/types.h"
+#include "network/messages.h"
 #include "presenter/guest_clock.h"
 #include "presenter/hud_mouse_capture.h"
 #include <vector>
@@ -248,6 +249,14 @@ protected:
 	uint64_t fvd_guest_visual_revision{0};
 	uint64_t fvd_guest_snapshot_generation{0};
 	GuestClock fvd_guest_clock{};
+	/** Last processed authoritative projectile ID (avoid duplicate visuals). */
+	uint64_t fvd_last_guest_arrow_id{0};
+	struct LateGuestArrow {
+		network::ArrowState shot;
+		std::chrono::steady_clock::time_point first_seen;
+	};
+	/** Cosmetic playback for shots delivered after their impact time. */
+	std::vector<LateGuestArrow> fvd_guest_late_arrows{};
 	std::unordered_map<gamestate::entity_id_t,
 		std::shared_ptr<renderer::world::RenderEntity>> fvd_guest_entities{};
 	/** Resolve animated sprite paths from nyan just like the host's Idle system. */
