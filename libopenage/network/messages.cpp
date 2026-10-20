@@ -523,6 +523,21 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 		append_i64(output, entity.health.value_or(0));
 		append_i64(output, entity.maximum_health.value_or(0));
 		append_u64(output, entity.tower_kills.value_or(0));
+		// Replicate the simulation's actual scheduled position segments,
+		// rather than asking guests to infer motion from sampled locations.
+		if (entity.motion_keys.size() > MAX_ENTITY_MOTION_KEYS) {
+			throw Error{MSG(err) << "FVD entity motion curve exceeds protocol key limit"};
+		}
+		append_u16(output, static_cast<uint16_t>(entity.motion_keys.size()));
+		auto previous_time = state.simulation_time;
+		for (const auto &key : entity.motion_keys) {
+			if (key.time <= previous_time) {
+				throw Error{MSG(err) << "FVD entity motion keys must be strictly future-ordered"};
+			}
+			append_i64(output, key.time.get_raw_value());
+			append_position(output, key.position);
+			previous_time = key.time;
+		}
 	}
 	for (const auto &reservation : state.reservations) {
 		append_tile(output, reservation.tile);
@@ -659,6 +674,19 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		}
 		else if (health != 0 or maximum_health != 0) {
 			throw Error{MSG(err) << "FVD entity health is present without its flag"};
+		}
+		const auto motion_count = reader.u16();
+		if (motion_count > MAX_ENTITY_MOTION_KEYS) {
+			throw Error{MSG(err) << "FVD entity motion curve exceeds protocol key limit"};
+		}
+		auto previous_time = state.simulation_time;
+		for (uint16_t j = 0; j < motion_count; ++j) {
+			const auto at = time::time_t::from_raw_value(reader.i64());
+			if (at <= previous_time) {
+				throw Error{MSG(err) << "FVD entity motion keys must be strictly future-ordered"};
+			}
+			entity.motion_keys.push_back({at, read_position(reader)});
+			previous_time = at;
 		}
 		state.entities.push_back(std::move(entity));
 	}
