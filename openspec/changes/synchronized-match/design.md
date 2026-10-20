@@ -121,12 +121,13 @@ runner has automated coverage, to prevent regression of the playable build.
 
 ## 1.17 Hunter authority continuity
 
-**Current limitation:** The original lobby creator still runs the only
-authoritative simulation, regardless of role. Builder *guest* disconnections
-work, but losing that authoritative Builder destroys the only event loop and
-closes every pair forwarded through the old relay room. The guest
-`ReplicationTracker` holds only presentation data and cannot resume that
-simulation.
+**Implementation under Windows validation:** The original lobby
+creator owns the pre-game lobby but, if assigned Builder, is redirected to
+the Hunter's independent authoritative relay room *before* simulation
+bootstrap. This removes the former Builder creator as a point of authority
+failure. If the Hunter is the original lobby creator, the existing host path
+is retained. A `ReplicationTracker` remains presentation-only and can
+never serve as a mid-match engine restore.
 
 **Preferred design: move authority before gameplay rather than after a
 crash.** Keep the existing weighted Hunter lottery and the lobby creator's
@@ -170,11 +171,21 @@ guest to its roster until that session supplies and redeems its proof.
 `start_rehost()` also checks the full new-session barrier and commits
 the successor lease only after all Builders rejoin with their old roles.
 Tests exercise successful replacement-room admission and forged
-proof rejection. Offer delivery through the old room and the live
-presenter/controller swap are still unimplemented.
-The original two-peer and multi-guest live game paths are unchanged
-until the complete redirect/rebind transaction is present. Do **not**
-advertise continuity on a Builder-host disconnect yet.
+proof rejection. The original host and guest workers now route the Hunter's
+private offers through the old authenticated lobby sessions and establish
+nested `RelayLobbyClient` replacements. Every gameplay-facing client API
+delegates to the replacement, while the presenter switches simulation
+authority before the first snapshot. Both the original two-peer and
+3–8-player runners use the same rehost transaction. The old lobby connection
+may close after the replacement's immutable `StartMatch`, because the
+Hunter's new independent relay sockets are already connected. The
+`lobby_relay_client` integration regression now follows whichever person
+was drawn Hunter and checks that surviving Builders can still issue orders.
+
+**Do not advertise this as verified** until Windows compilation, 2/3/8
+process starts, actual former-Builder-host departure, F10 rematches and
+network timing tests succeed. Invitation forwarding is trusted through the
+original host, not encrypted end-to-end.
 
 **Fallback for an actual mid-match authority change:** A complete restartable
 engine checkpoint is necessary. A `WorldState` lacks the authoritative
