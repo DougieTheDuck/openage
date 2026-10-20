@@ -1403,7 +1403,9 @@ void Presenter::render() {
 									construction_status = QString{"Walking to tower site"};
 							}
 							else {
-								construction_status = QString{"Building tower"};
+								construction_percent = order.progress_percent(*guest_time);
+								construction_status = QString{"Building: %1%"}
+									.arg(construction_percent);
 							}
 						}
 					}

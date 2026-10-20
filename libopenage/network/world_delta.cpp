@@ -111,6 +111,7 @@ bool same(const ConstructionState &a, const ConstructionState &b) {
 	return a.order_id == b.order_id and a.owner_id == b.owner_id
 	    and a.builder_id == b.builder_id and a.target == b.target
 	    and a.phase == b.phase and a.phase_end_time == b.phase_end_time
+	    and a.phase_start_time == b.phase_start_time
 	    and a.site_entity_id == b.site_entity_id;
 }
 bool same(const AttackOrderState &a, const AttackOrderState &b) {

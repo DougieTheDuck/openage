@@ -150,6 +150,19 @@ void append_string(std::vector<uint8_t> &output,
 
 } // namespace
 
+int ConstructionState::progress_percent(const time::time_t &now) const {
+	if (this->phase != ConstructionPhase::UNDER_CONSTRUCTION) {
+		return 0;
+	}
+	const auto duration = this->phase_end_time - this->phase_start_time;
+	if (duration <= time::TIME_ZERO) {
+		return 100;
+	}
+	const auto elapsed = now - this->phase_start_time;
+	const auto ratio = std::clamp(elapsed.to_double() / duration.to_double(), 0.0, 1.0);
+	return static_cast<int>(ratio * 100.0);
+}
+
 bool is_known_disconnect_reason(DisconnectReason reason) {
 	auto value = static_cast<uint16_t>(reason);
 	return value >= static_cast<uint16_t>(DisconnectReason::CONNECTION_LOST)
@@ -545,7 +558,11 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 	}
 	for (const auto &construction : state.constructions) {
 		if (construction.order_id == 0 or construction.owner_id == 0
-		    or not is_known_construction_phase(static_cast<uint16_t>(construction.phase))) {
+		    or not is_known_construction_phase(static_cast<uint16_t>(construction.phase))
+		    or (construction.phase == ConstructionPhase::PLANNED
+		        and construction.phase_start_time != construction.phase_end_time)
+		    or (construction.phase == ConstructionPhase::UNDER_CONSTRUCTION
+		        and construction.phase_start_time >= construction.phase_end_time)) {
 			throw Error{MSG(err) << "FVD state contains an invalid construction order"};
 		}
 		append_u64(output, construction.order_id);
@@ -555,6 +572,7 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 		append_u16(output, static_cast<uint16_t>(construction.phase));
 		append_u16(output, 0);
 		append_i64(output, construction.phase_end_time.get_raw_value());
+		append_i64(output, construction.phase_start_time.get_raw_value());
 		append_u64(output, construction.site_entity_id);
 	}
 	for (const auto &order : state.attack_orders) {
@@ -708,9 +726,14 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 			throw Error{MSG(err) << "Unsupported FVD construction state flags"};
 		}
 		construction.phase_end_time = time::time_t::from_raw_value(reader.i64());
+		construction.phase_start_time = time::time_t::from_raw_value(reader.i64());
 		construction.site_entity_id = reader.u64();
 		if (construction.order_id == 0 or construction.owner_id == 0
-		    or not is_known_construction_phase(phase)) {
+		    or not is_known_construction_phase(phase)
+		    or (phase == static_cast<uint16_t>(ConstructionPhase::PLANNED)
+		        and construction.phase_start_time != construction.phase_end_time)
+		    or (phase == static_cast<uint16_t>(ConstructionPhase::UNDER_CONSTRUCTION)
+		        and construction.phase_start_time >= construction.phase_end_time)) {
 			throw Error{MSG(err) << "FVD state contains an invalid construction order"};
 		}
 		construction.phase = static_cast<ConstructionPhase>(phase);

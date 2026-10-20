@@ -26,7 +26,7 @@ void world_delta() {
 	initial.reservations = {{{66, 67}, 13}};
 	initial.constructions = {{
 		7, 2, 13, {66, 67}, ConstructionPhase::PLANNED,
-		time::time_t::from_int(40), 90}};
+		time::time_t::from_int(40), time::time_t::from_int(40), 90}};
 	initial.attack_orders = {{10, {65, 65, 0}, 11, false, true}};
 	initial.arrows = {{
 		55, 2, 10, {65, 65, 1}, {60, 60, 0},
@@ -38,6 +38,25 @@ void world_delta() {
 		initial.arrows.front(), time::time_t::from_double(20.1)), true);
 	TESTEQUALS(arrow_visible_at(
 		initial.arrows.front(), time::time_t::from_double(20.2)), false);
+
+	// Reconstruct construction timing even when only the starting time changes.
+	auto constructing = initial;
+	constructing.world_revision = 11;
+	constructing.simulation_time = time::time_t::from_int(25);
+	constructing.constructions.front().phase = ConstructionPhase::UNDER_CONSTRUCTION;
+	constructing.constructions.front().phase_start_time = time::time_t::from_int(20);
+	auto corrected = constructing;
+	corrected.world_revision = 12;
+	corrected.simulation_time = time::time_t::from_int(26);
+	corrected.constructions.front().phase_start_time = time::time_t::from_int(21);
+	auto progress_delta = make_world_delta(constructing, corrected);
+	TESTEQUALS(progress_delta.changed.constructions.size(), size_t{1});
+	auto recovered = apply_world_delta(constructing,
+		decode_world_delta(encode_world_delta(progress_delta)));
+	TESTEQUALS(recovered.constructions.front().phase_start_time,
+	           time::time_t::from_int(21));
+	TESTEQUALS(recovered.constructions.front().progress_percent(
+	           time::time_t::from_int(30)), 47);
 
 	WorldDeltaBaseline host{};
 	TESTEQUALS(host.initialized(), false);

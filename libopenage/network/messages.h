@@ -198,7 +198,12 @@ struct ConstructionState {
 	coord::tile target{0, 0};
 	ConstructionPhase phase{ConstructionPhase::PLANNED};
 	time::time_t phase_end_time{};
+	/** Host-authored phase start for time-indexed construction progress. */
+	time::time_t phase_start_time{};
 	gamestate::entity_id_t site_entity_id{0};
+
+	/** Completion percentage evaluated on the authoritative phase interval. */
+	int progress_percent(const time::time_t &now) const;
 };
 
 /** One active Hunter AttackMove or focus-attack order. */

@@ -228,6 +228,7 @@ WorldState capture_fvd_state(
 				? ConstructionPhase::PLANNED
 				: ConstructionPhase::UNDER_CONSTRUCTION,
 			construction.phase_end_time,
+			construction.phase_start_time,
 			construction.site_entity_id,
 		});
 	}

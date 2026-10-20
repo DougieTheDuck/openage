@@ -355,12 +355,15 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			encode_builder_delta(planned)));
 
 		auto arrival = planned.constructions.front().phase_end_time;
+		TESTEQUALS(planned.constructions.front().phase_start_time, arrival);
 		loop->reach_time(arrival, state);
 		auto constructing = capture_fvd_state(state, connections, arrival, 2, 3, 2);
 		TESTEQUALS(constructing.constructions.size(), size_t{1});
 		constructing.constructions.front().phase
 			== ConstructionPhase::UNDER_CONSTRUCTION
 			or TESTFAIL;
+		TESTEQUALS(constructing.constructions.front().phase_start_time, arrival);
+		TESTEQUALS(constructing.constructions.front().progress_percent(arrival), 0);
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
 			encode_builder_delta(constructing)));
@@ -774,6 +777,10 @@ void run_guest(uint16_t port) {
 		find_entity(constructing,
 		            constructing.constructions.front().site_entity_id).definition,
 		"fvd.data.entities.Tower");
+	const auto &guest_build = constructing.constructions.front();
+	TESTEQUALS(guest_build.phase_start_time, planned.constructions.front().phase_end_time);
+	TESTEQUALS(guest_build.progress_percent(guest_build.phase_start_time), 0);
+	TESTEQUALS(guest_build.progress_percent(guest_build.phase_end_time), 100);
 
 	auto completed_frame = client.receive_frame();
 	completed_frame.has_value() or TESTFAIL;

@@ -46,6 +46,12 @@
 - [ ] 1.6b Display all Builder construction phases, tower ownership,
   reservations and planned/queued foundations consistently for Hunter
   and Builders, including cancellation and retasking.
+  - [x] Transmit actual phase start/end timestamps (wire protocol v9), use
+    host-authored timed progress in the guest HUD, and test wire roundtrip,
+    construction-only deltas and loopback playback. **Awaiting build/run.**
+  - [ ] Visualize ownership, reservations and queued/planned foundation
+    previews for every participant, then verify cancellation/retasking
+    and all-player presentation in live processes.
 - [ ] 1.7 Replicate Hunter spawn timing, any future rally behavior, active
   orders and target highlights via authoritative time-indexed state.
 - [ ] 1.8 Every new gameplay feature must add its wire/presentation

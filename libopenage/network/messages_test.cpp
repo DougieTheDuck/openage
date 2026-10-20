@@ -208,7 +208,7 @@ void messages() {
 	state.reservations = {{{10, 20}, 300}};
 	state.constructions = {{
 		7, 2, 300, {10, 20}, ConstructionPhase::PLANNED,
-		time::time_t::from_double(4.5), 200}};
+		time::time_t::from_double(4.5), time::time_t::from_double(4.5), 200}};
 	state.attack_orders = {{
 		100, {12.0, 21.0, 0}, 300, false, true}};
 	state.arrows = {{
@@ -266,6 +266,10 @@ void messages() {
 		or TESTFAIL;
 	TESTEQUALS(decoded_state.constructions.front().phase_end_time,
 	           time::time_t::from_double(4.5));
+	TESTEQUALS(decoded_state.constructions.front().phase_start_time,
+	           time::time_t::from_double(4.5));
+	TESTEQUALS(decoded_state.constructions.front().progress_percent(
+		           time::time_t::from_double(4.2)), 0);
 	TESTEQUALS(decoded_state.constructions.front().site_entity_id,
 	           gamestate::entity_id_t{200});
 	TESTEQUALS(decoded_state.attack_orders.size(), size_t{1});
@@ -294,6 +298,25 @@ void messages() {
 	auto oversized_motion = state;
 	oversized_motion.entities.front().motion_keys.resize(MAX_ENTITY_MOTION_KEYS + 1);
 	TESTTHROWS(encode_world_state(oversized_motion));
+
+	// A timed build uses the authoritative phase interval, not packet arrival.
+	auto building = state.constructions.front();
+	building.phase = ConstructionPhase::UNDER_CONSTRUCTION;
+	building.phase_start_time = time::time_t::from_double(3.5);
+	TESTEQUALS(building.progress_percent(time::time_t::from_double(3.0)), 0);
+	TESTEQUALS(building.progress_percent(time::time_t::from_double(4.0)), 50);
+	TESTEQUALS(building.progress_percent(time::time_t::from_double(5.0)), 100);
+	auto building_state = state;
+	building_state.constructions.front() = building;
+	auto roundtrip_build = decode_world_state(encode_world_state(building_state));
+	TESTEQUALS(roundtrip_build.constructions.front().phase_start_time,
+	           time::time_t::from_double(3.5));
+	auto invalid_planned = state;
+	invalid_planned.constructions.front().phase_start_time = time::time_t::from_int(4);
+	TESTTHROWS(encode_world_state(invalid_planned));
+	auto invalid_building = building_state;
+	invalid_building.constructions.front().phase_start_time = time::time_t::from_double(4.5);
+	TESTTHROWS(encode_world_state(invalid_building));
 
 	auto truncated_state = encode_world_state(state);
 	truncated_state.resize(truncated_state.size() - 8);
