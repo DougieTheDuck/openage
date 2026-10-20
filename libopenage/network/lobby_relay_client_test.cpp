@@ -18,7 +18,9 @@ namespace openage::network::tests {
 namespace {
 
 bool wait_for(RelayLobbyClient &client, const std::string &phase) {
-	for (size_t i = 0; i < 300; ++i) {
+	// The replacement Hunter room needs extra relay handshakes and proof
+	// acknowledgements before the first snapshot; allow Windows CI time.
+	for (size_t i = 0; i < 1000; ++i) {
 		const auto state = client.status();
 		if (state.phase == phase) return true;
 		if (state.phase == "error") return false;
