@@ -18,8 +18,10 @@
   animations exist; remove any guest-only guessed behavior.
 - [ ] 1.5 Fully replicate visual combat feedback (projectile trails,
   impacts, unit hit/death effects) and test render parity. Timed arrow
-  launch paths are already present in world state and guest HUD; verify
-  time alignment and recoveries.
+  launch paths are already present in world state and guest HUD. Add
+  uniquely identified short-lived effect event history/delivery so shots
+  occurring wholly between two recipient captures are not missed; verify
+  timing, jitter, recovery and duplicate suppression.
 - [ ] 1.6 Display all Builder construction phases, tower ownership,
   reservations and planned/queued foundations consistently for Hunter
   and Builders, including cancellation and retasking.
