@@ -389,6 +389,7 @@ void relay_multi_host_lobby() {
 	// A Hunter-owned replacement room retains every original player slot
 	// across fresh authenticated relay sessions, without a second lottery.
 	run_lobby_case(3, true);
+	run_lobby_case(4, true);
 	run_lobby_case(8, true);
 	run_secure_rehost_case();
 	run_forged_rehost_case();
