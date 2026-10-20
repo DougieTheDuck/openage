@@ -150,6 +150,46 @@ void world_delta() {
 	auto next = host.advance(after_recovery);
 	TESTEQUALS(next.changed.base_revision, uint64_t{30});
 	TESTEQUALS(apply_world_delta(recovered, next).world_revision, uint64_t{31});
+
+	// A retasked movement curve must be delivered even if the sampled
+	// position has not yet changed. Later clock-only deltas retire played
+	// keys locally, without a keyframe tombstone or redundant entity patch.
+	WorldState curve_start{};
+	curve_start.world_revision = 1;
+	curve_start.map_size = 128;
+	curve_start.local_player_id = 2;
+	curve_start.simulation_time = time::time_t::from_int(1);
+	curve_start.players = {{1, PlayerRole::HUNTER}, {2, PlayerRole::BUILDER}};
+	curve_start.entities = {
+		{77, 2, "fvd.data.entities.Builder", {2, 2, 0}, 25, 25}};
+	curve_start.entities.front().motion_keys = {
+		{time::time_t::from_int(2), {3, 2, 0}},
+		{time::time_t::from_int(3), {4, 2, 0}},
+	};
+	WorldDeltaBaseline curves{};
+	curves.accept_snapshot(curve_start);
+	auto retask = curve_start;
+	retask.world_revision = 2;
+	retask.simulation_time = time::time_t::from_double(1.1);
+	retask.entities.front().motion_keys = {
+		{time::time_t::from_int(2), {2, 3, 0}},
+		{time::time_t::from_int(3), {2, 4, 0}},
+	};
+	auto reroute_delta = curves.advance(retask);
+	TESTEQUALS(reroute_delta.changed.entities.size(), size_t{1});
+	auto guest_retask = apply_world_delta(
+		curve_start, decode_world_delta(encode_world_delta(reroute_delta)));
+	TESTEQUALS(guest_retask.entities.front().motion_keys[0].position,
+	           (coord::phys3{2, 3, 0}));
+	auto later = retask;
+	later.world_revision = 3;
+	later.simulation_time = time::time_t::from_double(2.25);
+	auto clock_only = curves.advance(later);
+	TESTEQUALS(clock_only.changed.entities.empty(), true);
+	auto presented = apply_world_delta(guest_retask, clock_only);
+	TESTEQUALS(presented.entities.front().motion_keys.size(), size_t{1});
+	TESTEQUALS(presented.entities.front().motion_keys.front().time,
+	           time::time_t::from_int(3));
 }
 
 } // namespace openage::network::tests
