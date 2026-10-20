@@ -34,6 +34,30 @@
 
 namespace openage::gamestate {
 
+size_t prune_unassigned_fvd_builders(
+	const std::shared_ptr<GameState> &state,
+	size_t admitted_players,
+	const time::time_t &at) {
+	if (not state or not state->get_fvd()
+	    or admitted_players < 2
+	    or admitted_players > state->get_fvd()->get_player_count()) {
+		throw Error{MSG(err) << "Invalid FVD participant count for Builder pruning"};
+	}
+	std::vector<entity_id_t> unused{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (ownership and ownership->get_owners().get(at) > admitted_players) {
+			unused.push_back(id);
+		}
+	}
+	for (auto id : unused) {
+		state->remove_game_entity(id, at);
+	}
+	return unused.size();
+}
+
 GameSimulation::GameSimulation(const util::Path &root_dir,
                                const std::shared_ptr<cvar::CVarManager> &cvar_manager,
                                const std::shared_ptr<openage::time::TimeLoop> time_loop) :
@@ -111,17 +135,12 @@ void GameSimulation::run() {
 			}
 		}
 		if (prune_above > 0) {
-			auto state = this->game->get_state();
-			std::vector<entity_id_t> unassigned{};
-			for (const auto &[id, entity] : state->get_game_entities()) {
-				if (entity->get_definition() != "fvd.data.entities.Builder") continue;
-				auto ownership = std::dynamic_pointer_cast<component::Ownership>(
-					entity->get_component(component::component_t::OWNERSHIP));
-				if (ownership and ownership->get_owners().get(current_time) > prune_above) {
-					unassigned.push_back(id);
-				}
-			}
-			for (auto id : unassigned) state->remove_game_entity(id, current_time);
+			const auto removed = prune_unassigned_fvd_builders(
+				this->game->get_state(), prune_above, current_time);
+			log::log(INFO << "[FVD/match] starting_builders_pruned"
+			              << " participants=" << prune_above
+			              << " expected_builders=" << prune_above - 1
+			              << " removed=" << removed);
 		}
 		// Only the simulation owner thread may submit authenticated network
 		// commands into the mutable game event loop.
