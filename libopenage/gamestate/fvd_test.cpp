@@ -762,15 +762,13 @@ void fvd_hunter_combat() {
 	loop->reach_time(at(15.2), state);
 	auto horse_live = std::dynamic_pointer_cast<component::Live>(
 		one->get_component(component::component_t::LIVE));
-	TESTEQUALS(horse_live->get_attribute(at(15.2), "fvd.data.entities.Health")->get(at(15.2)) < 25, true);
+	TESTEQUALS(horse_live->get_attribute(at(15.2), "fvd.data.entities.Health")->get(at(15.2)), int64_t{88});
 
-	// An in-flight shot resolves once; extra hits against a corpse cannot
-	// award another kill even if several towers fire simultaneously.
-	for (int i = 0; i < 15 and state->get_game_entities().contains(one->get_id()); ++i) {
-		const auto when = at(16 + i);
-		fvd->combat_tick(state, when);
-		loop->reach_time(when + at(0.2), state);
-	}
+	// An already-lethal in-flight shot resolves once; extra hits against a
+	// corpse cannot award another kill. Normal tower volleys are much weaker
+	// after the balance adjustment; simulate a lethal hit explicitly here,
+	// and verify sustained group combat in fvd_combat_balance.
+	fvd->arrow_hit(state, one->get_id(), 5, tower, 100, at(16));
 	TESTEQUALS(state->get_game_entities().contains(one->get_id()), false);
 	auto kills = fvd->get_kills(5);
 	TESTEQUALS(kills >= 1, true);
