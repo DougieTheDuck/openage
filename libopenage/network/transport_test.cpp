@@ -136,6 +136,9 @@ void transport_high_fd() {
 		occupied.handles.push_back(highest);
 	}
 	auto listener = TcpListener::listen("127.0.0.1", 0);
+	// Queue the connection before starting an accept worker: a failed
+	// connect must never strand an accept thread during test unwinding.
+	auto client = TcpConnection::connect("127.0.0.1", listener.get_port());
 	std::exception_ptr server_error{};
 	std::jthread server{[&]() {
 		try {
@@ -153,7 +156,6 @@ void transport_high_fd() {
 			server_error = std::current_exception();
 		}
 	}};
-	auto client = TcpConnection::connect("127.0.0.1", listener.get_port());
 	auto received = client.receive_frame();
 	TESTEQUALS(received.has_value(), true);
 	TESTEQUALS(received->message_type == MessageType::PING, true);
