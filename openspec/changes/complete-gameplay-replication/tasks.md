@@ -9,19 +9,32 @@
   incompatible older builds. **Awaiting cross-platform execution.**
 - [x] 1.2 Add wire roundtrip, rejection, changed-curve delta and
   timed-key expiration regressions. **Awaiting compilation and execution.**
-- [ ] 1.3 Reduce per-entity update traffic: with an unchanged trajectory,
-  avoid resending samples that can be reconstructed from the installed
-  curve; preserve periodic correction/recovery for routing and drift.
-  Benchmark at 2/4/8 players and hundreds of horses.
+- [x] 1.3a Reduce per-entity update traffic: compare each new position
+  against the previously transmitted authoritative movement curve,
+  suppress an unchanged moving entity, and advance the guest's position
+  locally using that same curve. Genuine corrections, health changes and
+  rerouted paths still transmit. Regression simulates 512 horses across
+  2/4/8-player rosters and asserts compact deltas, exact positions and
+  correction transmission. Future-key capture now starts at the first
+  future key rather than rescanning old curve history. **Needs builds/runs.**
+- [ ] 1.3b Benchmark wall-clock CPU, bandwidth and jitter under actual
+  2/4/8 clients and dense combat. Check occasional authoritative
+  corrections and recovery snapshots under artificial latency.
 - [ ] 1.4 Verify synchronized entity orientation and appropriate sprite
   animation changes/phase using scheduled angle/animation curves, where
   animations exist; remove any guest-only guessed behavior.
-- [ ] 1.5 Fully replicate visual combat feedback (projectile trails,
-  impacts, unit hit/death effects) and test render parity. Timed arrow
-  launch paths are already present in world state and guest HUD. Add
-  uniquely identified short-lived effect event history/delivery so shots
-  occurring wholly between two recipient captures are not missed; verify
-  timing, jitter, recovery and duplicate suppression.
+- [x] 1.5a Retain uniquely identified arrow launches for a bounded
+  3-second post-impact history; deliver them in normal recipient deltas
+  even when the 0.2-second flight ends between captures. Guests dedupe
+  IDs and replay a late-received visual locally without applying damage.
+  Regression covers missed-between-captures, no duplicate event, event
+  expiry and over-age rejection. **Needs builds/runs.**
+- [ ] 1.5b Add guaranteed no-loss handling when more than the current
+  2048-event history cap fires before a recipient catches up (event
+  cursor/batched acknowledgements or overflow recovery), plus genuine
+  hit/death/impact FX and integration tests for latency, recovery and
+  authoritative combat/render parity. Do not mark 1.5 complete until
+  those and cross-client verification pass.
 - [ ] 1.6 Display all Builder construction phases, tower ownership,
   reservations and planned/queued foundations consistently for Hunter
   and Builders, including cancellation and retasking.
@@ -38,13 +51,14 @@
 
 ## Remaining gaps from the current audit
 
-- Moving guest proxies currently interpolate position samples; new motion
-  keys have been added but still need traffic optimization, real-process
-  verification and interpolation/recovery hardening.
+- Guest positions can now advance on authoritative future motion curves
+  without a new per-entity record each capture; cross-platform builds,
+  gameplay-view parity and network recovery hardening remain unverified.
 - Entity facing/animation phase and hit/death effects lack independently
   verified replication/presentation.
-- Timed arrow launch/impact visuals, attack-order state, construction
-  state and private scores are already represented by the networking
-  pipeline, but all-player visual verification remains outstanding.
+- Timed arrow launch events now remain available briefly after impact,
+  including late guest visuals, but high-volume overflow, impact/death
+  feedback and all-player visual verification remain outstanding. Attack
+  orders, construction states and private scores already have wire records.
 - Network state still uses one recipient-oriented world capture at a time.
   Ensure update cadence and performance do not deteriorate with players.
