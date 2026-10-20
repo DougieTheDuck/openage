@@ -115,7 +115,7 @@ def tests_cpp():
     )
     yield (
         "openage::network::tests::fvd_multi_session",
-        "FVD 3- and 8-player TCP sessions, simultaneous Builder commands and disconnect continuation",
+        "FVD 3/4/8-player TCP sessions, simultaneous Builder commands and disconnect continuation",
         lambda env: env["has_assets"],
     )
     yield (
