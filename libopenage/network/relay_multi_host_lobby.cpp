@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "error/error.h"
+#include "log/log.h"
+#include "log/message.h"
 #include "network/messages.h"
 #include "network/serialization.h"
 
@@ -129,6 +131,10 @@ StartMatch RelayMultiHostLobby::start_rehost() {
 	if (lease.epoch != 2 or lease.authority != 1) {
 		throw Error{MSG(err) << "Invalid Hunter authority after successful rehost"};
 	}
+	log::log(INFO << "[FVD/authority] handoff_committed epoch=" << lease.epoch
+	              << " hunter_player=" << lease.authority
+	              << " room=" << this->advertised_room_id
+	              << " participants=" << assignment.assignments.size());
 	return assignment;
 }
 
@@ -158,6 +164,10 @@ size_t RelayMultiHostLobby::poll_admissions(const AssetDigest &digest) {
 						throw Error{MSG(err) << "Hunter succession rejected a duplicate new session"};
 					}
 					this->lobby.join(peer.participant_id, std::move(peer.accepted_name));
+					log::log(INFO << "[FVD/authority] handoff_proof_accepted room="
+					              << this->advertised_room_id
+					              << " provisional_slot=" << peer.participant_id
+					              << " original_player=" << proof.original_player_id);
 					peer.admitted = true;
 					++newly_joined;
 					roster_changed = true;
