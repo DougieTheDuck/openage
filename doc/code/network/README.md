@@ -546,6 +546,43 @@ client-side visual expiration; no arrow removal ID is transmitted.
 Unit positions are sampled and transmitted only when they change; curve or
 movement-path replication remains a separate future optimization.
 
+## FVD authority and relay diagnostics
+
+The relay and each game process use structured INFO messages with stable event
+names so a role-based transfer can be followed without dumping frame payloads.
+The **relay only knows rooms and forwarded channels**; it cannot decode the
+authenticated Hunter/Builder lottery. The game clients log the actual authority
+decision and the Hunter's new epoch.
+
+Typical sequence when a Builder creates a three-player lobby:
+
+```text
+[FVD/authority] role_draw creator_player=2 hunter_player=1 participants=3 handoff=required
+[FVD/authority] handoff_requested original_creator_player=2 hunter_player=1 participants=3
+[FVD/authority] hunter_rehost_created epoch=2 room=4 expected_builders=2
+[FVD/authority] handoff_invitation_forwarded epoch=2 room=4 builder_player=2
+[FVD/authority] handoff_proof_accepted room=4 provisional_slot=2 original_player=2
+[FVD/authority] handoff_committed epoch=2 hunter_player=1 room=4 participants=3
+[FVD/authority] authority_active epoch=2 player=1 participants=3 room=4
+[FVD/match] participant_disconnected player=2 role=Builder action=continue room=4
+```
+
+These are illustrative lines emitted by **different game processes**, not a
+single global relay transcript. Room IDs, provisional slots, and assignment
+order vary between matches. The standalone relay reports
+`[FVD/relay] room_created`, `host_slot_reserved`, `pair_connected`,
+`forwarding_started`, `forwarding_ended`, and `forwarding_error` with
+room/slot identifiers. Its logs will show the original room's channels
+closing while the replacement Hunter room's channels remain alive, but it
+does **not** call this a host switch because it does not know the game roles.
+
+Failed session startup emits `[FVD/match] session_error` with the original
+reason. The logs intentionally omit bearer tokens, one-time rejoin tickets,
+raw session IDs, and complete protocol payloads. They log meaningful state
+transitions, not every heartbeat or world delta, to avoid flooding an
+eight-player match. Ensure the game and relay logging verbosity shows INFO
+(and WARN for errors) when investigating a startup issue.
+
 ## Disconnect policy
 
 Before match start, a disconnected participant is removed from the lobby and their player slot may be assigned again.
