@@ -328,6 +328,13 @@ void run_capacity_case(size_t count, bool force_builder_creator) {
 	// Its loss must not close the Hunter's room or other Builder transports.
 	const auto departed_id = force_builder_creator
 		? original_creator_player : builders.rbegin()->first;
+	auto departed_command = std::find_if(commands.begin(), commands.end(),
+		[departed_id](const auto &command) {
+			return command.identity.player_id == departed_id;
+		});
+	TESTEQUALS(departed_command != commands.end(), true);
+	const auto departed_identity = departed_command->identity;
+	const auto departed_generation = authority->get_session_generation();
 	auto *departing = builders.at(departed_id);
 	departing->close();
 	await_condition("Hunter continues after Builder departure", [&]() {
@@ -338,6 +345,13 @@ void run_capacity_case(size_t count, bool force_builder_creator) {
 	});
 	TESTEQUALS(authority->status().phase, std::string{"playing"});
 	TESTEQUALS(authority->status().remote_player_ids.size(), count - 2);
+	TESTEQUALS(authority->accepts_host_command(
+		departed_identity, departed_generation), false);
+	CommandResult obsolete{};
+	obsolete.command_id = departed_command->intent.command_id;
+	obsolete.status = CommandStatus::ACCEPTED;
+	TESTEQUALS(authority->send_command_result(
+		departed_identity, departed_generation, std::move(obsolete)), false);
 	auto survivor = std::find_if(builders.begin(), builders.end(),
 		[departed_id](const auto &item) { return item.first != departed_id; });
 	TESTEQUALS(survivor != builders.end(), true);
