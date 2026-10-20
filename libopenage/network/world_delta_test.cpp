@@ -113,6 +113,51 @@ void world_delta() {
 	TESTEQUALS(applied.arrows.front().arrow_id, uint64_t{55});
 	TESTEQUALS(applied.arrows.back().arrow_id, uint64_t{56});
 
+	// A 0.2-second projectile can launch and hit between successive
+	// recipient captures. Keep its unique launch event for the guest's
+	// short visual replay window, without ever reapplying combat damage.
+	WorldState before_shot{};
+	before_shot.world_revision = 1;
+	before_shot.simulation_time = time::time_t::from_int(10);
+	before_shot.map_size = 128;
+	before_shot.local_player_id = 2;
+	before_shot.players = {{1, PlayerRole::HUNTER}, {2, PlayerRole::BUILDER}};
+	WorldDeltaBaseline event_host{};
+	event_host.accept_snapshot(before_shot);
+	auto after_shot = before_shot;
+	after_shot.world_revision = 2;
+	after_shot.simulation_time = time::time_t::from_double(10.7);
+	after_shot.arrows = {{
+		100, 2, 999, {60, 60, 1}, {61, 61, 0},
+		time::time_t::from_double(10.1),
+		time::time_t::from_double(10.3)}};
+	auto late_event = event_host.advance(after_shot);
+	TESTEQUALS(late_event.changed.arrows.size(), size_t{1});
+	TESTEQUALS(arrow_visible_at(after_shot.arrows.front(),
+	                           after_shot.simulation_time), false);
+	auto event_guest = apply_world_delta(
+		before_shot, decode_world_delta(encode_world_delta(late_event)));
+	TESTEQUALS(event_guest.arrows.size(), size_t{1});
+	TESTEQUALS(event_guest.arrows.front().arrow_id, uint64_t{100});
+	auto next_shot_frame = after_shot;
+	next_shot_frame.world_revision = 3;
+	next_shot_frame.simulation_time = time::time_t::from_int(11);
+	auto deduplicated = event_host.advance(next_shot_frame);
+	TESTEQUALS(deduplicated.changed.arrows.empty(), true);
+	event_guest = apply_world_delta(event_guest, deduplicated);
+	TESTEQUALS(event_guest.arrows.size(), size_t{1});
+	auto after_history = next_shot_frame;
+	after_history.world_revision = 4;
+	after_history.simulation_time = time::time_t::from_int(14);
+	after_history.arrows.clear();
+	auto expired = event_host.advance(after_history);
+	TESTEQUALS(expired.changed.arrows.empty(), true);
+	event_guest = apply_world_delta(event_guest, expired);
+	TESTEQUALS(event_guest.arrows.empty(), true);
+	auto invalid_old_event = late_event;
+	invalid_old_event.changed.simulation_time = time::time_t::from_int(14);
+	TESTTHROWS(apply_world_delta(before_shot, invalid_old_event));
+
 	// Corruption, duplicate removals, wrong players and gaps cannot
 	// change a client's last accepted state.
 	auto tampered = encoded;
