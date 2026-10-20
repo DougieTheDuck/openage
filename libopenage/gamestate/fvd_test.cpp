@@ -33,12 +33,15 @@
 #include "gamestate/game_state.h"
 #include "gamestate/map.h"
 #include "gamestate/player.h"
+#include "gamestate/simulation.h"
 #include "gamestate/system/idle.h"
 #include "gamestate/system/move.h"
 #include "gamestate/terrain.h"
 #include "gamestate/terrain_chunk.h"
 #include "gamestate/terrain_factory.h"
 #include "gamestate/terrain_tile.h"
+#include "network/command_bridge.h"
+#include "network/match_connection_state.h"
 #include "pathfinding/cost_field.h"
 #include "pathfinding/definitions.h"
 #include "pathfinding/grid.h"
@@ -54,6 +57,60 @@
 #include "util/path.h"
 
 namespace openage::gamestate::tests {
+
+/**
+ * FVD's base scenario always starts with seven Builders; the authoritative
+ * multiplayer simulation must remove unadmitted ones before it snapshots.
+ */
+void fvd_network_builder_count() {
+	auto root = util::Path{
+		std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	for (size_t admitted : {size_t{2}, size_t{3}, size_t{8}}) {
+		auto loop = std::make_shared<openage::event::EventLoop>();
+		loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+		loop->add_event_handler(std::make_shared<event::WaitHandler>());
+		auto entities = std::make_shared<EntityFactory>();
+		auto terrain = std::make_shared<TerrainFactory>();
+		Game game{loop, mods, entities, terrain};
+		auto state = game.get_state();
+		TESTEQUALS(state->get_fvd()->get_player_count(), size_t{8});
+		auto count_builders = [&]() {
+			size_t count{};
+			for (const auto &[id, entity] : state->get_game_entities()) {
+				(void)id;
+				if (entity->get_definition() == "fvd.data.entities.Builder") {
+					++count;
+				}
+			}
+			return count;
+		};
+		TESTEQUALS(count_builders(), size_t{7});
+		TESTTHROWS(prune_unassigned_fvd_builders(state, 1, time::TIME_ZERO));
+		TESTTHROWS(prune_unassigned_fvd_builders(state, 9, time::TIME_ZERO));
+		TESTEQUALS(count_builders(), size_t{7});
+		TESTEQUALS(prune_unassigned_fvd_builders(
+			state, admitted, time::TIME_ZERO), size_t{8} - admitted);
+		TESTEQUALS(count_builders(), admitted - 1);
+		TESTEQUALS(prune_unassigned_fvd_builders(
+			state, admitted, time::TIME_ZERO), size_t{0});
+		network::MatchConnectionState connections{8};
+		auto captured = network::capture_fvd_state(
+			state, connections, time::TIME_ZERO, 0, 1, 2);
+		size_t replicated_builders{};
+		for (const auto &entity : captured.entities) {
+			if (entity.definition != "fvd.data.entities.Builder") continue;
+			++replicated_builders;
+			TESTEQUALS(entity.owner_id >= 2
+			           and entity.owner_id <= admitted, true);
+		}
+		// Two players -> one Builder, three -> two, eight -> seven.
+		TESTEQUALS(replicated_builders, admitted - 1);
+	}
+}
 
 void fvd_scenario() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
