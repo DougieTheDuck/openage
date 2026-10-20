@@ -817,6 +817,106 @@ void fvd_hunter_combat() {
 	TESTEQUALS(fvd->get_tower_kills(tower, 4).has_value(), false);
 }
 
+/**
+ * Real combat timeline plus the ideal stationary-volley bounds used for
+ * tuning FVD. Travel, repositioning and focus changes can lengthen combat.
+ */
+void fvd_combat_balance() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+
+	auto rules = state->get_db_view()->get_object("fvd.data.scenario.Scenario");
+	const int64_t melee_damage = rules.get_int("horse_melee_damage");
+	TESTEQUALS(fvd->get_tower_damage(), int64_t{2});
+	TESTEQUALS(melee_damage, int64_t{3});
+	TESTEQUALS(fvd->get_tower_armor(), int64_t{1});
+	// Existing reloads: towers 0.8s (+0.2s flight), horses 0.6s.
+	// Compute stationary group DPS in the same integer-volley model as
+	// combat_tick, rather than assuming fractional damage per hit.
+	for (int64_t tower_count : {3, 4}) {
+		const int64_t total_damage = tower_count * fvd->get_tower_damage();
+		const int64_t volleys = (90 + total_damage - 1) / total_damage;
+		const double lethal_time = (volleys - 1) * 0.8 + 0.2;
+		TESTEQUALS(lethal_time >= 8.0 and lethal_time <= 12.0, true);
+		// Three focused towers: 11.4s; four focused towers: 9.0s.
+		TESTEQUALS_FLOAT(lethal_time, tower_count == 3 ? 11.4 : 9.0, 0.001);
+	}
+	// Three horses striking through tower armor should take 17 melee
+	// volleys, 0.6s apart, to remove 100 HP (~9.6s).
+	const int64_t horse_hit = std::max<int64_t>(1, melee_damage - fvd->get_tower_armor());
+	const int64_t melee_volleys = (100 + 3 * horse_hit - 1) / (3 * horse_hit);
+	TESTEQUALS(melee_volleys, int64_t{17});
+	TESTEQUALS_FLOAT((melee_volleys - 1) * 0.6, 9.6, 0.001);
+
+	// Create a fully built tower via the same construction pipeline as
+	// gameplay, then focus three real, immediately adjacent Hunter horses.
+	entity_id_t builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto owner = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (owner->get_owners().get(time::TIME_ZERO) == player_id_t{5}) {
+			builder = id;
+			break;
+		}
+	}
+	TESTEQUALS(builder != 0, true);
+	TESTEQUALS(fvd->request_build(state, 5, {builder}, {68, 69, 0}, at(0)), true);
+	loop->reach_time(at(15), state);
+	entity_id_t tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			tower = id;
+			break;
+		}
+	}
+	TESTEQUALS(tower != 0, true);
+	auto tower_live = std::dynamic_pointer_cast<component::Live>(
+		state->get_game_entity(tower)->get_component(component::component_t::LIVE));
+	TESTEQUALS(tower_live->get_attribute(
+		at(15), "fvd.data.entities.Health")->get(at(15)), int64_t{100});
+
+	std::vector<entity_id_t> attackers{};
+	for (const coord::phys3 location : {
+	         coord::phys3{69, 69, 0}, coord::phys3{69, 70, 0},
+	         coord::phys3{68, 70, 0}}) {
+		auto horse = entities->spawn_game_entity(
+			loop, state, 1, "fvd.data.entities.Horse", location, at(15));
+		auto live = std::dynamic_pointer_cast<component::Live>(
+			horse->get_component(component::component_t::LIVE));
+		TESTEQUALS(live->get_attribute(
+			at(15), "fvd.data.entities.Health")->get(at(15)), int64_t{90});
+		attackers.push_back(horse->get_id());
+	}
+	TESTEQUALS(fvd->issue_focus_attack(state, 1, attackers, tower, at(15)), true);
+	double killed_after = -1.0;
+	for (size_t tick = 0; tick <= 65; ++tick) {
+		const double elapsed = static_cast<double>(tick) * 0.2;
+		const auto now = at(15.0 + elapsed);
+		loop->reach_time(now, state);
+		fvd->combat_tick(state, now);
+		if (not state->get_game_entities().contains(tower)) {
+			killed_after = elapsed;
+			break;
+		}
+	}
+	// The test exercises the actual scheduler, damage and tower destruction,
+	// not just the ideal math above. A little tick rounding is acceptable.
+	TESTEQUALS(killed_after >= 8.0 and killed_after <= 12.0, true);
+	TESTEQUALS(state->get_game_entities().contains(tower), false);
+}
+
 void fvd_hunter_attack_move_regressions() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
