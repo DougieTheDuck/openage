@@ -201,6 +201,10 @@ void messages() {
 		{201, 2, "fvd.data.entities.Tower", {12.0, 20.0, 0}, 100, 100, 2},
 		{202, 1, "fvd.data.entities.Tower", {13.0, 20.0, 0}, 100, 100},
 	};
+	state.entities.front().motion_keys = {
+		{time::time_t::from_double(3.75), {11.0, 20.5, 0}},
+		{time::time_t::from_double(4.25), {12.0, 21.0, 0}},
+	};
 	state.reservations = {{{10, 20}, 300}};
 	state.constructions = {{
 		7, 2, 300, {10, 20}, ConstructionPhase::PLANNED,
@@ -230,6 +234,14 @@ void messages() {
 		TESTEQUALS(decoded_state.entities[i].owner_id, state.entities[i].owner_id);
 		TESTEQUALS(decoded_state.entities[i].definition, state.entities[i].definition);
 		TESTEQUALS(decoded_state.entities[i].position, state.entities[i].position);
+		TESTEQUALS(decoded_state.entities[i].motion_keys.size(),
+		           state.entities[i].motion_keys.size());
+		for (size_t key = 0; key < state.entities[i].motion_keys.size(); ++key) {
+			TESTEQUALS(decoded_state.entities[i].motion_keys[key].time,
+			           state.entities[i].motion_keys[key].time);
+			TESTEQUALS(decoded_state.entities[i].motion_keys[key].position,
+			           state.entities[i].motion_keys[key].position);
+		}
 		TESTEQUALS(decoded_state.entities[i].health.has_value(),
 		           state.entities[i].health.has_value());
 		TESTEQUALS(decoded_state.entities[i].tower_kills.has_value(),
@@ -269,6 +281,19 @@ void messages() {
 	           gamestate::entity_id_t{100});
 	TESTEQUALS(decoded_state.arrows.front().impact_time,
 	           time::time_t::from_double(3.45));
+
+	// Curves cannot include past, simultaneous, unordered or unbounded
+	// keyframes; this is checked before transmission to every client.
+	auto past_motion = state;
+	past_motion.entities.front().motion_keys.front().time = state.simulation_time;
+	TESTTHROWS(encode_world_state(past_motion));
+	auto unordered_motion = state;
+	unordered_motion.entities.front().motion_keys[1].time =
+		unordered_motion.entities.front().motion_keys[0].time;
+	TESTTHROWS(encode_world_state(unordered_motion));
+	auto oversized_motion = state;
+	oversized_motion.entities.front().motion_keys.resize(MAX_ENTITY_MOTION_KEYS + 1);
+	TESTTHROWS(encode_world_state(oversized_motion));
 
 	auto truncated_state = encode_world_state(state);
 	truncated_state.resize(truncated_state.size() - 8);
