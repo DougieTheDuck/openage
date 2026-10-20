@@ -184,12 +184,84 @@ void world_delta() {
 	auto later = retask;
 	later.world_revision = 3;
 	later.simulation_time = time::time_t::from_double(2.25);
+	// A real capture samples the current position and sends only FUTURE
+	// keys; it must not require an entity patch when the path is unchanged.
+	later.entities.front().position = {2, 3.25, 0};
+	later.entities.front().motion_keys.erase(later.entities.front().motion_keys.begin());
 	auto clock_only = curves.advance(later);
 	TESTEQUALS(clock_only.changed.entities.empty(), true);
 	auto presented = apply_world_delta(guest_retask, clock_only);
 	TESTEQUALS(presented.entities.front().motion_keys.size(), size_t{1});
 	TESTEQUALS(presented.entities.front().motion_keys.front().time,
 	           time::time_t::from_int(3));
+	TESTEQUALS(presented.entities.front().position, (coord::phys3{2, 3.25, 0}));
+
+	// Even with hundreds of Hunter horses and 2/4/8 player rosters,
+	// an unchanged scheduled route needs no repeated per-horse payload.
+	// These are deterministic packet-size checks, not wall-clock benchmarks.
+	for (size_t player_count : {size_t{2}, size_t{4}, size_t{8}}) {
+		WorldState dense{};
+		dense.map_size = 128;
+		dense.world_revision = 1;
+		dense.local_player_id = 2;
+		for (size_t player = 1; player <= player_count; ++player) {
+			dense.players.push_back({
+				static_cast<gamestate::player_id_t>(player),
+				player == 1 ? PlayerRole::HUNTER : PlayerRole::BUILDER});
+		}
+		for (size_t i = 0; i < 512; ++i) {
+			EntityState horse{
+				static_cast<gamestate::entity_id_t>(1000 + i),
+				1, "fvd.data.entities.Horse",
+				{static_cast<int64_t>(i), 0, 0}, 90, 90};
+			horse.motion_keys.push_back({
+				time::time_t::from_int(100),
+				{static_cast<int64_t>(i + 100), 0, 0}});
+			dense.entities.push_back(std::move(horse));
+		}
+		WorldDeltaBaseline dense_host{};
+		dense_host.accept_snapshot(dense);
+		auto dense_guest = dense;
+		const auto full_payload_size = encode_world_state(dense).size();
+		for (int64_t tick = 1; tick <= 24; ++tick) {
+			auto current = dense;
+			current.world_revision = static_cast<uint64_t>(tick + 1);
+			current.simulation_time = time::time_t::from_int(tick);
+			for (size_t i = 0; i < current.entities.size(); ++i) {
+				current.entities[i].position = {
+					static_cast<int64_t>(i) + tick, 0, 0};
+			}
+			auto delta = dense_host.advance(current);
+			TESTEQUALS(delta.changed.entities.empty(), true);
+			const auto encoded = encode_world_delta(delta);
+			// An empty-diff packet must remain tiny despite 512 movers.
+			TESTEQUALS(encoded.size() * 10 < full_payload_size, true);
+			dense_guest = apply_world_delta(
+				dense_guest, decode_world_delta(encoded));
+			TESTEQUALS(dense_guest.entities.size(), size_t{512});
+			TESTEQUALS(dense_guest.world_revision, current.world_revision);
+			TESTEQUALS(dense_guest.entities.front().position,
+			           current.entities.front().position);
+			TESTEQUALS(dense_guest.entities.back().position,
+			           current.entities.back().position);
+		}
+		// Any disagreement with the scheduled position is a correction,
+		// not something the guest is permitted to infer or ignore.
+		auto corrected = dense;
+		corrected.world_revision = 26;
+		corrected.simulation_time = time::time_t::from_int(25);
+		for (size_t i = 0; i < corrected.entities.size(); ++i) {
+			corrected.entities[i].position = {
+				static_cast<int64_t>(i + 25), 0, 0};
+		}
+		corrected.entities.front().position = {30, 0, 0};
+		auto correction = dense_host.advance(corrected);
+		TESTEQUALS(correction.changed.entities.size(), size_t{1});
+		TESTEQUALS(correction.changed.entities.front().entity_id,
+		           gamestate::entity_id_t{1000});
+		dense_guest = apply_world_delta(dense_guest, correction);
+		TESTEQUALS(dense_guest.entities.front().position, (coord::phys3{30, 0, 0}));
+	}
 }
 
 } // namespace openage::network::tests
