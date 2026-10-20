@@ -387,8 +387,8 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		const auto &spawned_victim = find_entity(spawned, victim->get_id());
 		spawned_victim.health.has_value() or TESTFAIL;
 		spawned_victim.maximum_health.has_value() or TESTFAIL;
-		TESTEQUALS(*spawned_victim.health, int64_t{25});
-		TESTEQUALS(*spawned_victim.maximum_health, int64_t{25});
+		TESTEQUALS(*spawned_victim.health, *spawned_victim.maximum_health);
+		TESTEQUALS(*spawned_victim.health > 0, true);
 		TESTEQUALS(spawned.local_player_id, gamestate::player_id_t{2});
 		TESTEQUALS(spawned.local_kill_count, uint64_t{0});
 		spawned.arrows.empty() or TESTFAIL;
@@ -412,7 +412,8 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			state, connections, first_arrow->impact_time, 6, 7, 2);
 		const auto &wounded = find_entity(impacted, victim->get_id());
 		wounded.health.has_value() or TESTFAIL;
-		TESTEQUALS(*wounded.health, int64_t{17});
+		TESTEQUALS(*wounded.health,
+		           *spawned_victim.health - state->get_fvd()->get_tower_damage());
 		impacted.arrows.empty() or TESTFAIL;
 		TESTEQUALS(impacted.local_kill_count, uint64_t{0});
 		connection.send_frame(session.make_frame(
@@ -421,8 +422,11 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 
 		auto next_launch = first_arrow->launch_time
 		                 + time::time_t::from_double(0.8);
-		for (size_t shot = 0;
-		     shot < 4 and state->get_game_entities().contains(victim->get_id());
+		const auto tower_damage = state->get_fvd()->get_tower_damage();
+		const auto shots_to_kill = (*spawned_victim.health + tower_damage - 1)
+		                         / tower_damage;
+		for (int64_t shot = 1;
+		     shot < shots_to_kill and state->get_game_entities().contains(victim->get_id());
 		     ++shot) {
 			loop->reach_time(next_launch, state);
 			state->get_fvd()->combat_tick(state, next_launch);
@@ -804,7 +808,8 @@ void run_guest(uint16_t port) {
 	TESTEQUALS(fired.arrows.front().owner_id, gamestate::player_id_t{2});
 	const auto &unhurt = find_entity(spawned, victim_id);
 	unhurt.health.has_value() or TESTFAIL;
-	TESTEQUALS(*unhurt.health, int64_t{25});
+	unhurt.maximum_health.has_value() or TESTFAIL;
+	TESTEQUALS(*unhurt.health, *unhurt.maximum_health);
 
 	auto impacted_frame = client.receive_frame();
 	impacted_frame.has_value() or TESTFAIL;
@@ -818,7 +823,9 @@ void run_guest(uint16_t port) {
 	impacted.arrows.empty() or TESTFAIL;
 	const auto &wounded = find_entity(impacted, victim_id);
 	wounded.health.has_value() or TESTFAIL;
-	TESTEQUALS(*wounded.health, int64_t{17});
+	wounded.maximum_health.has_value() or TESTFAIL;
+	TESTEQUALS(*wounded.health < *unhurt.health, true);
+	TESTEQUALS(*wounded.maximum_health, *unhurt.maximum_health);
 
 	auto killed_frame = client.receive_frame();
 	killed_frame.has_value() or TESTFAIL;

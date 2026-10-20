@@ -92,7 +92,11 @@ def tests_cpp():
     yield "openage::network::tests::handshake"
     yield "openage::network::tests::lobby"
     yield "openage::network::tests::lobby_relay_client"
-    yield "openage::network::tests::lobby_capacity", "Full 4/8-player relay, Hunter rehost, contested Builder orders, disconnect continuation and match termination"
+    yield (
+        "openage::network::tests::lobby_capacity",
+        "Full 4/8-player relay, Hunter rehost, contested Builder orders, "
+        "disconnect continuation and match termination",
+    )
     yield (
         "openage::network::tests::authority_succession",
         "FVD Hunter takeover epoch fencing and complete-checkpoint safety requirements",
@@ -109,7 +113,10 @@ def tests_cpp():
     yield "openage::network::tests::replication"
     yield "openage::network::tests::world_delta"
     yield "openage::network::tests::transport"
-    yield "openage::network::tests::transport_high_fd", "TCP poll read with POSIX descriptor beyond select FD_SETSIZE (skips if OS limit is too low)"
+    yield (
+        "openage::network::tests::transport_high_fd",
+        "TCP poll read with POSIX descriptor beyond select FD_SETSIZE (skips if OS limit is too low)",
+    )
     yield (
         "openage::network::tests::fvd_loopback",
         "FVD command authority and state synchronization over loopback TCP",
