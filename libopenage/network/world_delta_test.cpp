@@ -2,6 +2,8 @@
 
 #include "world_delta.h"
 
+#include <utility>
+
 #include "testing/testing.h"
 
 namespace openage::network::tests {
@@ -105,9 +107,11 @@ void world_delta() {
 	TESTEQUALS(applied.reservations.empty(), true);
 	TESTEQUALS(applied.constructions.empty(), true);
 	TESTEQUALS(applied.attack_orders.empty(), true);
-	TESTEQUALS(applied.arrows.size(), size_t{1});
-	TESTEQUALS(applied.arrows.front().arrow_id, uint64_t{56});
-	// Arrow 55 expired at t=20.2 without a removal ID being transmitted.
+	// Arrow 55 already hit at t=20.2, but its launch survives briefly
+	// so a slow guest can render its missed flight exactly once.
+	TESTEQUALS(applied.arrows.size(), size_t{2});
+	TESTEQUALS(applied.arrows.front().arrow_id, uint64_t{55});
+	TESTEQUALS(applied.arrows.back().arrow_id, uint64_t{56});
 
 	// Corruption, duplicate removals, wrong players and gaps cannot
 	// change a client's last accepted state.
@@ -215,8 +219,8 @@ void world_delta() {
 				1, "fvd.data.entities.Horse",
 				{static_cast<int64_t>(i), 0, 0}, 90, 90};
 			horse.motion_keys.push_back({
-				time::time_t::from_int(100),
-				{static_cast<int64_t>(i + 100), 0, 0}});
+				time::time_t::from_int(64),
+				{static_cast<int64_t>(i + 64), 0, 0}});
 			dense.entities.push_back(std::move(horse));
 		}
 		WorldDeltaBaseline dense_host{};
