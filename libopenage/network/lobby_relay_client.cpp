@@ -1303,9 +1303,15 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		}
 		if (this->stopping) return;
 		{
+			// Publish the acknowledged bootstrap revision at the same time
+			// as the phase transition. The time-zero Hunter rehost follows
+			// this path even with just one Builder; leaving the default
+			// revision at zero makes the presenter report an uninitialized
+			// authoritative world until a later delta happens to arrive.
 			std::lock_guard lock{this->mutex};
 			this->current.phase = "bootstrap";
 			this->current.message = "All players synchronized. Waiting for role reveal.";
+			this->current.snapshot_revision = 1;
 		}
 
 		std::map<gamestate::player_id_t, bool> live{};
