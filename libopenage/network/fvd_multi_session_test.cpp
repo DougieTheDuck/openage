@@ -314,8 +314,9 @@ void multi_session_case(size_t players) {
 } // namespace
 
 void fvd_multi_session() {
-	// Include a three-player case and all eight available human roles.
+	// Test three, four and the maximum eight independent human sessions.
 	multi_session_case(3);
+	multi_session_case(4);
 	multi_session_case(8);
 }
 
