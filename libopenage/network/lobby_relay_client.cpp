@@ -428,14 +428,23 @@ void RelayLobbyClient::close() {
 	std::shared_ptr<TcpConnection> socket;
 	std::shared_ptr<RelayMultiHostLobby> multi_host;
 	std::shared_ptr<RelayLobbyClient> successor;
+	std::string previous_phase{};
+	gamestate::player_id_t previous_player{};
 	{
 		std::lock_guard lock{this->mutex};
+		previous_phase = this->current.phase;
+		previous_player = this->current.local_player_id;
 		successor = this->handoff_client;
 		++this->session_generation;
 		this->active_remote_identity.reset();
 		this->active_multi_identities.clear();
 		socket = this->connection;
 		multi_host = this->multi_host_lobby;
+	}
+	if (previous_phase != "menu") {
+		log::log(INFO << "[FVD/match] local_session_closed phase="
+		              << previous_phase << " player=" << previous_player
+		              << " replacement=" << (successor ? "yes" : "no"));
 	}
 	if (socket) socket->close();
 	if (multi_host) multi_host->close();
