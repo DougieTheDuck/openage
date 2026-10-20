@@ -42,6 +42,80 @@ bool same(const EntityState &a, const EntityState &b) {
 	}
 	return true;
 }
+// Evaluate the last transmitted linear movement plan without running any
+// gameplay systems on the guest. The host uses exactly the same prediction
+// to decide whether a fresh sampled position really needs transmission.
+coord::phys3 position_at(const EntityState &entity,
+                         time::time_t origin, time::time_t now) {
+	auto from = entity.position;
+	auto from_time = origin;
+	if (now <= origin) return from;
+	for (const auto &key : entity.motion_keys) {
+		if (now <= key.time) {
+			const auto span = key.time - from_time;
+			if (span <= time::TIME_ZERO) return key.position;
+			const auto fraction = (now - from_time).to_double() / span.to_double();
+			return from + (key.position - from) * fraction;
+		}
+		from = key.position;
+		from_time = key.time;
+	}
+	return from;
+}
+
+bool same_motion_at(const EntityState &before, const EntityState &after,
+                    time::time_t before_time, time::time_t after_time) {
+	if (after.position != position_at(before, before_time, after_time)) return false;
+	size_t remaining = 0;
+	for (const auto &key : before.motion_keys) {
+		if (key.time <= after_time) continue;
+		if (remaining >= after.motion_keys.size()
+		    or key.time != after.motion_keys[remaining].time
+		    or key.position != after.motion_keys[remaining].position) return false;
+		++remaining;
+	}
+	return remaining == after.motion_keys.size();
+}
+
+void difference_entities(const WorldState &before, const WorldState &after,
+                         std::vector<EntityState> &changed,
+                         std::vector<entity_id> &removed) {
+	std::unordered_map<entity_id, const EntityState *> old{};
+	std::unordered_set<entity_id> seen{};
+	for (const auto &entry : before.entities) {
+		if (not old.emplace(entry.entity_id, &entry).second) {
+			throw Error{MSG(err) << "Duplicate entity identity in FVD previous world state"};
+		}
+	}
+	for (const auto &entry : after.entities) {
+		if (not seen.insert(entry.entity_id).second) {
+			throw Error{MSG(err) << "Duplicate entity identity in FVD next world state"};
+		}
+		const auto it = old.find(entry.entity_id);
+		if (it == old.end()) {
+			changed.push_back(entry);
+			continue;
+		}
+		const auto &previous = *it->second;
+		// Compare properties independently of the interpolated position.
+		// A new order, damage or owning player still generates a patch.
+		if (previous.owner_id != entry.owner_id
+		    or previous.definition != entry.definition
+		    or previous.health != entry.health
+		    or previous.maximum_health != entry.maximum_health
+		    or previous.tower_kills != entry.tower_kills
+		    or not same_motion_at(previous, entry, before.simulation_time,
+		                          after.simulation_time)) {
+			changed.push_back(entry);
+		}
+	}
+	for (const auto &entry : before.entities) {
+		if (not seen.contains(entry.entity_id)) {
+			removed.push_back(entry.entity_id);
+		}
+	}
+}
+
 bool same(const TileReservation &a, const TileReservation &b) {
 	return a.tile == b.tile and a.builder_id == b.builder_id;
 }
@@ -142,7 +216,8 @@ void validate_header(const WorldState &previous, const WorldState &next) {
 	if (previous.local_player_id == 0
 	    or next.local_player_id != previous.local_player_id
 	    or next.map_size != previous.map_size
-	    or next.world_revision <= previous.world_revision) {
+	    or next.world_revision <= previous.world_revision
+	    or next.simulation_time < previous.simulation_time) {
 		throw Error{MSG(err) << "FVD delta identity, map size or revision mismatch"};
 	}
 }
@@ -185,8 +260,8 @@ WorldDelta make_world_delta(const WorldState &previous, const WorldState &curren
 	}
 	difference(previous.players, current.players,
 	           delta.changed.players, delta.removed_players, player_key);
-	difference(previous.entities, current.entities,
-	           delta.changed.entities, delta.removed_entities, entity_key);
+	difference_entities(previous, current,
+	                  delta.changed.entities, delta.removed_entities);
 	difference(previous.reservations, current.reservations,
 	           delta.changed.reservations, delta.removed_reservations, reservation_key);
 	difference(previous.constructions, current.constructions,
@@ -229,6 +304,13 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 		next.local_kill_count = changed.local_kill_count;
 	}
 	patch(next.players, changed.players, delta.removed_players, player_key);
+	// Advance the already-authoritative movement plan before applying
+	// explicit corrections or retasks. Unchanged moving entities need no
+	// position payload merely because the world clock advanced.
+	for (auto &entity : next.entities) {
+		entity.position = position_at(entity, previous.simulation_time,
+		                              next.simulation_time);
+	}
 	patch(next.entities, changed.entities, delta.removed_entities, entity_key);
 	// Motion keyframes are timed segments, like arrows. A no-change delta
 	// must still retire segments the guest has already played. The host
