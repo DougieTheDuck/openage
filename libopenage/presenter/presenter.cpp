@@ -728,7 +728,7 @@ void Presenter::refresh_fvd_guest_visuals() {
 		this->fvd_last_guest_arrow_id = shot.arrow_id;
 		// A launch fully elapsed between recipient captures. Replay the
 		// shot's visual just once, never its authoritative impact damage.
-		if (shot.impact_time <= world->simulation_time
+		if (shot.impact_time <= presentation_time
 		    and this->fvd_guest_late_arrows.size() < network::MAX_STATE_ARROWS) {
 			this->fvd_guest_late_arrows.push_back({shot, received_at});
 		}
@@ -1208,17 +1208,10 @@ void Presenter::render() {
 					auto replicated = this->fvd_replication->get_world_state();
 					if (replicated) {
 						now = *guest_time;
-						arrows.reserve(replicated->arrows.size());
-						for (const auto &arrow : replicated->arrows) {
-							if (not network::arrow_visible_at(arrow, now)) {
-								continue;
-							}
-							const auto duration = (arrow.impact_time - arrow.launch_time).to_double();
-							if (duration <= 0.0) {
-								continue;
-							}
-							const auto progress = std::clamp(
-								(now - arrow.launch_time).to_double() / duration, 0.0, 1.0);
+						arrows.reserve(replicated->arrows.size()
+						               + this->fvd_guest_late_arrows.size());
+						auto add_visual_arc = [&](const network::ArrowState &arrow,
+						                          double progress) {
 							auto position_at = [&](double fraction) {
 								auto lerp = [fraction](coord::phys_t a, coord::phys_t b) {
 									return coord::phys_t::from_double(
@@ -1233,6 +1226,35 @@ void Presenter::render() {
 							arrows.push_back({
 								position_at(std::max(0.0, progress - 0.22)),
 								position_at(progress), progress});
+						};
+						for (const auto &arrow : replicated->arrows) {
+							if (not network::arrow_visible_at(arrow, now)) continue;
+							const auto duration = (arrow.impact_time - arrow.launch_time).to_double();
+							if (duration > 0.0) {
+								const auto progress = std::clamp(
+									(now - arrow.launch_time).to_double() / duration, 0.0, 1.0);
+								add_visual_arc(arrow, progress);
+							}
+						}
+						// A late launch record is rendered on its original
+						// 0.2s flight curve, shifted to the first receipt
+						// time so slow recipients can still see the shot.
+						// This does NOT alter the authoritative hit time.
+						const auto received_now = std::chrono::steady_clock::now();
+						std::erase_if(this->fvd_guest_late_arrows,
+							[&](const LateGuestArrow &late) {
+								const auto duration =
+									(late.shot.impact_time - late.shot.launch_time).to_double();
+								const auto elapsed = std::chrono::duration<double>(
+									received_now - late.first_seen).count();
+								return duration <= 0.0 or elapsed >= duration;
+							});
+						for (const auto &late : this->fvd_guest_late_arrows) {
+							const auto duration =
+								(late.shot.impact_time - late.shot.launch_time).to_double();
+							const auto elapsed = std::chrono::duration<double>(
+								received_now - late.first_seen).count();
+							add_visual_arc(late.shot, std::clamp(elapsed / duration, 0.0, 1.0));
 						}
 					}
 				}
