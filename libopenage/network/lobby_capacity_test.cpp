@@ -224,10 +224,18 @@ void run_capacity_case(size_t count, bool force_builder_creator) {
 		TESTEQUALS(tracker->get_local_player_id(), player);
 		TESTEQUALS(tracker->get_local_kills().value(), uint64_t{100 + player});
 	}
-	await_condition("Hunter bootstrap acknowledged by all", [&]() {
-		auto phase = authority->status().phase;
-		return phase == "bootstrap" or phase == "streaming" or phase == "playing";
+	await_condition("Hunter bootstrap acknowledged by all at revision 1", [&]() {
+		auto status = authority->status();
+		if (status.phase == "error") {
+			throw Error{MSG(err) << "Hunter bootstrap failed: " << status.message};
+		}
+		return (status.phase == "bootstrap" or status.phase == "streaming"
+		        or status.phase == "playing")
+		       and status.snapshot_revision == 1;
 	});
+	for (const auto &[player, builder] : builders) {
+		TESTEQUALS(builder->status().snapshot_revision, uint64_t{1});
+	}
 	// Five-second reveal is global to the assigned match; no Builder can
 	// issue commands before the worker has finished the reveal.
 	for (auto &client : clients) {
