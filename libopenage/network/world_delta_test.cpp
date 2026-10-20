@@ -51,11 +51,11 @@ void world_delta() {
 	corrected.constructions.front().phase_start_time = time::time_t::from_int(21);
 	auto progress_delta = make_world_delta(constructing, corrected);
 	TESTEQUALS(progress_delta.changed.constructions.size(), size_t{1});
-	auto recovered = apply_world_delta(constructing,
+	auto construction_recovered = apply_world_delta(constructing,
 		decode_world_delta(encode_world_delta(progress_delta)));
-	TESTEQUALS(recovered.constructions.front().phase_start_time,
+	TESTEQUALS(construction_recovered.constructions.front().phase_start_time,
 	           time::time_t::from_int(21));
-	TESTEQUALS(recovered.constructions.front().progress_percent(
+	TESTEQUALS(construction_recovered.constructions.front().progress_percent(
 	           time::time_t::from_int(30)), 47);
 
 	WorldDeltaBaseline host{};
