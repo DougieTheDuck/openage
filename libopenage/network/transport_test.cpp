@@ -5,6 +5,13 @@
 #include <chrono>
 #include <exception>
 #include <thread>
+#include <vector>
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
 
 #include "testing/testing.h"
 
@@ -95,6 +102,66 @@ void transport() {
 	}
 	TESTEQUALS(detected, true);
 	TESTEQUALS(relay_socket.is_open(), true);
+}
+
+// The POSIX select/FD_SET implementation used to corrupt memory when
+// the descriptor index reached FD_SETSIZE (normally 1024). Exercise an
+// actual TCP read above that boundary, not merely poll() on a regular file.
+void transport_high_fd() {
+#if !defined(_WIN32)
+	rlimit limits{};
+	if (getrlimit(RLIMIT_NOFILE, &limits) != 0
+	    or limits.rlim_cur <= static_cast<rlim_t>(FD_SETSIZE + 64)) {
+		// Some CI sandboxes cap the process at 1024 open descriptors.
+		// Such environments cannot reproduce the high-FD scenario.
+		return;
+	}
+	struct HeldDescriptors {
+		std::vector<int> handles{};
+		~HeldDescriptors() {
+			for (auto handle : handles) {
+				::close(handle);
+			}
+		}
+	} occupied{};
+	int highest = -1;
+	while (highest <= FD_SETSIZE + 8) {
+		highest = ::open("/dev/null", O_RDONLY);
+		if (highest < 0) {
+			// Constrained environment: did not reach the historical
+			// FD_SET limit; avoid failing unrelated networking checks.
+			return;
+		}
+		occupied.handles.push_back(highest);
+	}
+	auto listener = TcpListener::listen("127.0.0.1", 0);
+	std::exception_ptr server_error{};
+	std::jthread server{[&]() {
+		try {
+			auto connected = listener.accept();
+			// Ensure the client actually waits for readability on its
+			// high-valued socket rather than receiving prebuffered data.
+			std::this_thread::sleep_for(std::chrono::milliseconds{50});
+			Frame message{};
+			message.message_type = MessageType::PING;
+			message.session_id = 73;
+			message.sequence = 1;
+			connected.send_frame(message);
+		}
+		catch (...) {
+			server_error = std::current_exception();
+		}
+	}};
+	auto client = TcpConnection::connect("127.0.0.1", listener.get_port());
+	auto received = client.receive_frame();
+	TESTEQUALS(received.has_value(), true);
+	TESTEQUALS(received->message_type, MessageType::PING);
+	TESTEQUALS(received->session_id, uint64_t{73});
+	client.close();
+	listener.close();
+	server.join();
+	if (server_error) std::rethrow_exception(server_error);
+#endif
 }
 
 } // namespace openage::network::tests
