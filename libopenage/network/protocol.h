@@ -16,7 +16,10 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 /**
  * Current protocol version.
  */
-constexpr uint16_t PROTOCOL_MAJOR = 7;
+// World entity records now carry future position-curve keyframes.
+// This changes the binary layout: reject older clients rather than decoding
+// their snapshots/deltas with the wrong entity-record framing.
+constexpr uint16_t PROTOCOL_MAJOR = 8;
 constexpr uint16_t PROTOCOL_MINOR = 4;
 
 /** Oldest protocol minor version compatible with this implementation. */
