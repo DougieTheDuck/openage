@@ -577,7 +577,8 @@ closing while the replacement Hunter room's channels remain alive, but it
 does **not** call this a host switch because it does not know the game roles.
 
 Failed session startup emits `[FVD/match] session_error` with the original
-reason. The logs intentionally omit bearer tokens, one-time rejoin tickets,
+reason. F10/disconnect cleanup emits `[FVD/match] local_session_closed` with
+the previous phase and whether a replacement Hunter-owned session existed. The logs intentionally omit bearer tokens, one-time rejoin tickets,
 raw session IDs, and complete protocol payloads. They log meaningful state
 transitions, not every heartbeat or world delta, to avoid flooding an
 eight-player match. Ensure the game and relay logging verbosity shows INFO
