@@ -280,7 +280,8 @@ void run_capacity_case(size_t count, bool force_builder_creator) {
 			++builds;
 			TESTEQUALS(command.intent.queue, true);
 			const coord::phys3 shared_site{35, 35, 0};
-			TESTEQUALS(command.intent.target == shared_site, true);
+			TESTEQUALS(command.intent.target.ne == shared_site.ne, true);
+			TESTEQUALS(command.intent.target.se == shared_site.se, true);
 			result.status = player == first_builder
 				? CommandStatus::ACCEPTED : CommandStatus::REJECTED;
 			if (player != first_builder) result.reason = "Site already reserved";
