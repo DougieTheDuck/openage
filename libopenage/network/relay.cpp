@@ -12,6 +12,8 @@
 #include <utility>
 
 #include "error/error.h"
+#include "log/log.h"
+#include "log/message.h"
 #include "network/messages.h"
 #include "network/serialization.h"
 
@@ -707,6 +709,8 @@ std::optional<RelayPair> RelayRoomDirectory::admit(TcpConnection &connection) {
 		try {
 			inserted.first->second.host_slots.at(2).send_frame(relay_frame(
 				MessageType::RELAY_ROOM_CREATED, std::move(payload)));
+			log::log(INFO << "[FVD/relay] room_created room=" << room_id
+			              << " pending_slots=1");
 		}
 		catch (...) {
 			this->rooms.erase(inserted.first);
@@ -743,6 +747,8 @@ std::optional<RelayPair> RelayRoomDirectory::admit(TcpConnection &connection) {
 			inserted.first->second.send_frame(relay_frame(
 				MessageType::RELAY_ROOM_ATTACHED,
 				encode_relay_ready(attach.room_id, slot)));
+			log::log(INFO << "[FVD/relay] host_slot_reserved room="
+			              << attach.room_id << " slot=" << slot);
 		}
 		catch (...) {
 			found->second.host_slots.erase(inserted.first);
@@ -815,6 +821,10 @@ std::optional<RelayPair> RelayRoomDirectory::admit(TcpConnection &connection) {
 		try {
 			completed->host.send_frame(ready);
 			completed->guest.send_frame(ready);
+			// This transport is role-agnostic: it never sees the Hunter
+			// lottery or authority epoch inside authenticated game frames.
+			log::log(INFO << "[FVD/relay] pair_connected room="
+			              << completed->match_id << " slot=" << completed->player_id);
 		}
 		catch (...) {
 			completed->host.close();
