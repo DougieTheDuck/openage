@@ -205,6 +205,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_combat_balance",
+        "FVD approximately ten-second 3/4-tower and three-horse focused combat",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_hunter_attack_move_regressions",
         "FVD stale Hunter selections and three-tile tower pursuit",
         lambda env: env["has_assets"],
