@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "error/error.h"
+#include "log/log.h"
+#include "log/message.h"
 #include "network/handshake.h"
 #include "network/lobby.h"
 #include "network/replication.h"
@@ -27,6 +29,14 @@ constexpr size_t MAX_INFLIGHT_COMMANDS = 256;
 constexpr auto LIVE_HEARTBEAT_INTERVAL = std::chrono::seconds{1};
 constexpr auto LIVE_SESSION_TIMEOUT = std::chrono::seconds{15};
 constexpr auto LIVE_POLL_INTERVAL = std::chrono::milliseconds{5};
+
+void log_role_draw(const StartMatch &assignment) {
+	const auto creator = player_for_participant(
+		assignment, assignment.host_participant_id);
+	log::log(INFO << "[FVD/authority] role_draw creator_player=" << creator
+	              << " hunter_player=1 participants=" << assignment.assignments.size()
+	              << " handoff=" << (creator == 1 ? "not_needed" : "required"));
+}
 
 const char *order_name(CommandKind kind) {
 	switch (kind) {
@@ -515,6 +525,7 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 			auto assignment = lobby.start();
 			validate_start_match_against_roster(roster, assignment);
 			succession.emplace(assignment, assignment.host_participant_id);
+			log_role_draw(assignment);
 			socket->send_frame(accepted->make_frame(
 				MessageType::START_MATCH, encode_start_match(assignment)));
 			// The handshake's temporary slot 2 is not the role lottery result.
@@ -529,6 +540,8 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				this->active_remote_identity = accepted->get_identity();
 			}
 			if (host_player != 1) {
+				log::log(INFO << "[FVD/authority] handoff_requested original_creator_player="
+				              << host_player << " hunter_player=1");
 				this->publish(RelayLobbyStatus{
 					.phase = "handoff",
 					.message = "Builder lobby creator: transferring match authority to Hunter...",
@@ -543,6 +556,8 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				this->forward_rehost_offers(assignment, peers, settings);
 				return;
 			}
+			log::log(INFO << "[FVD/authority] authority_active epoch=1 player=1"
+			              << " participants=2 reason=creator_is_hunter");
 			this->publish(RelayLobbyStatus{
 				.phase = "assigned",
 				.message = "Match start requested; synchronizing the initial world.",
@@ -982,6 +997,10 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 				}
 				replication = this->guest_replication;
 			}
+			if (builder_departure) {
+				log::log(INFO << "[FVD/match] participant_disconnected player=2"
+				              << " role=Builder action=continue participants_remaining=1");
+			}
 			if (not builder_departure) {
 				if (replication) {
 					replication->host_disconnected();
@@ -1071,6 +1090,7 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		const auto assignment = settings.rehost_start
 			? lobby->start_rehost() : lobby->start();
 		validate_start_match_against_roster(final_roster, assignment);
+		if (not settings.rehost_start) log_role_draw(assignment);
 		AuthoritySuccession authority{assignment, assignment.host_participant_id};
 		const auto host_player = player_for_participant(assignment, 1);
 		const auto role = local_role_name(assignment, host_player);
@@ -1084,6 +1104,9 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			peers.emplace(identity.player_id, &peer);
 		}
 		if (host_player != 1) {
+			log::log(INFO << "[FVD/authority] handoff_requested original_creator_player="
+			              << host_player << " hunter_player=1 participants="
+			              << assignment.assignments.size());
 			this->publish(RelayLobbyStatus{
 				.phase = "handoff",
 				.message = "Original Builder host: delivering Hunter authority invitations...",
@@ -1101,6 +1124,10 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 			this->forward_rehost_offers(assignment, original_peers, settings);
 			return;
 		}
+		log::log(INFO << "[FVD/authority] authority_active epoch="
+		              << (settings.rehost_start ? 2 : 1)
+		              << " player=1 participants=" << assignment.assignments.size()
+		              << " room=" << lobby->room_id());
 		{
 			std::lock_guard lock{this->mutex};
 			for (const auto &[id, peer] : peers) {
@@ -1280,6 +1307,11 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		auto disconnect_peer = [&](gamestate::player_id_t player) {
 			if (not live[player]) return AuthorityLossAction::CONTINUE;
 			const auto consequence = authority.disconnected(player);
+			log::log(INFO << "[FVD/match] participant_disconnected player=" << player
+			              << " role=" << (player == 1 ? "Hunter" : "Builder")
+			              << " action=" << (consequence == AuthorityLossAction::CONTINUE
+			                                     ? "continue" : "end_match")
+			              << " room=" << lobby->room_id());
 			live[player] = false;
 			const auto &peer = *peers.at(player);
 			peer.socket->close();
@@ -1425,6 +1457,7 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 void RelayLobbyClient::run_rehosted_guest(
 	RelayLobbyConfig settings, const RehostOffer &offer) {
 	if (this->stopping) return;
+	const bool was_lobby_creator = settings.hosting;
 	if (offer.authority_epoch != 2 or offer.room_id == 0) {
 		throw Error{MSG(err) << "Invalid Hunter authority redirect"};
 	}
@@ -1454,7 +1487,12 @@ void RelayLobbyClient::run_rehosted_guest(
 		}
 		const auto status = child->status();
 		if (status.phase == "assigned" or status.phase == "bootstrap"
-		    or status.phase == "streaming" or status.phase == "playing") return;
+		    or status.phase == "streaming" or status.phase == "playing") {
+			log::log(INFO << "[FVD/authority] builder_rejoined epoch=2 room="
+			              << offer.room_id << " player=" << status.local_player_id
+			              << " former_lobby_creator=" << (was_lobby_creator ? "yes" : "no"));
+			return;
+		}
 		if (status.phase == "error") {
 			throw Error{MSG(err) << "Hunter rehost failed: " << status.message};
 		}
@@ -1476,6 +1514,9 @@ void RelayLobbyClient::begin_hunter_rehost(
 		settings.room_name + " (Hunter)", settings.name,
 		assignment.assignments.size());
 	room->prepare_hunter_rehost(assignment);
+	log::log(INFO << "[FVD/authority] hunter_rehost_created epoch=2 room="
+	              << room->room_id() << " expected_builders="
+	              << assignment.assignments.size() - 1);
 	auto child = std::make_shared<RelayLobbyClient>();
 	settings.hosting = true;
 	settings.room_id = 0;
@@ -1548,6 +1589,9 @@ void RelayLobbyClient::forward_rehost_offers(
 				throw Error{MSG(err) << "Invalid or duplicate Hunter authority invitation"};
 			}
 			invitations.emplace(offer.original_player_id, offer);
+			log::log(INFO << "[FVD/authority] handoff_invitation_forwarded epoch=2"
+			              << " room=" << offer.room_id
+			              << " builder_player=" << offer.original_player_id);
 			if (offer.original_player_id != old_host_player) {
 				auto &[session, socket] = old_peers.at(offer.original_player_id);
 				socket->send_frame(session->make_frame(
