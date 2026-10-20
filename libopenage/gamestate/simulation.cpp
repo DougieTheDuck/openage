@@ -177,6 +177,23 @@ void GameSimulation::run() {
 			network::MatchConnectionState connections{fvd->get_player_count()};
 			auto world = network::capture_fvd_state(
 				this->game->get_state(), connections, current_time, 0, 1, bootstrap->recipient);
+			// Fail at the first snapshot instead of shipping ghost starting
+			// Builders if the lobby admission/pruning handshake regresses.
+			size_t expected_builders{};
+			{
+				std::lock_guard lock{this->bootstrap_mutex};
+				expected_builders = this->network_admitted_players - 1;
+			}
+			const auto actual_builders = std::count_if(
+				world.entities.begin(), world.entities.end(),
+				[](const network::EntityState &entity) {
+					return entity.definition == "fvd.data.entities.Builder";
+				});
+			if (actual_builders != expected_builders) {
+				throw Error{MSG(err) << "FVD initial world has " << actual_builders
+				                     << " Builders but expected " << expected_builders
+				                     << " for the admitted lobby"};
+			}
 			std::lock_guard lock{this->bootstrap_mutex};
 			if (this->network_admitted_players > 0) {
 				for (auto &player : world.players) {
