@@ -2,18 +2,27 @@
 
 ## ADDED Requirements
 
-### Requirement: Host determines the shared match state
+### Requirement: Hunter owns the shared match simulation
 
-The host SHALL maintain authoritative simulation state, regardless of
-whether the host participant was assigned Hunter or Builder.
+The participant assigned Hunter (player 1) SHALL own the authoritative
+simulation before the first gameplay world snapshot, regardless of which
+participant created the initial lobby. If the creator is Builder, the Hunter
+SHALL establish an independent room and all Builders SHALL reconnect with
+their original player IDs before world bootstrap. The original lobby creator
+does not retain special authority once assigned Builder.
 
 #### Scenario: Guest constructs a tower
 - **WHEN** a connected guest submits a valid owned Builder construction intent
 - **THEN** the host processes it and every client eventually sees the same accepted order and tower
 
-#### Scenario: Host is assigned Hunter
-- **WHEN** the Hunter lottery assigns player 1 to the host
-- **THEN** the host still runs the authoritative simulation without acquiring Builder privileges
+#### Scenario: Lobby creator is assigned Hunter
+- **WHEN** the Hunter lottery assigns player 1 to the original lobby creator
+- **THEN** the creator runs the authoritative simulation without acquiring Builder privileges
+
+#### Scenario: Lobby creator is assigned Builder
+- **WHEN** the Hunter lottery assigns player 1 to a guest
+- **THEN** every Builder, including the original creator, joins the Hunter's new independent authority room with unchanged player roles before world bootstrap
+- **AND** no second role lottery or divergent simulation starts
 
 ### Requirement: Client actions are constrained to assigned ownership
 
@@ -85,9 +94,10 @@ silently presenting an independently diverging simulation.
 - **WHEN** the assigned Hunter (player 1) loses connectivity during a match
 - **THEN** the match ends for everyone; no surviving Builder continues in an independently divergent simulation
 
-#### Scenario: Authoritative Builder host disconnects (current limitation)
-- **WHEN** the Builder hosting the authoritative simulation disconnects before host migration is available
-- **THEN** remote players enter a match-ended state, even if the Hunter is still connected; a future multiplayer milestone MUST resolve this to satisfy the Hunter-only match-ending policy
+#### Scenario: Original Builder lobby creator disconnects
+- **WHEN** the original lobby creator was assigned Builder and disconnects after the Hunter authority handoff
+- **THEN** the Hunter and remaining Builders continue in the independent Hunter-owned room
+- **AND** the departed Builder's session cannot issue further accepted commands
 
 ### Requirement: Windows direct-IP multiplayer works
 
@@ -95,8 +105,14 @@ The initial networking implementation SHALL allow connected Windows
 clients on reachable addresses/ports to play a common match.
 
 #### Scenario: Two Windows machines
-- **WHEN** two compatible Windows clients are connected and the host starts
+- **WHEN** two compatible Windows clients use the same reachable relay
 - **THEN** both clients can observe shared Builder orders, manual Hunter horse attack-move, tower attacks and kill outcomes
+
+#### Scenario: Four or eight concurrent human participants
+- **WHEN** four or eight human clients join a room, and the Hunter role is assigned
+- **THEN** all Builders receive recipient-private snapshots and can send concurrent orders without changing their session identities
+- **AND** a departing Builder cannot terminate the Hunter or another Builder's simulation
+- **AND** a departing Hunter ends the match on all remaining clients
 
 ### Requirement: Internet participants can use an outbound relay
 
