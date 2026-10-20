@@ -92,6 +92,7 @@ def tests_cpp():
     yield "openage::network::tests::handshake"
     yield "openage::network::tests::lobby"
     yield "openage::network::tests::lobby_relay_client"
+    yield "openage::network::tests::lobby_capacity", "Full 4/8-player relay, Hunter rehost, contested Builder orders, disconnect continuation and match termination"
     yield (
         "openage::network::tests::authority_succession",
         "FVD Hunter takeover epoch fencing and complete-checkpoint safety requirements",
