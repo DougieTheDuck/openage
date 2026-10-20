@@ -138,8 +138,15 @@ RelayLobbyClient::~RelayLobbyClient() {
 
 void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 	this->close();
-	// Validate before creating any network worker.
+	// Validate before creating any network worker. A role-preserving
+	// Hunter rehost MUST use its already-advertised private room even when
+	// there are only two people. Otherwise the legacy 2-player host path
+	// creates a second, unrelated room and both clients wait forever.
 	validate_config(settings);
+	if (settings.rehost_start.has_value() != bool(settings.prepared_rehost_lobby)
+	    or (settings.prepared_rehost_lobby and not settings.hosting)) {
+		throw Error{MSG(err) << "FVD Hunter rehost requires a prepared host room and original role mapping"};
+	}
 	this->stopping = false;
 	this->start_requested = false;
 	{
@@ -172,7 +179,10 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		.message = settings.hosting ? "Creating relay room..." : "Joining relay room...",
 	});
 	this->worker = std::thread{[this, settings = std::move(settings)]() {
-		if (settings.hosting and settings.player_capacity > 2) {
+		if (settings.hosting
+		    and (settings.player_capacity > 2 or settings.prepared_rehost_lobby)) {
+			// Rehosts always run the authenticated multi-slot admission
+			// manager, including a Hunter plus exactly one Builder.
 			this->run_multi_host(settings);
 		}
 		else {
