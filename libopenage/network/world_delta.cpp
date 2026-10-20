@@ -230,6 +230,14 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	}
 	patch(next.players, changed.players, delta.removed_players, player_key);
 	patch(next.entities, changed.entities, delta.removed_entities, entity_key);
+	// Motion keyframes are timed segments, like arrows. A no-change delta
+	// must still retire segments the guest has already played. The host
+	// captures and transmits the next bounded window on an actual change.
+	for (auto &entity : next.entities) {
+		std::erase_if(entity.motion_keys, [&](const MotionKeyframe &key) {
+			return key.time <= next.simulation_time;
+		});
+	}
 	patch(next.reservations, changed.reservations, delta.removed_reservations, reservation_key);
 	patch(next.constructions, changed.constructions, delta.removed_constructions, construction_key);
 	patch(next.attack_orders, changed.attack_orders, delta.removed_attack_orders, attack_key);
