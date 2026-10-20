@@ -152,10 +152,11 @@ departure followed by another successful surviving player's command.
 
 ## Transport
 
-The first transport uses TCP through Winsock on Windows.
-TCP matches the low-volume lobby, command and state-replication traffic and provides the required ordered reliable stream without another dependency.
-The socket implementation belongs in `libopenage/network/` and must not depend on the presenter, renderer or Qt Quick.
-A BSD-socket implementation can provide the same interface later without changing the wire protocol.
+The transport uses TCP through Winsock on Windows and POSIX/BSD sockets on Linux and other supported Unix-like systems.
+TCP matches the lobby, command and state-replication traffic and provides the required ordered reliable stream without another dependency.
+The socket implementation belongs in `libopenage/network/` and does not depend on the presenter, renderer or Qt Quick.
+Blocking receive/send retries wait for readiness through `WSAPoll()` on Windows and `poll()` on POSIX with a bounded 250ms interval. This avoids `select()`/`FD_SET()` and the POSIX `FD_SETSIZE` descriptor-index ceiling, which commonly caused undefined behavior when a busy Linux test process opened socket descriptor 1024 or higher.
+The `transport_high_fd` regression opens sufficient file descriptors to exercise TCP receiving above that threshold when the OS soft file limit permits it; it skips on systems with too-low limits.
 
 `network::TcpListener` binds an endpoint and accepts `network::TcpConnection` objects.
 Connections send and receive complete `Frame` values while handling partial TCP reads and writes internally.
