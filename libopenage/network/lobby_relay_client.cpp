@@ -429,7 +429,11 @@ void RelayLobbyClient::publish_stream_revision(uint64_t revision, bool local_hos
 	this->current.message = local_host
 		? "Host-authoritative world updates active."
 		: "Receiving authoritative match state from host.";
-	this->current.snapshot_revision = revision;
+	// Recipient-private multi-host streams can complete captures in a
+	// different order. The Hunter's global status must not move backwards
+	// when a slower Builder stream reports an earlier world revision.
+	this->current.snapshot_revision =
+		std::max(this->current.snapshot_revision, revision);
 }
 
 void RelayLobbyClient::close() {
