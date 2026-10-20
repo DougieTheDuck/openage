@@ -559,41 +559,43 @@ authoritative world revision records the player's disconnected status so
 snapshot recovery cannot erase it. `network::MatchConnectionState` owns fixed
 session bindings and rejects attempts to reassign disconnected participants.
 
-**Current two-player relay implementation:** If the authoritative **host is
-Hunter** and the **guest Builder** disconnects after bootstrap, the host
-continues advancing its local simulation. Undelivered Builder commands are
-discarded, its old connection is disabled, and the HUD announces the Builder
-departure. If the **guest is Hunter**, its departure ends the host's match.
-If the **host is Builder**, its departure still ends the guest Hunter's match:
-the authoritative simulation has disappeared, and the guest cannot rebuild it
-from the presentation-only `WorldState`. The Hunter now has a
-`AuthoritySuccession` election/epoch plan, but the runtime refuses to
-promote it without a restored simulation and independent transport.
-The safer planned 1.17 path moves authority **before** any gameplay:
-the Hunter creates its own relay room, all Builders (including the original
-lobby creator) authenticate new sessions with their unchanged player IDs,
-and `RelayMultiHostLobby::start_fixed()` reuses the initial lottery.
-Once that redirect is wired into the GUI, the initial Builder host will no
-longer be the authoritative host, so leaving will not end the match.
-The redirect and renderer/controller role swap are not yet implemented.
-The rehost transport foundation now includes protocol 7.4's one-time
-`AUTHORITY_REHOST_OFFER` and `AUTHORITY_REHOST_PROOF` frames. A
-`RehostTicketBook` ties each Builder's private credential to its original
-player slot, immutable lobby revision, destination relay room, and authority
-epoch. In a new Hunter-owned room, `prepare_hunter_rehost()` requires a fresh,
-authenticated guest proof before admitting that player to the new roster.
-`start_rehost()` only commits the new Hunter lease after all expected
-Builders have redeemed their unique tickets, and `start_fixed()` preserves
-the original Hunter/Builder assignments. This does **not** yet deliver the
-offers to peers or transfer the active game simulation. Public relay join
-capacity can still be exhausted by untrusted connections before proof
-verification, so it is not a production Internet security guarantee.
+**Hunter-owned authority from time zero (1.17c, awaiting Windows verification):**
+The lobby creator is not necessarily the authoritative gameplay host.
+If the original creator draws Hunter, the existing two-peer or multi-guest
+host path continues unchanged. If the creator draws Builder, the remote
+Hunter creates a new, independent `RelayMultiHostLobby`, and sends one
+`AUTHORITY_REHOST_OFFER` for each original Builder through the original
+authenticated session. The former lobby host forwards each offer to its
+original recipient, including itself. All Builders authenticate a NEW relay
+connection to the Hunter, send a one-time `AUTHORITY_REHOST_PROOF`, and
+recover their original player IDs from the single validated StartMatch.
+The old room does not bootstrap or advance a gameplay clock. After all
+required guests have rejoined, the Hunter-owned room becomes the ONLY
+authoritative simulation at time zero. The presenter switches its
+host/guest role before requesting any world snapshot, and the new session
+owns every subsequent command and delta. The former Builder lobby creator
+can now disconnect without terminating surviving Builders or the Hunter.
+
+These code paths are implemented but have not yet been compiled or verified
+on Windows. The relay-client integration test was updated to exercise
+Hunter-authoritative matches regardless of who created the initial lobby,
+including a three-participant Builder departure and continued commands.
+A handoff timeout ends an incomplete match rather than allowing two
+authorities to simulate concurrently. The role draw occurs exactly once.
+Protocol 7.4 uses single-use rejoin credentials bound to the original
+participant slot, lobby revision, destination room, and authority epoch.
+The original lobby host forwards these tickets and is trusted not to
+impersonate other participants; this is not a Byzantine-secure or encrypted
+Internet transport. Public room slots may also be exhausted by unauthenticated
+join attempts before proof validation.
 
 The multi-participant `MatchDisconnectCoordinator` keeps surviving
 Builder sessions after another Builder disconnects, retaining original ownership and queued commands. The connection state now marks a match inactive when player 1 (Hunter) disconnects, refusing all further remote commands. The coordinator still broadcasts a final `ParticipantDisconnected` and world delta to surviving Builders so they can learn why the match ended. The live 3–8-player host worker sends those notices, drops only the
 disconnected Builder's session and pending commands, and continues with the
-remaining guests. Hunter loss ends the match. Builder-host loss still requires
-authority migration as tracked under 1.17.
+remaining guests. Hunter loss ends the match. Matches now aim to
+place authority on the Hunter before gameplay; unexpected failure of a
+legacy Builder-owned authority still cannot be restored from `WorldState`,
+and full mid-match restore remains a separate optional task.
 During authenticated gameplay, the guest sends an empty, session-sequenced
 PING once per second, and the host returns an empty, sequenced PONG. Both
 accept ordinary gameplay messages as liveness evidence as well. Network
