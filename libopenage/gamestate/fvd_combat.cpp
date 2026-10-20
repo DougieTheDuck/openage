@@ -193,7 +193,11 @@ std::vector<FVDArrowState> FVD::get_arrow_state(const time::time_t &now) const {
 	std::lock_guard lock{this->arrow_visuals_mutex};
 	result.reserve(this->arrow_visuals.size());
 	for (const auto &arrow : this->arrow_visuals) {
-		if (now < arrow.launch_time or now >= arrow.impact_time) {
+		// Retain expired events briefly for recipients whose snapshot
+		// interval exceeds the 0.2s flight. The guest can replay the
+		// visual once on receipt; impact damage is never simulated here.
+		if (now < arrow.launch_time
+		    or arrow.impact_time + time::time_t::from_int(3) <= now) {
 			continue;
 		}
 		result.push_back({arrow.arrow_id,
@@ -612,7 +616,9 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		{
 			std::lock_guard lock{this->arrow_visuals_mutex};
 			std::erase_if(this->arrow_visuals, [&](const ArrowVisual &shot) {
-				return shot.impact_time <= time;
+				// Keep a short, bounded launch history for slower guests.
+				// See world_delta.cpp's matching event expiry window.
+				return shot.impact_time + time::time_t::from_int(3) <= time;
 			});
 			// Bound visual work in very large tower fights. Every shot
 			// still schedules its authoritative damage below.
