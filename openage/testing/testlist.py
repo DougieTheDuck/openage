@@ -109,6 +109,7 @@ def tests_cpp():
     yield "openage::network::tests::replication"
     yield "openage::network::tests::world_delta"
     yield "openage::network::tests::transport"
+    yield "openage::network::tests::transport_high_fd", "TCP poll read with POSIX descriptor beyond select FD_SETSIZE (skips if OS limit is too low)"
     yield (
         "openage::network::tests::fvd_loopback",
         "FVD command authority and state synchronization over loopback TCP",
