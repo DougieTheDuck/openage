@@ -145,13 +145,24 @@ void serve_relay_directory(TcpListener &listener,
 										active_pair_connections.end());
 								}
 							};
+							log::log(INFO << "[FVD/relay] forwarding_started room="
+							              << pair->match_id << " slot=" << pair->player_id);
 							try {
 								forward_relay_pair(pair->host, pair->guest);
+							}
+							catch (const std::exception &error) {
+								log::log(WARN << "[FVD/relay] forwarding_error room="
+								              << pair->match_id << " slot=" << pair->player_id
+								              << " reason=" << error.what());
+								unregister_pair();
+								throw;
 							}
 							catch (...) {
 								unregister_pair();
 								throw;
 							}
+							log::log(INFO << "[FVD/relay] forwarding_ended room="
+							              << pair->match_id << " slot=" << pair->player_id);
 							unregister_pair();
 						}
 					}
