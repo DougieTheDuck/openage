@@ -35,7 +35,15 @@
   hit/death/impact FX and integration tests for latency, recovery and
   authoritative combat/render parity. Do not mark 1.5 complete until
   those and cross-client verification pass.
-- [ ] 1.6 Display all Builder construction phases, tower ownership,
+- [x] 1.6a Restore match-sized starting Builder pruning for both legacy
+  two-peer Hunter-creator matches and multi-host matches. The lobby reports
+  match_player_count=2 through the legacy assignment/bootstrap, the presenter
+  configures pruning regardless of transport mode, and the simulation now
+  refuses snapshots before participant admission or if the initial world
+  contains the wrong number of Builders. Added the `fvd_network_builder_count`
+  asset-backed 2/3/8-player regression and lobby status checks.
+  **Awaiting Windows/Linux execution.**
+- [ ] 1.6b Display all Builder construction phases, tower ownership,
   reservations and planned/queued foundations consistently for Hunter
   and Builders, including cancellation and retasking.
 - [ ] 1.7 Replicate Hunter spawn timing, any future rally behavior, active
