@@ -1,5 +1,6 @@
 // Copyright 2026 the openage authors. See copying.md for legal info.
 
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <optional>
