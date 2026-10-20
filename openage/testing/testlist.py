@@ -178,6 +178,11 @@ def tests_cpp():
     yield "openage::presenter::tests::guest_response_latency"
     yield "openage::presenter::tests::guest_clock_catchup"
     yield (
+        "openage::gamestate::tests::fvd_network_builder_count",
+        "FVD network starting Builders: one for 2 people, two for 3, seven for 8",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_scenario",
         "FVD plains, starting players and tower placement",
         lambda env: env["has_assets"],
