@@ -19,9 +19,10 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
-	#include <netinet/tcp.h>
-	#include <sys/socket.h>
-	#include <unistd.h>
+#include <netinet/tcp.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 namespace openage::network {
@@ -38,7 +39,7 @@ constexpr native_socket_t INVALID_NATIVE_SOCKET = -1;
 
 constexpr uintptr_t INVALID_SOCKET_HANDLE = (std::numeric_limits<uintptr_t>::max)();
 constexpr int LISTEN_BACKLOG = 8;
-constexpr long SOCKET_WAIT_MICROSECONDS = 250000;
+constexpr int SOCKET_WAIT_MILLISECONDS = 250;
 
 native_socket_t to_native(uintptr_t handle) {
 	return static_cast<native_socket_t>(handle);
@@ -122,21 +123,18 @@ void configure_connection_socket(native_socket_t socket) {
 }
 
 int wait_for_socket(native_socket_t socket, bool writable) {
-	fd_set sockets{};
-	FD_ZERO(&sockets);
-	FD_SET(socket, &sockets);
-	timeval timeout{};
-	timeout.tv_usec = SOCKET_WAIT_MICROSECONDS;
+	// select()/FD_SET() is unsafe when POSIX file descriptors reach
+	// FD_SETSIZE (usually 1024), regardless of the process's actual
+	// open-file limit. poll()/WSAPoll() has no such descriptor-index limit.
+	// Preserve the old 250ms bounded wait and return conventions: 0 for
+	// timeout, >0 for readiness/disconnect, -1 for a socket error.
 #if defined(_WIN32)
-	constexpr int descriptor_count = 0;
+	WSAPOLLFD descriptor{socket, static_cast<SHORT>(writable ? POLLOUT : POLLIN), 0};
+	return ::WSAPoll(&descriptor, 1, SOCKET_WAIT_MILLISECONDS);
 #else
-	auto descriptor_count = socket + 1;
+	pollfd descriptor{socket, static_cast<short>(writable ? POLLOUT : POLLIN), 0};
+	return ::poll(&descriptor, 1, SOCKET_WAIT_MILLISECONDS);
 #endif
-	return select(descriptor_count,
-	              writable ? nullptr : &sockets,
-	              writable ? &sockets : nullptr,
-	              nullptr,
-	              &timeout);
 }
 
 void close_socket(native_socket_t socket) {
