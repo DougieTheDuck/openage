@@ -272,6 +272,8 @@ void fvd_scenario() {
 	auto builder_render = std::make_shared<renderer::world::RenderEntity>();
 	builder_entity->set_render_entity(builder_render);
 	system::Idle::idle(builder_entity, time::TIME_ZERO);
+	TESTEQUALS(builder_entity->get_animation_action(), AnimationAction::IDLE);
+	TESTEQUALS(builder_entity->get_animation_started_at(), time::TIME_ZERO);
 	{
 		auto lock = builder_render->get_read_lock();
 		auto position = std::dynamic_pointer_cast<component::Position>(
@@ -446,6 +448,10 @@ void fvd_scenario() {
 	auto duration = system::Move::move_default(
 		state->get_game_entity(builders[2]), state, destination, time::TIME_ZERO);
 	TESTEQUALS(builder_pos->get_positions().get(duration), destination);
+	TESTEQUALS(state->get_game_entity(builders[2])->get_animation_action(),
+	           AnimationAction::MOVE);
+	TESTEQUALS(state->get_game_entity(builders[2])->get_animation_started_at(),
+	           time::TIME_ZERO);
 }
 
 void fvd_construction() {

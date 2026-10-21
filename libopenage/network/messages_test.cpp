@@ -224,6 +224,8 @@ void messages() {
 		{time::time_t::from_double(3.75), {11.0, 20.5, 0}},
 		{time::time_t::from_double(4.25), {12.0, 21.0, 0}},
 	};
+	state.entities.front().animation_action = gamestate::AnimationAction::MOVE;
+	state.entities.front().animation_started_at = time::time_t::from_int(2);
 	state.entities.front().angle = coord::phys_angle_t::from_int(315);
 	state.entities.front().facing_keys = {
 		{time::time_t::from_double(3.75), coord::phys_angle_t::from_int(270)},
@@ -259,6 +261,10 @@ void messages() {
 		TESTEQUALS(decoded_state.entities[i].definition, state.entities[i].definition);
 		TESTEQUALS(decoded_state.entities[i].position, state.entities[i].position);
 		TESTEQUALS(decoded_state.entities[i].angle, state.entities[i].angle);
+		TESTEQUALS(decoded_state.entities[i].animation_action,
+		           state.entities[i].animation_action);
+		TESTEQUALS(decoded_state.entities[i].animation_started_at,
+		           state.entities[i].animation_started_at);
 		TESTEQUALS(decoded_state.entities[i].facing_keys.size(),
 		           state.entities[i].facing_keys.size());
 		for (size_t key = 0; key < state.entities[i].facing_keys.size(); ++key) {
@@ -341,6 +347,14 @@ void messages() {
 	auto excessive_facing = state;
 	excessive_facing.entities.front().facing_keys.resize(MAX_ENTITY_FACING_KEYS + 1);
 	TESTTHROWS(encode_world_state(excessive_facing));
+	auto future_animation = state;
+	future_animation.entities.front().animation_started_at =
+		time::time_t::from_int(4);
+	TESTTHROWS(encode_world_state(future_animation));
+	auto unknown_animation = state;
+	unknown_animation.entities.front().animation_action =
+		static_cast<gamestate::AnimationAction>(77);
+	TESTTHROWS(encode_world_state(unknown_animation));
 
 	// A timed build uses the authoritative phase interval, not packet arrival.
 	auto building = state.constructions.front();
