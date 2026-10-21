@@ -35,7 +35,7 @@ const time::time_t Idle::idle(const std::shared_ptr<gamestate::GameEntity> &enti
 		auto animation_paths = api::APIAnimation::get_animation_paths(animations);
 
 		if (animation_paths.size() > 0) [[likely]] {
-			entity->render_update(start_time, animation_paths[0]);
+			entity->render_update(start_time, animation_paths[0], AnimationAction::IDLE);
 		}
 	}
 

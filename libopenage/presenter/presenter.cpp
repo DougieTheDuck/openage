@@ -786,26 +786,32 @@ void Presenter::refresh_fvd_guest_visuals() {
 		    and entity.definition != "fvd.data.entities.Foundation") {
 			continue;
 		}
-		auto path = this->fvd_guest_sprite_paths.find(entity.definition);
+		const bool walking = entity.animation_action == gamestate::AnimationAction::MOVE;
+		if (walking and entity.definition != "fvd.data.entities.Builder"
+		    and entity.definition != "fvd.data.entities.Horse") {
+			throw Error{MSG(err) << "FVD replica has an invalid moving entity"};
+		}
+		const std::string cache_key = entity.definition + (walking ? ".Move" : ".Idle");
+		auto path = this->fvd_guest_sprite_paths.find(cache_key);
 		if (path == this->fvd_guest_sprite_paths.end()) {
 			// The host resolves Animation.sprite relative to the nyan
 			// namespace of its Idle ability. The raw ../../../fvd/... file
 			// attribute was mistakenly passed directly to AssetManager on
 			// the guest, causing red-X placeholder sprites.
 			auto view = this->simulation->get_game()->get_state()->get_db_view();
-			const auto idle = view->get_object(entity.definition + ".Idle");
+			const auto ability = view->get_object(cache_key);
 			const auto animated = gamestate::api::APIAbility::get_property(
-				idle, gamestate::api::ability_property_t::ANIMATED);
+				ability, gamestate::api::ability_property_t::ANIMATED);
 			const auto animations = gamestate::api::APIAbilityProperty::get_animations(animated);
 			const auto paths = gamestate::api::APIAnimation::get_animation_paths(animations);
 			if (paths.empty()) {
-				throw Error{MSG(err) << "FVD replica has no idle animation: " << entity.definition};
+				throw Error{MSG(err) << "FVD replica has no animation: " << cache_key};
 			}
 			const auto resolved = this->root_dir / "assets" / "converted" / paths.front();
 			if (not resolved.is_file()) {
 				throw Error{MSG(err) << "FVD replica sprite not found: " << resolved};
 			}
-			path = this->fvd_guest_sprite_paths.emplace(entity.definition, paths.front()).first;
+			path = this->fvd_guest_sprite_paths.emplace(cache_key, paths.front()).first;
 			log::log(INFO << "FVD guest sprite " << entity.definition << " -> " << paths.front());
 		}
 
@@ -832,7 +838,7 @@ void Presenter::refresh_fvd_guest_visuals() {
 			entity.entity_id, entity.position, path->second, world->simulation_time,
 			new_entity or not previous_time ? std::nullopt
 			                                : std::make_optional(presentation_time),
-			future_motion);
+			future_motion, entity.animation_started_at);
 		std::vector<std::pair<time::time_t, coord::phys_angle_t>> turns;
 		turns.reserve(entity.facing_keys.size());
 		for (const auto &key : entity.facing_keys) {

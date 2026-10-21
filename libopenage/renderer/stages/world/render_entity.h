@@ -87,7 +87,8 @@ public:
 	                   const std::string &animation_path,
 	                   time::time_t time,
 	                   std::optional<time::time_t> interpolate_from,
-	                   const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys = {});
+	                   const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys = {},
+	                   std::optional<time::time_t> animation_started_at = std::nullopt);
 
 	/** Replace the replicated orientation with host-authored turn keys. */
 	void update_facing(coord::phys_angle_t angle, time::time_t time,

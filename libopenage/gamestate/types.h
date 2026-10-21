@@ -16,4 +16,10 @@ using entity_id_t = uint64_t;
  */
 using player_id_t = uint64_t;
 
+/** State chosen by the authoritative simulation for rendered unit animation. */
+enum class AnimationAction : uint16_t {
+	IDLE = 0,
+	MOVE = 1,
+};
+
 } // namespace openage::gamestate

@@ -184,7 +184,7 @@ const time::time_t Move::move_default(const std::shared_ptr<gamestate::GameEntit
 		auto animation_paths = api::APIAnimation::get_animation_paths(animations);
 
 		if (animation_paths.size() > 0) [[likely]] {
-			entity->render_update(start_time, animation_paths[0]);
+			entity->render_update(start_time, animation_paths[0], AnimationAction::MOVE);
 		}
 	}
 

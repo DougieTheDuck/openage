@@ -593,6 +593,15 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 			append_i64(output, key.angle.get_raw_value());
 			previous_time = key.time;
 		}
+		if (entity.animation_action != gamestate::AnimationAction::IDLE
+		    and entity.animation_action != gamestate::AnimationAction::MOVE) {
+			throw Error{MSG(err) << "FVD entity has invalid animation action"};
+		}
+		if (entity.animation_started_at > state.simulation_time) {
+			throw Error{MSG(err) << "FVD animation cannot begin in the future"};
+		}
+		append_u16(output, static_cast<uint16_t>(entity.animation_action));
+		append_i64(output, entity.animation_started_at.get_raw_value());
 	}
 	for (const auto &reservation : state.reservations) {
 		append_tile(output, reservation.tile);
@@ -771,6 +780,15 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 			entity.facing_keys.push_back({
 				at, coord::phys_angle_t::from_raw_value(static_cast<int32_t>(raw))});
 			previous_time = at;
+		}
+		const auto animation_action = reader.u16();
+		if (animation_action > static_cast<uint16_t>(gamestate::AnimationAction::MOVE)) {
+			throw Error{MSG(err) << "Unknown FVD entity animation action"};
+		}
+		entity.animation_action = static_cast<gamestate::AnimationAction>(animation_action);
+		entity.animation_started_at = time::time_t::from_raw_value(reader.i64());
+		if (entity.animation_started_at > state.simulation_time) {
+			throw Error{MSG(err) << "FVD animation cannot begin in the future"};
 		}
 		state.entities.push_back(std::move(entity));
 	}

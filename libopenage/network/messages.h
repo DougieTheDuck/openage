@@ -149,6 +149,9 @@ struct EntityState {
 	/** Sampled orientation and future turn events, not a guest movement guess. */
 	coord::phys_angle_t angle{0};
 	std::vector<FacingKeyframe> facing_keys{};
+	/** Host-selected animation and absolute start time of its active loop. */
+	gamestate::AnimationAction animation_action{gamestate::AnimationAction::IDLE};
+	time::time_t animation_started_at{time::TIME_ZERO};
 };
 
 /** FVD role assigned to one playable player. */

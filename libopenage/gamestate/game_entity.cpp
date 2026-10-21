@@ -70,7 +70,12 @@ bool GameEntity::has_component(component::component_t type) {
 }
 
 void GameEntity::render_update(const time::time_t &time,
-                               const std::string &animation_path) {
+                               const std::string &animation_path,
+                               AnimationAction action) {
+	if (this->animation_action != action) {
+		this->animation_action = action;
+		this->animation_started_at = time;
+	}
 	if (this->render_entity != nullptr) {
 		const auto &pos = dynamic_pointer_cast<component::Position>(
 							  this->components.at(component::component_t::POSITION))
@@ -98,6 +103,14 @@ void GameEntity::render_update(const time::time_t &time,
 			}
 		}
 	}
+}
+
+AnimationAction GameEntity::get_animation_action() const {
+	return this->animation_action;
+}
+
+time::time_t GameEntity::get_animation_started_at() const {
+	return this->animation_started_at;
 }
 
 void GameEntity::deactivate_render(const time::time_t &time) {

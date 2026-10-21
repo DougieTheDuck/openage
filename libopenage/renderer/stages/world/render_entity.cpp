@@ -96,7 +96,8 @@ void RenderEntity::update_sample(uint32_t ref_id,
                                  const std::string &animation_path,
                                  time::time_t time,
                                  std::optional<time::time_t> interpolate_from,
-                                 const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys) {
+                                 const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys,
+                                 std::optional<time::time_t> animation_started_at) {
 	std::unique_lock lock{this->mutex};
 	if (interpolate_from and *interpolate_from > time) {
 		throw Error{MSG(err) << "Position sample precedes presentation time"};
@@ -122,9 +123,13 @@ void RenderEntity::update_sample(uint32_t ref_id,
 		previous_time = at;
 	}
 	this->position.sync(samples);
-	if (not interpolate_from or this->animation_path.get(time) != animation_path) {
-		// Movement samples must not restart looping sprite animations.
-		this->animation_path.set_last(interpolate_from.value_or(time), animation_path);
+	const auto start_at = animation_started_at.value_or(interpolate_from.value_or(time));
+	const auto current_animation = this->animation_path.get_time(time);
+	if (not interpolate_from or current_animation.second != animation_path
+	    or (animation_started_at and current_animation.first != *animation_started_at)) {
+		// Match the authoritative phase even if the first guest snapshot
+		// arrives mid-loop. Clock-only deltas must not restart the animation.
+		this->animation_path.set_last(start_at, animation_path);
 	}
 	this->ref_id = ref_id;
 	this->changed = true;

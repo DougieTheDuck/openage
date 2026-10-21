@@ -114,6 +114,8 @@ void difference_entities(const WorldState &before, const WorldState &after,
 		    or previous.health != entry.health
 		    or previous.maximum_health != entry.maximum_health
 		    or previous.tower_kills != entry.tower_kills
+		    or previous.animation_action != entry.animation_action
+		    or previous.animation_started_at != entry.animation_started_at
 		    or not same_facing_at(previous, entry, after.simulation_time)
 		    or not same_motion_at(previous, entry, before.simulation_time,
 		                          after.simulation_time)) {

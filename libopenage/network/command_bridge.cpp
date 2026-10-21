@@ -239,6 +239,8 @@ WorldState capture_fvd_state(
 			}
 			entity_state.facing_keys.push_back({key.time(), key.val()});
 		}
+		entity_state.animation_action = entity->get_animation_action();
+		entity_state.animation_started_at = entity->get_animation_started_at();
 		// Position curves are calculated on the simulation thread already:
 		// copy only upcoming segments, never past history. Idle entities
 		// naturally emit zero future keys. An update can replace this plan

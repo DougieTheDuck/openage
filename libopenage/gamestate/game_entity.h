@@ -119,7 +119,11 @@ public:
 	 * @param animation_path Path to the animation definition used at \p time.
 	 */
 	void render_update(const time::time_t &time,
-	                   const std::string &animation_path);
+	                   const std::string &animation_path,
+	                   AnimationAction action = AnimationAction::IDLE);
+
+	AnimationAction get_animation_action() const;
+	time::time_t get_animation_started_at() const;
 
 	/** Stop rendering and picking this entity after it is removed. */
 	void deactivate_render(const time::time_t &time);
@@ -164,6 +168,8 @@ private:
 	 * Render entity for pushing updates to the renderer. Can be \p nullptr.
 	 */
 	std::shared_ptr<renderer::world::RenderEntity> render_entity;
+	AnimationAction animation_action{AnimationAction::IDLE};
+	time::time_t animation_started_at{time::TIME_ZERO};
 
 	/**
 	 * Event manager.
