@@ -1539,6 +1539,45 @@ void fvd_build_queue() {
 	TESTEQUALS(fvd->is_tile_reserved({42, 66}), true);
 }
 
+void fvd_animation_phase() {
+	// The renderer must retain absolute host animation start times even
+	// when it receives the first snapshot partway through the cycle.
+	renderer::world::RenderEntity entity{};
+	const auto at = [](double value) { return time::time_t::from_double(value); };
+	entity.update_sample(77, coord::phys3{20, 20, 0},
+	                     "fvd/orc_idle.sprite", at(5), std::nullopt,
+	                     {}, at(1.25));
+	{
+		auto lock = entity.get_read_lock();
+		const auto phase = entity.get_animation_path().get_time(at(5));
+		TESTEQUALS(phase.first, at(1.25));
+		TESTEQUALS(phase.second, std::string{"fvd/orc_idle.sprite"});
+	}
+	entity.update_sample(77, coord::phys3{21, 20, 0},
+	                     "fvd/orc_idle.sprite", at(5.25), at(5),
+	                     {}, at(1.25));
+	{
+		auto lock = entity.get_read_lock();
+		TESTEQUALS(entity.get_animation_path().get_time(at(5.25)).first, at(1.25));
+	}
+	entity.update_sample(77, coord::phys3{22, 20, 0},
+	                     "fvd/orc_walk.sprite", at(5.75), at(5.25),
+	                     {}, at(5.5));
+	{
+		auto lock = entity.get_read_lock();
+		const auto phase = entity.get_animation_path().get_time(at(5.75));
+		TESTEQUALS(phase.first, at(5.5));
+		TESTEQUALS(phase.second, std::string{"fvd/orc_walk.sprite"});
+	}
+	entity.update_sample(77, coord::phys3{23, 20, 0},
+	                     "fvd/orc_idle.sprite", at(6.5), std::nullopt,
+	                     {}, at(6.25));
+	{
+		auto lock = entity.get_read_lock();
+		TESTEQUALS(entity.get_animation_path().get_time(at(6.5)).first, at(6.25));
+	}
+}
+
 void fvd_build_line_order() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");

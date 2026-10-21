@@ -83,7 +83,10 @@ void WorldObject::fetch_updates(const time::time_t &time) {
 									  }
 									  return this->asset_manager->request_animation(path);
 								  }),
-	                          this->last_update);
+	                          time::TIME_MIN);
+	// Preserve the actual keyframe start time of each animation. Syncing
+	// only from last_update would drop a remotely received start in the
+	// past, causing late-join and recovery clients to restart the loop.
 	this->angle.sync(this->render_entity->get_angle(), this->last_update);
 
 	// Unlock mutex of the render entity
