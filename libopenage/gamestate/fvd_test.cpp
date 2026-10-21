@@ -148,6 +148,34 @@ void fvd_network_builder_count() {
 			TESTEQUALS(played_builder->angle, coord::phys_angle_t::from_int(90));
 			TESTEQUALS(played_builder->facing_keys.size(), size_t{1});
 			TESTEQUALS(played_builder->facing_keys[0].time, time::time_t::from_int(2));
+			// The actual guest render-entity curve holds the host's facing
+			// through each turn, without interpolating an invented rotation.
+			renderer::world::RenderEntity proxy{};
+			proxy.update_facing(builder->angle, time::TIME_ZERO, {
+				{builder->facing_keys[0].time, builder->facing_keys[0].angle},
+				{builder->facing_keys[1].time, builder->facing_keys[1].angle},
+			});
+			{
+				auto lock = proxy.get_read_lock();
+				TESTEQUALS(proxy.get_angle().get(time::time_t::from_double(0.5)),
+				           coord::phys_angle_t::from_int(315));
+				TESTEQUALS(proxy.get_angle().get(time::time_t::from_double(1.5)),
+				           coord::phys_angle_t::from_int(90));
+				TESTEQUALS(proxy.get_angle().get(time::time_t::from_double(2.5)),
+				           coord::phys_angle_t::from_int(180));
+			}
+			proxy.update_facing(played_builder->angle,
+				time::time_t::from_double(1.5), {
+					{played_builder->facing_keys[0].time,
+					 played_builder->facing_keys[0].angle},
+				});
+			{
+				auto lock = proxy.get_read_lock();
+				TESTEQUALS(proxy.get_angle().get(time::time_t::from_double(1.75)),
+				           coord::phys_angle_t::from_int(90));
+				TESTEQUALS(proxy.get_angle().get(time::time_t::from_int(2)),
+				           coord::phys_angle_t::from_int(180));
+			}
 		}
 	}
 }
