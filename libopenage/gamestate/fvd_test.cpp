@@ -1578,5 +1578,17 @@ void fvd_retask_foundation() {
 			   }), size_t{5});
 	TESTEQUALS(fvd->is_tile_reserved({45, 66}), false);
 	TESTEQUALS(fvd->is_tile_reserved({42, 66}), false);
+
+	// A non-Shift placement replaces the entire queue, not the foundations.
+	TESTEQUALS(fvd->request_build(state, 2, selected, {39, 66, 0}, at(36)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, selected, {36, 66, 0}, at(36)), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{1});
+	TESTEQUALS(fvd->request_build(state, 2, selected, {33, 66, 0}, at(36)), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{33, 66}));
+	TESTEQUALS(fvd->is_tile_reserved({39, 66}), false);
+	TESTEQUALS(fvd->is_tile_reserved({36, 66}), false);
+	TESTEQUALS(foundations().contains(coord::tile{39, 66}), true);
+	TESTEQUALS(foundations().contains(coord::tile{36, 66}), true);
 }
 }
