@@ -1478,7 +1478,7 @@ void fvd_build_line_order() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
-	entity_id_t builder = 0;
+	std::optional<entity_id_t> builder{};
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		auto owner = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
@@ -1487,9 +1487,9 @@ void fvd_build_line_order() {
 			break;
 		}
 	}
-	builder != 0 or TESTFAIL;
+	builder.has_value() or TESTFAIL;
 	event::SendCommandHandler command;
-	const std::vector<entity_id_t> selected{builder};
+	const std::vector<entity_id_t> selected{*builder};
 	auto submit_line = [&](const std::vector<coord::phys3> &line) {
 		bool accepted = false;
 		command.invoke(*loop, nullptr, state, time::TIME_ZERO,
@@ -1505,8 +1505,8 @@ void fvd_build_line_order() {
 	const std::vector<coord::phys3> sites{
 		{55.5, 71.5, 0}, {56.5, 71.5, 0}, {57.5, 71.5, 0}, {58.5, 71.5, 0}};
 	TESTEQUALS(submit_line(sites), true);
-	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{55, 71}));
-	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{3});
+	TESTEQUALS(fvd->get_build_order(*builder)->get_target(), (coord::tile{55, 71}));
+	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{3});
 	const auto first_world = network::capture_fvd_presentation_state(state, time::TIME_ZERO);
 	const auto first_view = network::make_construction_presentation(first_world);
 	TESTEQUALS(first_view.sites.size(), size_t{4});
@@ -1522,12 +1522,12 @@ void fvd_build_line_order() {
 	}
 	// Invalid diagonal input must not mutate an existing build queue.
 	TESTEQUALS(submit_line({{52.5, 78.5, 0}, {53.5, 79.5, 0}}), false);
-	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{55, 71}));
-	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{3});
-	TESTEQUALS(fvd->cancel_build(state, builder, time::TIME_ZERO), true);
+	TESTEQUALS(fvd->get_build_order(*builder)->get_target(), (coord::tile{55, 71}));
+	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{3});
+	TESTEQUALS(fvd->cancel_build(state, *builder, time::TIME_ZERO), true);
 	TESTEQUALS(submit_line({{61.5, 77.5, 0}, {60.5, 77.5, 0}, {59.5, 77.5, 0}}), true);
-	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{61, 77}));
-	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{2});
+	TESTEQUALS(fvd->get_build_order(*builder)->get_target(), (coord::tile{61, 77}));
+	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{2});
 }
 
 void fvd_retask_foundation() {
