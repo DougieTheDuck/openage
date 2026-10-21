@@ -50,6 +50,29 @@ coord::phys3 position_at(const EntityState &entity,
 	return from;
 }
 
+coord::phys_angle_t facing_at(const EntityState &entity, time::time_t now) {
+	auto angle = entity.angle;
+	for (const auto &key : entity.facing_keys) {
+		if (key.time > now) break;
+		angle = key.angle;
+	}
+	return angle;
+}
+
+bool same_facing_at(const EntityState &before, const EntityState &after,
+                    time::time_t now) {
+	if (after.angle != facing_at(before, now)) return false;
+	size_t remaining = 0;
+	for (const auto &key : before.facing_keys) {
+		if (key.time <= now) continue;
+		if (remaining >= after.facing_keys.size()
+		    or after.facing_keys[remaining].time != key.time
+		    or after.facing_keys[remaining].angle != key.angle) return false;
+		++remaining;
+	}
+	return remaining == after.facing_keys.size();
+}
+
 bool same_motion_at(const EntityState &before, const EntityState &after,
                     time::time_t before_time, time::time_t after_time) {
 	if (after.position != position_at(before, before_time, after_time)) return false;
@@ -91,6 +114,7 @@ void difference_entities(const WorldState &before, const WorldState &after,
 		    or previous.health != entry.health
 		    or previous.maximum_health != entry.maximum_health
 		    or previous.tower_kills != entry.tower_kills
+		    or not same_facing_at(previous, entry, after.simulation_time)
 		    or not same_motion_at(previous, entry, before.simulation_time,
 		                          after.simulation_time)) {
 			changed.push_back(entry);
@@ -298,6 +322,7 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	for (auto &entity : next.entities) {
 		entity.position = position_at(entity, previous.simulation_time,
 		                              next.simulation_time);
+		entity.angle = facing_at(entity, next.simulation_time);
 	}
 	patch(next.entities, changed.entities, delta.removed_entities, entity_key);
 	// Motion keyframes are timed segments, like arrows. A no-change delta
@@ -305,6 +330,9 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	// captures and transmits the next bounded window on an actual change.
 	for (auto &entity : next.entities) {
 		std::erase_if(entity.motion_keys, [&](const MotionKeyframe &key) {
+			return key.time <= next.simulation_time;
+		});
+		std::erase_if(entity.facing_keys, [&](const FacingKeyframe &key) {
 			return key.time <= next.simulation_time;
 		});
 	}

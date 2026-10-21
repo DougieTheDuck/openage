@@ -222,6 +222,23 @@ WorldState capture_fvd_state(
 		auto entity = state->get_game_entity(entity_state.entity_id);
 		auto position = std::dynamic_pointer_cast<gamestate::component::Position>(
 			entity->get_component(gamestate::component::component_t::POSITION));
+		// FVD rotation uses instantaneous turn jumps on the simulation's
+		// Segmented facing curve. Export the right side of each FUTURE jump
+		// once; paired same-time curve keys must not be sent twice.
+		entity_state.angle = position->get_angles().get(time);
+		const auto &angles = position->get_angles().get_container();
+		const auto angle_prior = angles.last(time);
+		for (auto index = angle_prior + 1;
+		     index < angles.size()
+		     and entity_state.facing_keys.size() < MAX_ENTITY_FACING_KEYS;
+		     ++index) {
+			const auto &key = angles.get(index);
+			if (index + 1 < angles.size()
+			    and angles.get(index + 1).time() == key.time()) {
+				continue; // left side of a jump
+			}
+			entity_state.facing_keys.push_back({key.time(), key.val()});
+		}
 		// Position curves are calculated on the simulation thread already:
 		// copy only upcoming segments, never past history. Idle entities
 		// naturally emit zero future keys. An update can replace this plan

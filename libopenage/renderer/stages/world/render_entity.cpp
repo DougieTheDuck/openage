@@ -45,6 +45,27 @@ void RenderEntity::update(const uint32_t ref_id,
 	this->last_update = time;
 }
 
+void RenderEntity::update_facing(
+	coord::phys_angle_t sampled, time::time_t time,
+	const std::vector<std::pair<time::time_t, coord::phys_angle_t>> &future_keys) {
+	std::unique_lock lock{this->mutex};
+	curve::Segmented<coord::phys_angle_t> new_angles{nullptr, 0, "", nullptr, sampled};
+	new_angles.set_last(time, sampled);
+	auto last_angle = sampled;
+	auto last_time = time;
+	for (const auto &[at, angle] : future_keys) {
+		if (at <= last_time) {
+			throw Error{MSG(err) << "Replicated facing keys must be strictly future-ordered"};
+		}
+		new_angles.set_insert_jump(at, last_angle, angle);
+		last_angle = angle;
+		last_time = at;
+	}
+	this->angle.sync(new_angles);
+	this->changed = true;
+	this->last_update = time;
+}
+
 void RenderEntity::update_health(const curve::Segmented<int64_t> &health,
                                  int64_t max_health,
                                  const time::time_t time) {

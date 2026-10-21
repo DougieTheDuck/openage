@@ -44,6 +44,7 @@ constexpr uint32_t MAX_STATE_ATTACK_ORDERS = 16384;
 constexpr uint32_t MAX_STATE_ARROWS = 2048;
 /** Bounded future position keyframes sent per entity and snapshot. */
 constexpr uint16_t MAX_ENTITY_MOTION_KEYS = 16;
+constexpr uint16_t MAX_ENTITY_FACING_KEYS = 16;
 
 /** Largest displayable command rejection reason. */
 constexpr uint32_t MAX_REJECTION_REASON_SIZE = 4096;
@@ -127,6 +128,12 @@ struct MotionKeyframe {
 	coord::phys3 position{0, 0, 0};
 };
 
+/** One future instantaneous facing turn authored by the simulation. */
+struct FacingKeyframe {
+	time::time_t time{};
+	coord::phys_angle_t angle{0};
+};
+
 /** One authoritative entity position and its future movement curve. */
 struct EntityState {
 	gamestate::entity_id_t entity_id{0};
@@ -139,6 +146,9 @@ struct EntityState {
 	std::optional<uint64_t> tower_kills{};
 	/** Future authoritative position keys; empty for stationary entities. */
 	std::vector<MotionKeyframe> motion_keys{};
+	/** Sampled orientation and future turn events, not a guest movement guess. */
+	coord::phys_angle_t angle{0};
+	std::vector<FacingKeyframe> facing_keys{};
 };
 
 /** FVD role assigned to one playable player. */

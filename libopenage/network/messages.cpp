@@ -578,6 +578,21 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 			append_position(output, key.position);
 			previous_time = key.time;
 		}
+		// Each facing key records the RIGHT side of a scheduled angle jump.
+		append_i64(output, entity.angle.get_raw_value());
+		if (entity.facing_keys.size() > MAX_ENTITY_FACING_KEYS) {
+			throw Error{MSG(err) << "FVD facing curve exceeds protocol key limit"};
+		}
+		append_u16(output, static_cast<uint16_t>(entity.facing_keys.size()));
+		previous_time = state.simulation_time;
+		for (const auto &key : entity.facing_keys) {
+			if (key.time <= previous_time) {
+				throw Error{MSG(err) << "FVD facing keys must be strictly future-ordered"};
+			}
+			append_i64(output, key.time.get_raw_value());
+			append_i64(output, key.angle.get_raw_value());
+			previous_time = key.time;
+		}
 	}
 	for (const auto &reservation : state.reservations) {
 		append_tile(output, reservation.tile);
@@ -731,6 +746,30 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 				throw Error{MSG(err) << "FVD entity motion keys must be strictly future-ordered"};
 			}
 			entity.motion_keys.push_back({at, read_position(reader)});
+			previous_time = at;
+		}
+		auto sampled_angle = reader.i64();
+		if (sampled_angle < std::numeric_limits<int32_t>::min()
+		    or sampled_angle > std::numeric_limits<int32_t>::max()) {
+			throw Error{MSG(err) << "FVD facing angle is outside fixed-point range"};
+		}
+		entity.angle = coord::phys_angle_t::from_raw_value(
+			static_cast<int32_t>(sampled_angle));
+		const auto facing_count = reader.u16();
+		if (facing_count > MAX_ENTITY_FACING_KEYS) {
+			throw Error{MSG(err) << "FVD facing curve exceeds protocol key limit"};
+		}
+		previous_time = state.simulation_time;
+		for (uint16_t j = 0; j < facing_count; ++j) {
+			const auto at = time::time_t::from_raw_value(reader.i64());
+			const auto raw = reader.i64();
+			if (at <= previous_time
+			    or raw < std::numeric_limits<int32_t>::min()
+			    or raw > std::numeric_limits<int32_t>::max()) {
+				throw Error{MSG(err) << "FVD facing keys are invalid or unordered"};
+			}
+			entity.facing_keys.push_back({
+				at, coord::phys_angle_t::from_raw_value(static_cast<int32_t>(raw))});
 			previous_time = at;
 		}
 		state.entities.push_back(std::move(entity));

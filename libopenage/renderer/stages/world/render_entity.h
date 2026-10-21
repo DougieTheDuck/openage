@@ -96,6 +96,10 @@ public:
 	 * @param max_health Maximum health value.
 	 * @param time Simulation time of the update.
 	 */
+	/** Replace the replicated orientation with host-authored turn keys. */
+	void update_facing(coord::phys_angle_t angle, time::time_t time,
+	                   const std::vector<std::pair<time::time_t, coord::phys_angle_t>> &future_keys);
+
 	void update_health(const curve::Segmented<int64_t> &health,
 	                   int64_t max_health,
 	                   const time::time_t time = 0.0);

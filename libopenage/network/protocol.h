@@ -18,7 +18,7 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
  */
 // Ordered tower-line commands change command framing. Reject older
 // clients instead of letting them misinterpret the extended command payload.
-constexpr uint16_t PROTOCOL_MAJOR = 10;
+constexpr uint16_t PROTOCOL_MAJOR = 11;
 constexpr uint16_t PROTOCOL_MINOR = 4;
 
 /** Oldest protocol minor version compatible with this implementation. */

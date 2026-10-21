@@ -833,6 +833,12 @@ void Presenter::refresh_fvd_guest_visuals() {
 			new_entity or not previous_time ? std::nullopt
 			                                : std::make_optional(presentation_time),
 			future_motion);
+		std::vector<std::pair<time::time_t, coord::phys_angle_t>> turns;
+		turns.reserve(entity.facing_keys.size());
+		for (const auto &key : entity.facing_keys) {
+			turns.emplace_back(key.time, key.angle);
+		}
+		visual->update_facing(entity.angle, world->simulation_time, turns);
 		if (entity.health and entity.maximum_health and *entity.maximum_health > 0) {
 			curve::Segmented<int64_t> health{nullptr, 0, "", nullptr, *entity.health};
 			visual->update_health(health, *entity.maximum_health, world->simulation_time);
