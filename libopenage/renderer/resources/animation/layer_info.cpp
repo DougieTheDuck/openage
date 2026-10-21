@@ -32,7 +32,9 @@ LayerInfo::LayerInfo(std::vector<std::shared_ptr<AngleInfo>> &angles,
 			keyframes.push_back(t);
 			t += this->time_per_frame;
 		}
-		auto total_time = (frame_count - 1) * this->time_per_frame + this->replay_delay;
+		// Include the display interval of the final frame before wrapping.
+		// Otherwise a loop jumps to frame zero just as its last frame begins.
+		auto total_time = frame_count * this->time_per_frame + this->replay_delay;
 		this->frame_timing = std::make_shared<FrameTiming>(total_time, std::move(keyframes));
 	}
 }

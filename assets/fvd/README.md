@@ -4,7 +4,8 @@ This directory contains original development graphics for the FVD tower defense 
 The initial set uses a fixed orthographic isometric view, neutral upper-left lighting, transparent sprite backgrounds, and a flat seamless terrain texture.
 
 **Animation prototype:** Builders temporarily use the existing Orc Unarmed directional
-spritesheets (16 angles each) for 16-frame idle and 20-frame walk cycles. The
+spritesheets (16 angles each) for 16-frame idle and 20-frame walk cycles. Idle
+frames last 0.125 seconds and walking frames 0.07 seconds. The
 original `builder.sprite`, `builder.texture`, and `builder.png` are retained;
 you can restore them in `data/entities.nyan`. The proof-of-concept uses the
 existing images without modifying them or requiring an external graphics tool.

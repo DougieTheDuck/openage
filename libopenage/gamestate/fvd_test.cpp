@@ -49,6 +49,7 @@
 #include "pathfinding/grid.h"
 #include "pathfinding/pathfinder.h"
 #include "pathfinding/sector.h"
+#include "renderer/resources/frame_timing.h"
 #include "renderer/resources/parser/parse_sprite.h"
 #include "renderer/resources/parser/parse_texture.h"
 #include "renderer/resources/parser/parse_terrain.h"
@@ -194,6 +195,34 @@ void fvd_scenario() {
 	auto animated_walk = renderer::resources::parser::parse_sprite_file(graphics / "orc_walk.sprite");
 	TESTEQUALS(animated_idle.get_texture_count(), size_t{16});
 	TESTEQUALS(animated_walk.get_texture_count(), size_t{16});
+	const auto &idle_layer = animated_idle.get_layer(0);
+	const auto &walk_layer = animated_walk.get_layer(0);
+	TESTEQUALS(idle_layer.get_display_mode(),
+	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(walk_layer.get_display_mode(),
+	           renderer::resources::display_mode::LOOP);
+	// A frame duration is measured in seconds, not milliseconds.
+	TESTEQUALS(idle_layer.get_time_per_frame(), 0.125f);
+	TESTEQUALS(walk_layer.get_time_per_frame(), 0.07f);
+	const auto idle_frames = idle_layer.get_frame_timing();
+	const auto walk_frames = walk_layer.get_frame_timing();
+	TESTEQUALS(idle_frames->size(), size_t{16});
+	TESTEQUALS(walk_frames->size(), size_t{20});
+	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(0.26),
+	                                  time::TIME_ZERO), size_t{2});
+	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(1.95),
+	                                  time::TIME_ZERO), size_t{15});
+	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(2.05),
+	                                  time::TIME_ZERO), size_t{0});
+	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(0.16),
+	                                  time::TIME_ZERO), size_t{2});
+	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(1.38),
+	                                  time::TIME_ZERO), size_t{19});
+	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(1.45),
+	                                  time::TIME_ZERO), size_t{0});
+	// Phase is relative to the host's start time, not packet arrival.
+	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(10.16),
+	                                  time::time_t::from_int(10)), size_t{2});
 	auto idle_sheet = renderer::resources::parser::parse_texture_file(
 		graphics / "orc" / "x256p_Spritesheets" / "Idle_Unarmed"
 		         / "Idle_Unarmed_Body_180.texture");

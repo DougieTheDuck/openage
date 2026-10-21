@@ -161,10 +161,10 @@ Position of the layer in the final animation. Layers with a higher position
 overdraw ones with a lower position.
 
 **time_per_frame**<br>
-Length of time (in milliseconds) that a frame is shown.
+Length of time (in seconds) that a frame is shown. For example, `0.125` means 125 ms.
 
 **replay_delay**<br>
-How long the renderer waits (in milliseconds) until the next animation loop is started.
+How long the renderer waits (in seconds) until the next animation loop is started.
 
 
 #### Example
@@ -172,8 +172,8 @@ How long the renderer waits (in milliseconds) until the next animation loop is s
 ```
 layer 0
 layer 1 mode=off  position=10
-layer 2 mode=once position=20 time_per_frame=300
-layer 3 mode=loop position=15 time_per_frame=1200 replay_delay=200
+layer 2 mode=once position=20 time_per_frame=0.3
+layer 3 mode=loop position=15 time_per_frame=1.2 replay_delay=0.2
 ```
 
 

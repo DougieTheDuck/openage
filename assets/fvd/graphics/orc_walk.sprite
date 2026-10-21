@@ -20,7 +20,7 @@ texture 14 "orc/x256p_Spritesheets/Walk_Unarmed/Walk_Unarmed_Body_135.texture"
 texture 15 "orc/x256p_Spritesheets/Walk_Unarmed/Walk_Unarmed_Body_157.texture"
 
 scalefactor 1.4
-layer 0 mode=loop time_per_frame=70
+layer 0 mode=loop time_per_frame=0.07
 
 angle 0
 angle 22
