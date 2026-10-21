@@ -14,6 +14,7 @@
 #include "gamestate/component/internal/ownership.h"
 #include "gamestate/component/types.h"
 #include "gamestate/fvd.h"
+#include "network/messages.h"
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
 #include "gamestate/manager.h"
@@ -77,6 +78,43 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			}
 			const auto position = params.get<coord::phys3>("target", coord::phys3{0, 0, 0});
 			const bool append = params.get("queue", false);
+			if (params.check_type<std::vector<coord::phys3>>("build_line")) {
+				const auto line = params.get<std::vector<coord::phys3>>("build_line");
+				bool valid = append and not line.empty()
+				          and line.size() <= network::MAX_BUILD_LINE_SITES
+				          and line.front() == position;
+				if (valid and line.size() > 1) {
+					const auto first = line.front().to_tile();
+					const auto second = line[1].to_tile();
+					const auto ne_step = second.ne - first.ne;
+					const auto se_step = second.se - first.se;
+					valid = (ne_step == 0 and (se_step == 1 or se_step == -1))
+					     or (se_step == 0 and (ne_step == 1 or ne_step == -1));
+					for (size_t i = 1; valid and i < line.size(); ++i) {
+						const auto previous = line[i - 1].to_tile();
+						const auto next = line[i].to_tile();
+						valid = next.ne - previous.ne == ne_step
+						     and next.se - previous.se == se_step;
+					}
+				}
+				for (const auto &site : line) {
+					if (site.up != 0) {
+						valid = false;
+					}
+				}
+				bool accepted = false;
+				if (valid) {
+					for (const auto &site : line) {
+						// Invalid or occupied sites are skipped, never reordered.
+						accepted = fvd->queue_build(gstate, owner, ids, site, time)
+						        or accepted;
+					}
+				}
+				if (result_cb) {
+					result_cb(accepted);
+				}
+				return;
+			}
 			const bool accepted = append
 				? fvd->queue_build(gstate, owner, ids, position, time)
 				: fvd->request_build(gstate, owner, ids, position, time);

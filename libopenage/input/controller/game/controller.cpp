@@ -628,30 +628,39 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			               or std::abs(drag_delta.y) >= threshold)) {
 					const auto sites = tower_line_sites(start->to_phys3(camera).to_tile(),
 					                                    args.mouse.to_phys3(camera).to_tile());
-					const auto state = simulation->get_game()->get_state();
-					const bool remote = guest_world and guest_world().has_value();
+					// A single authoritative event preserves the line order even
+					// when equal-time events execute newest-first.
+					if (sites.size() > network::MAX_BUILD_LINE_SITES) {
+						controller->reset_drag_select();
+						return;
+					}
+					std::vector<coord::phys3> line;
+					line.reserve(sites.size());
 					for (const auto &site : sites) {
-						if (remote) {
-							network::CommandIntent intent{
-								0, network::CommandKind::BUILD_TOWER, selection.ids,
-								site.to_phys3_center()};
-							intent.queue = true;
-							if (not send_guest_command or not send_guest_command(std::move(intent))) {
-								break;
-							}
+						line.push_back(site.to_phys3_center());
+					}
+					if (guest_world and guest_world().has_value()) {
+						network::CommandIntent intent{
+							0, network::CommandKind::BUILD_TOWER, selection.ids, line.front()};
+						intent.queue = true;
+						intent.build_line = std::move(line);
+						if (send_guest_command) {
+							send_guest_command(std::move(intent));
 						}
-						else {
-							event::EventHandler::param_map::map_t params{
-								{"type", gamestate::component::command::command_t::BUILD_TOWER},
-								{"target", site.to_phys3_center()},
-								{"queue", true},
-								{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
-								{"entity_ids", selection.ids},
-							};
-							simulation->get_event_loop()->submit_event(
-								"game.send_command", simulation->get_commander(), state,
-								time_loop->get_clock()->get_time(), params);
-						}
+					}
+					else {
+						auto state = simulation->get_game()->get_state();
+						event::EventHandler::param_map::map_t params{
+							{"type", gamestate::component::command::command_t::BUILD_TOWER},
+							{"target", line.front()},
+							{"queue", true},
+							{"build_line", line},
+							{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
+							{"entity_ids", selection.ids},
+						};
+						simulation->get_event_loop()->submit_event(
+							"game.send_command", simulation->get_commander(), state,
+							time_loop->get_clock()->get_time(), params);
 					}
 				}
 				else {
