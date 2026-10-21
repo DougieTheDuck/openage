@@ -11,6 +11,18 @@ existing images without modifying them or requiring an external graphics tool.
 FVD uses the host-selected Idle/Move animation and simulation-time animation
 start for both local and guest rendering, not guest-estimated velocity.
 
+To try it, start a solo match with `bin/run game --solo --modpacks fvd`,
+select your Builder and right-click around the map. You should see the
+Orc idle loop while stopped and its 16-direction walk cycle when moving.
+The Horse still uses its original static art until a dedicated animation set
+is prepared. Remote clients use the same animation action and absolute frame
+clock after snapshots/deltas; cross-platform visual confirmation is pending.
+Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
+`bin/run test openage::gamestate::tests::fvd_animation_phase`,
+`bin/run test openage::network::tests::messages` and
+`bin/run test openage::network::tests::world_delta`.
+Multiplayer protocol v12 requires both clients to be rebuilt.
+
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
 The prompts used for the initial set are recorded in [prompts.md](prompts.md).

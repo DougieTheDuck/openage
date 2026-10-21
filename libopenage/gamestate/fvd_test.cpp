@@ -50,6 +50,7 @@
 #include "pathfinding/pathfinder.h"
 #include "pathfinding/sector.h"
 #include "renderer/resources/parser/parse_sprite.h"
+#include "renderer/resources/parser/parse_texture.h"
 #include "renderer/resources/parser/parse_terrain.h"
 #include "renderer/resources/texture_data.h"
 #include "renderer/resources/texture_info.h"
@@ -193,6 +194,16 @@ void fvd_scenario() {
 	auto animated_walk = renderer::resources::parser::parse_sprite_file(graphics / "orc_walk.sprite");
 	TESTEQUALS(animated_idle.get_texture_count(), size_t{16});
 	TESTEQUALS(animated_walk.get_texture_count(), size_t{16});
+	auto idle_sheet = renderer::resources::parser::parse_texture_file(
+		graphics / "orc" / "x256p_Spritesheets" / "Idle_Unarmed"
+		         / "Idle_Unarmed_Body_180.texture");
+	auto walk_sheet = renderer::resources::parser::parse_texture_file(
+		graphics / "orc" / "x256p_Spritesheets" / "Walk_Unarmed"
+		         / "Walk_Unarmed_Body_180.texture");
+	TESTEQUALS(idle_sheet.get_size(), (std::pair<int32_t, int32_t>{1024, 1024}));
+	TESTEQUALS(walk_sheet.get_size(), (std::pair<int32_t, int32_t>{1280, 1024}));
+	TESTEQUALS(idle_sheet.get_subtex_count(), size_t{16});
+	TESTEQUALS(walk_sheet.get_subtex_count(), size_t{20});
 	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
 	for (const auto &info : {plains_graphics.get_texture(0),
