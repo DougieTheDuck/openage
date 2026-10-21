@@ -747,9 +747,18 @@ bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
 			this->reserved_tiles.erase(reserved);
 		}
 	}
-	// Planned foundations stay in the world when their Builder is redirected.
+	// Incomplete towers revert to foundations, so interrupted work stays reusable.
 	if (it->second.tower_id.has_value()) {
 		this->destroy_tower(state, *it->second.tower_id, time);
+		auto loop = this->event_loop.lock();
+		auto factory = this->entity_factory.lock();
+		if (not loop or not factory) [[unlikely]] {
+			throw Error{ERR << "FVD construction services no longer exist"};
+		}
+		const auto &site = it->second.order->get_target();
+		factory->spawn_game_entity(
+			loop, state, it->second.order->get_owner(), this->foundation,
+			site.to_phys3_center(), time);
 	}
 	this->build_orders.erase(it);
 	// Abandon future work without deleting the visible, reusable foundations.

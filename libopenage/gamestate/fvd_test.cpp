@@ -1344,11 +1344,23 @@ void fvd_presentation_snapshot() {
 				   return site.phase == network::SitePresentationPhase::QUEUED;
 			   }),
 	           2);
+	std::vector<int> numbers;
+	for (const auto &site : view.sites) {
+		numbers.push_back(static_cast<int>(site.queue_position));
+	}
+	std::sort(numbers.begin(), numbers.end());
+	TESTEQUALS(numbers, (std::vector<int>{1, 2, 3}));
 	// Replacement and cancellation cannot change a snapshot held by the HUD.
 	TESTEQUALS(network::make_construction_presentation(*initial).sites.empty(), true);
 	TESTEQUALS(fvd->cancel_build(state, builder->entity_id, time::TIME_ZERO), true);
 	const auto canceled = network::capture_fvd_presentation_state(state, time::TIME_ZERO);
-	TESTEQUALS(network::make_construction_presentation(canceled).sites.empty(), true);
+	const auto abandoned = network::make_construction_presentation(canceled);
+	TESTEQUALS(abandoned.sites.size(), size_t{3});
+	TESTEQUALS(abandoned.reservations.empty(), true);
+	TESTEQUALS(std::all_of(abandoned.sites.begin(), abandoned.sites.end(), [](const auto &site) {
+				   return site.phase == network::SitePresentationPhase::ORPHANED
+				       and site.queue_position == 0;
+			   }), true);
 	TESTEQUALS(network::make_construction_presentation(*building).sites.size(), size_t{3});
 }
 
@@ -1438,6 +1450,18 @@ void fvd_build_queue() {
 	TESTEQUALS(fvd->is_tile_reserved({45, 66}), false);
 	TESTEQUALS(fvd->is_tile_reserved({42, 66}), false);
 	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{0});
+	const auto orphaned_world = network::capture_fvd_presentation_state(state, at(41.1));
+	const auto orphaned_view = network::make_construction_presentation(orphaned_world);
+	TESTEQUALS(std::count_if(orphaned_view.sites.begin(), orphaned_view.sites.end(), [](const auto &site) {
+				   return site.phase == network::SitePresentationPhase::ORPHANED;
+			   }), size_t{2});
+	TESTEQUALS(fvd->can_place_tower(state, 2, selected, {42, 66, 0}, at(41.1)), false);
+	auto orphan = std::find_if(orphaned_view.sites.begin(), orphaned_view.sites.end(),
+	                          [](const auto &site) { return site.site == coord::tile{42, 66}; });
+	TESTEQUALS(orphan != orphaned_view.sites.end(), true);
+	TESTEQUALS(fvd->prioritize_foundation(state, 2, selected, orphan->entity_id, at(41.1)), true);
+	TESTEQUALS(fvd->get_build_order(*builder)->get_target(), (coord::tile{42, 66}));
+	TESTEQUALS(fvd->is_tile_reserved({42, 66}), true);
 }
 
 void fvd_retask_foundation() {
@@ -1504,8 +1528,10 @@ void fvd_retask_foundation() {
 	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
 	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{54, 66}));
 	markers = foundations();
-	TESTEQUALS(markers.size(), size_t{1});
+	TESTEQUALS(markers.size(), size_t{3});
 	TESTEQUALS(markers.at(coord::tile{54, 66}), chosen);
+	TESTEQUALS(markers.contains(coord::tile{61, 66}), true);
+	TESTEQUALS(markers.contains(coord::tile{57, 66}), true);
 	TESTEQUALS(fvd->is_tile_reserved({61, 66}), false);
 	TESTEQUALS(fvd->is_tile_reserved({57, 66}), false);
 	TESTEQUALS(fvd->is_tile_reserved({54, 66}), true);
@@ -1514,11 +1540,11 @@ void fvd_retask_foundation() {
 	// discarding the remaining queue without restarting construction.
 	auto order_id = fvd->get_build_order(builder)->get_id();
 	TESTEQUALS(fvd->queue_build(state, 2, selected, {48, 66, 0}, at(0)), true);
-	TESTEQUALS(foundations().size(), size_t{2});
+	TESTEQUALS(foundations().size(), size_t{4});
 	TESTEQUALS(fvd->prioritize_foundation(state, 2, selected, chosen, at(0)), true);
 	TESTEQUALS(fvd->get_build_order(builder)->get_id(), order_id);
 	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
-	TESTEQUALS(foundations().size(), size_t{1});
+	TESTEQUALS(foundations().size(), size_t{4});
 	TESTEQUALS(fvd->is_tile_reserved({48, 66}), false);
 
 	loop->reach_time(at(35), state);
@@ -1535,16 +1561,21 @@ void fvd_retask_foundation() {
 	}
 	TESTEQUALS(completed, true);
 
-	// Ordinary movement cancels both current and future foundations.
+	// Ordinary movement abandons both active and queued work, preserving sites.
 	TESTEQUALS(fvd->queue_build(state, 2, selected, {45, 66, 0}, at(36)), true);
 	TESTEQUALS(fvd->queue_build(state, 2, selected, {42, 66, 0}, at(36)), true);
-	TESTEQUALS(foundations().size(), size_t{2});
+	TESTEQUALS(foundations().size(), size_t{5});
 	command.invoke(*loop, nullptr, state, at(36),
 	               {{"type", component::command::command_t::MOVE},
 	                {"owner", player_id_t{2}}, {"entity_ids", selected},
 	                {"target", coord::phys3{40, 70, 0}}});
-	TESTEQUALS(foundations().empty(), true);
+	TESTEQUALS(foundations().size(), size_t{5});
 	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	const auto abandoned = network::make_construction_presentation(
+		network::capture_fvd_presentation_state(state, at(36)));
+	TESTEQUALS(std::count_if(abandoned.sites.begin(), abandoned.sites.end(), [](const auto &site) {
+				   return site.phase == network::SitePresentationPhase::ORPHANED;
+			   }), size_t{5});
 	TESTEQUALS(fvd->is_tile_reserved({45, 66}), false);
 	TESTEQUALS(fvd->is_tile_reserved({42, 66}), false);
 }
