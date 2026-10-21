@@ -701,28 +701,24 @@ bool FVD::prioritize_foundation(const std::shared_ptr<GameState> &state,
 	const auto site = std::dynamic_pointer_cast<component::Position>(
 		foundation_it->second->get_component(component::component_t::POSITION))
 		->get_positions().get(time).to_tile();
-	bool queued = false;
-	if (pending != this->queued_builds.end()) {
-		auto wanted = std::find_if(pending->second.begin(), pending->second.end(),
-		                           [foundation_id](const QueuedBuildSite &entry) {
-		                           return entry.foundation_id == foundation_id;
-		                           });
-		if (wanted != pending->second.end()) {
-			pending->second.erase(wanted);
-			queued = true;
-			if (pending->second.empty()) {
-				this->queued_builds.erase(pending);
-			}
-		}
-	}
-	if (not queued and this->is_tile_reserved(site)) {
-		return false;
-	}
-	auto position = std::dynamic_pointer_cast<component::Position>(
-		foundation_it->second->get_component(component::component_t::POSITION));
-	if (position->get_positions().get(time).to_tile() != site
+	const auto wanted = pending == this->queued_builds.end()
+	                    ? std::deque<QueuedBuildSite>::iterator{}
+	                    : std::find_if(pending->second.begin(), pending->second.end(),
+	                                   [foundation_id](const QueuedBuildSite &entry) {
+	                                   return entry.foundation_id == foundation_id;
+	                                   });
+	const bool queued = pending != this->queued_builds.end()
+	                 and wanted != pending->second.end();
+	if ((not queued and this->is_tile_reserved(site))
 	    or not this->find_build_stand(state, builder_it->second, site, time)) {
 		return false;
+	}
+	// Check eligibility before mutating the live queue.
+	if (queued) {
+		pending->second.erase(wanted);
+		if (pending->second.empty()) {
+			this->queued_builds.erase(pending);
+		}
 	}
 	// Detach a queued site's reservation before replacing the current order.
 	if (queued) {

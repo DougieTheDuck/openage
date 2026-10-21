@@ -622,7 +622,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			const auto selection = controller->get_selection_details();
 			if (shift and selection.kind == SelectionKind::BUILDER
 			    and controller->begin_tower_placement()) {
-				const auto drag_delta = start ? args.mouse - *start : coord::input{0, 0};
+				const auto drag_delta = start ? args.mouse - *start : coord::input_delta{0, 0};
 				const auto threshold = QGuiApplication::styleHints()->startDragDistance();
 				if (start and (std::abs(drag_delta.x) >= threshold
 			               or std::abs(drag_delta.y) >= threshold)) {
