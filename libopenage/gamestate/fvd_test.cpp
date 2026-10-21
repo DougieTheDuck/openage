@@ -323,11 +323,11 @@ void fvd_scenario() {
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{10, 10}), false);
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{12, 12}), true);
 	TESTEQUALS(fvd->get_build_order(builders[2])->get_id() != order->get_id(), true);
-	TESTEQUALS(state->get_game_entities().contains(first_foundation), false);
+	TESTEQUALS(state->get_game_entities().contains(first_foundation), true);
 
-	// Other Builders may claim a tile released by the replaced order.
-	TESTEQUALS(place(3, {builders[3]}, {10, 10, 0}), true);
-	TESTEQUALS(fvd->get_build_order(builders[3])->get_owner(), player_id_t{3});
+	// An orphaned foundation blocks direct placement by another Builder.
+	TESTEQUALS(place(3, {builders[3]}, {10, 10, 0}), false);
+	TESTEQUALS(fvd->get_build_order(builders[3]) == nullptr, true);
 	TESTEQUALS(state->get_game_entities().size(), 9);
 
 	// Dead Builders cannot initiate new construction.
@@ -362,10 +362,10 @@ void fvd_scenario() {
 	TESTEQUALS(fvd->cancel_build(state, builders[2], time::TIME_ZERO), true);
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{12, 12}), false);
 	TESTEQUALS(fvd->cancel_build(state, builders[2], time::TIME_ZERO), false);
-	TESTEQUALS(place(5, {builders[5]}, {12, 12, 0}), true);
-	TESTEQUALS(fvd->cancel_build(state, builders[3], time::TIME_ZERO), true);
-	TESTEQUALS(fvd->cancel_build(state, builders[5], time::TIME_ZERO), true);
-	TESTEQUALS(state->get_game_entities().size(), 7);
+	TESTEQUALS(place(5, {builders[5]}, {12, 12, 0}), false);
+	TESTEQUALS(fvd->cancel_build(state, builders[3], time::TIME_ZERO), false);
+	TESTEQUALS(fvd->cancel_build(state, builders[5], time::TIME_ZERO), false);
+	TESTEQUALS(state->get_game_entities().size(), 10);
 
 	event::SpawnEntityHandler spawner{loop, entities};
 	TESTTHROWS(spawner.invoke(*loop, nullptr, state, time::TIME_ZERO,
@@ -510,8 +510,8 @@ void fvd_construction() {
 	TESTEQUALS(fvd->is_tile_reserved({75, 75}), false);
 	TESTEQUALS(state->get_game_entities().size(), 9);
 
-	// Issuing a different command cancels the work, truncates the old
-	// movement curve, and makes scheduled completion a no-op.
+	// Issuing a different command cancels the work, preserves its foundation,
+	// truncates the old movement curve, and makes scheduled completion a no-op.
 	TESTEQUALS(build(4, {90, 90, 0}, 31), true);
 	event::SendCommandHandler commander;
 	commander.invoke(*loop, nullptr, state, t(32),
@@ -522,7 +522,7 @@ void fvd_construction() {
 	TESTEQUALS(fvd->is_tile_reserved({90, 90}), false);
 	TESTEQUALS(fvd->get_build_order(builders[4]) == nullptr, true);
 	loop->reach_time(t(100), state);
-	TESTEQUALS(state->get_game_entities().size(), 9);
+	TESTEQUALS(state->get_game_entities().size(), 10);
 
 	// A Builder who dies during travel does not complete construction.
 	TESTEQUALS(build(5, {95, 95, 0}, 101), true);
@@ -533,7 +533,7 @@ void fvd_construction() {
 	loop->reach_time(t(150), state);
 	TESTEQUALS(fvd->is_tile_reserved({95, 95}), false);
 	TESTEQUALS(fvd->get_build_order(builders[5]) == nullptr, true);
-	TESTEQUALS(state->get_game_entities().size(), 9);
+	TESTEQUALS(state->get_game_entities().size(), 11);
 
 	// A newer order supersedes a previous construction. Its old event
 	// cannot spawn a tower even once the previous deadline passes.
@@ -545,7 +545,7 @@ void fvd_construction() {
 	loop->reach_time(t(210), state);
 	TESTEQUALS(fvd->is_tile_reserved({84, 84}), false);
 
-	TESTEQUALS(state->get_game_entities().size(), 10);
+	TESTEQUALS(state->get_game_entities().size(), 13);
 
 	// Fully surrounded sites have no reachable, vacant adjacent stand tile.
 	const std::array<coord::tile_delta, 8> neighbors{{
@@ -559,7 +559,7 @@ void fvd_construction() {
 	}
 	TESTEQUALS(build(7, {110, 110, 0}, 211), false);
 	TESTEQUALS(fvd->is_tile_reserved({110, 110}), false);
-	TESTEQUALS(state->get_game_entities().size(), 18);
+	TESTEQUALS(state->get_game_entities().size(), 21);
 
 	// A dead Builder with a construction already underway cannot finish it.
 	TESTEQUALS(build(7, {66, 66, 0}, 212), true);
@@ -570,7 +570,7 @@ void fvd_construction() {
 	final_live->set_attribute(t(212.05), "fvd.data.entities.Health", 0);
 	loop->reach_time(t(220), state);
 	TESTEQUALS(fvd->is_tile_reserved({66, 66}), false);
-	TESTEQUALS(state->get_game_entities().size(), 18);
+	TESTEQUALS(state->get_game_entities().size(), 22);
 	auto canceled_sector = land_grid->get_sector(66 / sector_size, 66 / sector_size);
 	auto canceled_local = coord::tile{66, 66}
 	                   - canceled_sector->get_position().to_tile(sector_size);
@@ -578,7 +578,7 @@ void fvd_construction() {
 
 	// Destruction removes the entity and restores the terrain's original path cost.
 	TESTEQUALS(fvd->destroy_tower(state, first_tower, t(221)), true);
-	TESTEQUALS(state->get_game_entities().size(), 17);
+	TESTEQUALS(state->get_game_entities().size(), 21);
 	TESTEQUALS(tower_sector->get_cost_field()->get_cost(tower_local), path::cost_t{1});
 	TESTEQUALS(fvd->destroy_tower(state, first_tower, t(222)), false);
 }

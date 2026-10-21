@@ -57,9 +57,15 @@ The header `libopenage/testing/testing.h` provides `TestError` and some convenie
     evaluates `left` and `right`
     throws `TestError(left)` if `left != right`
     throws `TestError(exc)` if a non-`TestError` exception `exc` is raised.
+ - `TESTNOTEQUALS(left, right)`
+    throws `TestError` if `left == right` or an unexpected engine exception is raised.
  - `TESTTHROWS(expr)`
     evaluates `expr`, catching any exception, including `TestError`.
     raises `TestError` if no exception was caught.
+
+`TESTEQUALS` and `TESTNOTEQUALS` evaluate each operand once and compare without copying it.
+Both support const values and equality-comparable types such as `std::vector` that have no stream output operator.
+Failure messages include the source file and line, printing values when possible and operand expressions in angle brackets otherwise.
 
 Example test function:
 

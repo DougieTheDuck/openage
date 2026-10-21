@@ -2,6 +2,10 @@
 
 #pragma once
 
+#include <sstream>
+#include <string>
+#include <type_traits>
+
 #include "../error/error.h"
 
 namespace openage {
@@ -25,6 +29,28 @@ class TestError : public Error {
  */
 bool fail(const log::message &msg);
 
+namespace detail {
+
+/** Describe assertion operands without requiring their types to support output. */
+template <typename T>
+std::string describe_comparison_value(const T &value, const char *expression) {
+	if constexpr (std::is_enum_v<T> or requires(std::ostream &stream) { stream << value; }) {
+		std::ostringstream stream{};
+		if constexpr (std::is_enum_v<T>) {
+			stream << static_cast<std::underlying_type_t<T>>(value);
+		}
+		else {
+			stream << value;
+		}
+		return stream.str();
+	}
+	else {
+		return std::string{"<"} + expression + ">";
+	}
+}
+
+} // namespace detail
+
 
 /**
  * Convenience macro, for usage in test functions:
@@ -45,15 +71,17 @@ bool fail(const log::message &msg);
 /**
  * Asserts that the left expression equals the right expression,
  * and that no exception is thrown.
+ * Evaluates each operand once and accepts const and non-printable values.
  */
 #define TESTEQUALS(left, right) \
 	do { \
 		try { \
 			auto &&test_result_left = (left); \
-			if (test_result_left != (right)) { \
+			auto &&test_result_right = (right); \
+			if (test_result_left != test_result_right) { \
 				TESTFAILMSG(__FILE__ << ":" << __LINE__ << ": Expected " \
-				                     << test_result_left << " and " \
-				                     << (right) << " to be equal"); \
+				                     << ::openage::testing::detail::describe_comparison_value(test_result_left, #left) << " and " \
+				                     << ::openage::testing::detail::describe_comparison_value(test_result_right, #right) << " to be equal"); \
 			} \
 		} \
 		catch (::openage::testing::TestError & e) { \
@@ -68,15 +96,17 @@ bool fail(const log::message &msg);
 /**
  * Asserts that the left expression does not equal the right expression,
  * and that no exception is thrown.
+ * Evaluates each operand once and accepts const and non-printable values.
  */
 #define TESTNOTEQUALS(left, right) \
 	do { \
 		try { \
 			auto &&test_result_left = (left); \
-			if (test_result_left == (right)) { \
+			auto &&test_result_right = (right); \
+			if (test_result_left == test_result_right) { \
 				TESTFAILMSG(__FILE__ << ":" << __LINE__ << ": Expected " \
-				                     << test_result_left << " and " \
-				                     << (right) << " to be NOT equal"); \
+				                     << ::openage::testing::detail::describe_comparison_value(test_result_left, #left) << " and " \
+				                     << ::openage::testing::detail::describe_comparison_value(test_result_right, #right) << " to be NOT equal"); \
 			} \
 		} \
 		catch (::openage::testing::TestError & e) { \
