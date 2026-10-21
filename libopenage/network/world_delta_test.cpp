@@ -295,6 +295,7 @@ void world_delta() {
 	auto facing_retarget = facing_later;
 	facing_retarget.world_revision = 3;
 	facing_retarget.simulation_time = time::time_t::from_double(2.5);
+	facing_retarget.entities.front().position = {3.5, 2, 0};
 	facing_retarget.entities.front().angle = coord::phys_angle_t::from_int(180);
 	facing_retarget.entities.front().facing_keys.clear();
 	auto facing_patch = facing_host.advance(facing_retarget);

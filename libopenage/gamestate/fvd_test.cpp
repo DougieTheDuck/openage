@@ -100,6 +100,24 @@ void fvd_network_builder_count() {
 		TESTEQUALS(count_builders(), admitted - 1);
 		TESTEQUALS(prune_unassigned_fvd_builders(
 			state, admitted, time::TIME_ZERO), size_t{0});
+		// Test that real Position::Segmented future angle jumps are exported
+		// only once per time (rather than both same-time left/right keys).
+		if (admitted == 2) {
+			for (const auto &[id, entity] : state->get_game_entities()) {
+				(void)id;
+				if (entity->get_definition() != "fvd.data.entities.Builder") continue;
+				auto owner = std::dynamic_pointer_cast<component::Ownership>(
+					entity->get_component(component::component_t::OWNERSHIP));
+				if (owner->get_owners().get(time::TIME_ZERO) != player_id_t{2}) continue;
+				auto position = std::dynamic_pointer_cast<component::Position>(
+					entity->get_component(component::component_t::POSITION));
+				position->set_angle(time::time_t::from_int(1),
+				                    coord::phys_angle_t::from_int(90));
+				position->set_angle(time::time_t::from_int(2),
+				                    coord::phys_angle_t::from_int(180));
+				break;
+			}
+		}
 		network::MatchConnectionState connections{8};
 		auto captured = network::capture_fvd_state(
 			state, connections, time::TIME_ZERO, 0, 1, 2);
@@ -112,6 +130,25 @@ void fvd_network_builder_count() {
 		}
 		// Two players -> one Builder, three -> two, eight -> seven.
 		TESTEQUALS(replicated_builders, admitted - 1);
+		if (admitted == 2) {
+			auto builder = std::find_if(captured.entities.begin(), captured.entities.end(),
+				[](const auto &entry) { return entry.owner_id == 2; });
+			TESTEQUALS(builder != captured.entities.end(), true);
+			TESTEQUALS(builder->angle, coord::phys_angle_t::from_int(315));
+			TESTEQUALS(builder->facing_keys.size(), size_t{2});
+			TESTEQUALS(builder->facing_keys[0].time, time::time_t::from_int(1));
+			TESTEQUALS(builder->facing_keys[0].angle, coord::phys_angle_t::from_int(90));
+			TESTEQUALS(builder->facing_keys[1].time, time::time_t::from_int(2));
+			TESTEQUALS(builder->facing_keys[1].angle, coord::phys_angle_t::from_int(180));
+			auto played = network::capture_fvd_state(
+				state, connections, time::time_t::from_double(1.5), 1, 2, 2);
+			auto played_builder = std::find_if(played.entities.begin(), played.entities.end(),
+				[](const auto &entry) { return entry.owner_id == 2; });
+			TESTEQUALS(played_builder != played.entities.end(), true);
+			TESTEQUALS(played_builder->angle, coord::phys_angle_t::from_int(90));
+			TESTEQUALS(played_builder->facing_keys.size(), size_t{1});
+			TESTEQUALS(played_builder->facing_keys[0].time, time::time_t::from_int(2));
+		}
 	}
 }
 
