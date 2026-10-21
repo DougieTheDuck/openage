@@ -264,6 +264,47 @@ void world_delta() {
 	           time::time_t::from_int(3));
 	TESTEQUALS(presented.entities.front().position, (coord::phys3{2, 3.25, 0}));
 
+	// Scheduled facing changes cross time-only deltas without redundant
+	// entity traffic. An unexpected turn must transmit a correction.
+	auto facing_start = curve_start;
+	facing_start.entities.front().angle = coord::phys_angle_t::from_int(315);
+	facing_start.entities.front().facing_keys = {
+		{time::time_t::from_int(2), coord::phys_angle_t::from_int(270)},
+		{time::time_t::from_int(3), coord::phys_angle_t::from_int(90)},
+	};
+	WorldDeltaBaseline facing_host{};
+	facing_host.accept_snapshot(facing_start);
+	auto facing_later = facing_start;
+	facing_later.world_revision = 2;
+	facing_later.simulation_time = time::time_t::from_double(2.25);
+	facing_later.entities.front().position = {3.25, 2, 0};
+	facing_later.entities.front().motion_keys.erase(
+		facing_later.entities.front().motion_keys.begin());
+	facing_later.entities.front().angle = coord::phys_angle_t::from_int(270);
+	facing_later.entities.front().facing_keys.erase(
+		facing_later.entities.front().facing_keys.begin());
+	auto facing_heartbeat = facing_host.advance(facing_later);
+	TESTEQUALS(facing_heartbeat.changed.entities.empty(), true);
+	auto facing_guest = apply_world_delta(
+		facing_start, decode_world_delta(encode_world_delta(facing_heartbeat)));
+	TESTEQUALS(facing_guest.entities.front().angle,
+	           coord::phys_angle_t::from_int(270));
+	TESTEQUALS(facing_guest.entities.front().facing_keys.size(), size_t{1});
+	TESTEQUALS(facing_guest.entities.front().facing_keys.front().angle,
+	           coord::phys_angle_t::from_int(90));
+	auto facing_retarget = facing_later;
+	facing_retarget.world_revision = 3;
+	facing_retarget.simulation_time = time::time_t::from_double(2.5);
+	facing_retarget.entities.front().angle = coord::phys_angle_t::from_int(180);
+	facing_retarget.entities.front().facing_keys.clear();
+	auto facing_patch = facing_host.advance(facing_retarget);
+	TESTEQUALS(facing_patch.changed.entities.size(), size_t{1});
+	facing_guest = apply_world_delta(facing_guest,
+		decode_world_delta(encode_world_delta(facing_patch)));
+	TESTEQUALS(facing_guest.entities.front().angle,
+	           coord::phys_angle_t::from_int(180));
+	TESTEQUALS(facing_guest.entities.front().facing_keys.empty(), true);
+
 	// Even with hundreds of Hunter horses and 2/4/8 player rosters,
 	// an unchanged scheduled route needs no repeated per-horse payload.
 	// These are deterministic packet-size checks, not wall-clock benchmarks.

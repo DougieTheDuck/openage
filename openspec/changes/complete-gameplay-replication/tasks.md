@@ -23,6 +23,15 @@
 - [ ] 1.4 Verify synchronized entity orientation and appropriate sprite
   animation changes/phase using scheduled angle/animation curves, where
   animations exist; remove any guest-only guessed behavior.
+  - [x] 1.4a Capture authoritative sampled facing and bounded future
+    instantaneous turn keys from the simulation's segmented angle curves.
+    Carry them through snapshots, motion-suppressed deltas and guest
+    RenderEntity sprite direction. Add wire order/rejection, timed expiry
+    and retask correction regressions; protocol v11 rejects older peers.
+    **Awaiting Windows/Linux builds and 2/4/8-client visual verification.**
+  - [ ] 1.4b Synchronize animation identity/start phase for idle/move changes
+    (current FVD assets reuse the same idle sprite); verify local/remote
+    facing and animated frames after retask, snapshot and recovery.
 - [x] 1.5a Retain uniquely identified arrow launches for a bounded
   3-second post-impact history; deliver them in normal recipient deltas
   even when the 0.2-second flight ends between captures. Guests dedupe

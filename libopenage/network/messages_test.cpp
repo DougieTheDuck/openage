@@ -224,6 +224,11 @@ void messages() {
 		{time::time_t::from_double(3.75), {11.0, 20.5, 0}},
 		{time::time_t::from_double(4.25), {12.0, 21.0, 0}},
 	};
+	state.entities.front().angle = coord::phys_angle_t::from_int(315);
+	state.entities.front().facing_keys = {
+		{time::time_t::from_double(3.75), coord::phys_angle_t::from_int(270)},
+		{time::time_t::from_double(4.25), coord::phys_angle_t::from_int(180)},
+	};
 	state.reservations = {{{10, 20}, 300}};
 	state.constructions = {{
 		7, 2, 300, {10, 20}, ConstructionPhase::PLANNED,
@@ -253,6 +258,15 @@ void messages() {
 		TESTEQUALS(decoded_state.entities[i].owner_id, state.entities[i].owner_id);
 		TESTEQUALS(decoded_state.entities[i].definition, state.entities[i].definition);
 		TESTEQUALS(decoded_state.entities[i].position, state.entities[i].position);
+		TESTEQUALS(decoded_state.entities[i].angle, state.entities[i].angle);
+		TESTEQUALS(decoded_state.entities[i].facing_keys.size(),
+		           state.entities[i].facing_keys.size());
+		for (size_t key = 0; key < state.entities[i].facing_keys.size(); ++key) {
+			TESTEQUALS(decoded_state.entities[i].facing_keys[key].time,
+			           state.entities[i].facing_keys[key].time);
+			TESTEQUALS(decoded_state.entities[i].facing_keys[key].angle,
+			           state.entities[i].facing_keys[key].angle);
+		}
 		TESTEQUALS(decoded_state.entities[i].motion_keys.size(),
 		           state.entities[i].motion_keys.size());
 		for (size_t key = 0; key < state.entities[i].motion_keys.size(); ++key) {
@@ -317,6 +331,16 @@ void messages() {
 	auto oversized_motion = state;
 	oversized_motion.entities.front().motion_keys.resize(MAX_ENTITY_MOTION_KEYS + 1);
 	TESTTHROWS(encode_world_state(oversized_motion));
+	auto past_facing = state;
+	past_facing.entities.front().facing_keys.front().time = state.simulation_time;
+	TESTTHROWS(encode_world_state(past_facing));
+	auto unordered_facing = state;
+	unordered_facing.entities.front().facing_keys[1].time =
+		unordered_facing.entities.front().facing_keys[0].time;
+	TESTTHROWS(encode_world_state(unordered_facing));
+	auto excessive_facing = state;
+	excessive_facing.entities.front().facing_keys.resize(MAX_ENTITY_FACING_KEYS + 1);
+	TESTTHROWS(encode_world_state(excessive_facing));
 
 	// A timed build uses the authoritative phase interval, not packet arrival.
 	auto building = state.constructions.front();
