@@ -130,17 +130,15 @@ public:
 	/** Validate ownership and the full tower footprint for placement preview. */
 	bool can_place_tower(const std::shared_ptr<GameState> &state,
 	                     player_id_t owner, const std::vector<entity_id_t> &selected,
-	                     const coord::phys3 &position, const time::time_t &time) const;
+	                     const coord::phys3 &position, const time::time_t &time,
+	                     std::optional<entity_id_t> existing_foundation = std::nullopt) const;
 
 	/** Append a construction site for a Builder, reserving the footprint. */
 	bool queue_build(const std::shared_ptr<GameState> &state,
 	                 player_id_t owner, const std::vector<entity_id_t> &selected,
 	                 const coord::phys3 &position, const time::time_t &time);
 
-	/**
-	 * Right-click a foundation owned by this Builder to discard all other
-	 * orders and immediately begin constructing the selected foundation.
-	 */
+	/** Resume an owned orphan foundation or prioritize a queued foundation. */
 	bool prioritize_foundation(const std::shared_ptr<GameState> &state,
 	                           player_id_t owner, const std::vector<entity_id_t> &selected,
 	                           entity_id_t foundation_id, const time::time_t &time);
@@ -273,7 +271,7 @@ private:
 		const std::shared_ptr<GameEntity> &builder,
 		const coord::tile &site, const time::time_t &time) const;
 
-	/** Remove queued foundations and release their footprint reservations. */
+	/** Abandon queued orders and release their reservations, retaining foundations. */
 	void clear_queued_builds(const std::shared_ptr<GameState> &state,
 	                        entity_id_t builder, const time::time_t &time);
 
