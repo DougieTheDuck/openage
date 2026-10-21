@@ -3,6 +3,14 @@
 This directory contains original development graphics for the FVD tower defense prototype.
 The initial set uses a fixed orthographic isometric view, neutral upper-left lighting, transparent sprite backgrounds, and a flat seamless terrain texture.
 
+**Animation prototype:** Builders temporarily use the existing Orc Unarmed directional
+spritesheets (16 angles each) for 16-frame idle and 20-frame walk cycles. The
+original `builder.sprite`, `builder.texture`, and `builder.png` are retained;
+you can restore them in `data/entities.nyan`. The proof-of-concept uses the
+existing images without modifying them or requiring an external graphics tool.
+FVD uses the host-selected Idle/Move animation and simulation-time animation
+start for both local and guest rendering, not guest-estimated velocity.
+
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
 The prompts used for the initial set are recorded in [prompts.md](prompts.md).

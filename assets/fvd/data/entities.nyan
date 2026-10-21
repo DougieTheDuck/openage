@@ -34,7 +34,7 @@ Builder(engine.util.game_entity.GameEntity):
             Animated.animations = {Animation}
 
             Animation(engine.util.graphics.Animation):
-                Animation.sprite = "../../../fvd/graphics/builder.sprite"
+                Animation.sprite = "../../../fvd/graphics/orc_idle.sprite"
 
     Live(engine.ability.type.Live):
         Live.attributes = {HealthSetting}
@@ -49,7 +49,13 @@ Builder(engine.util.game_entity.GameEntity):
         Move.speed = 3.0
         Move.modes = {}
         Move.path_type = fvd.data.terrain.Land
-        Ability.properties = {engine.ability.property.type.Animated: Builder.Idle.Animated}
+        Ability.properties = {engine.ability.property.type.Animated: Animated}
+
+        Animated(engine.ability.property.type.Animated):
+            Animated.animations = {Animation}
+
+            Animation(engine.util.graphics.Animation):
+                Animation.sprite = "../../../fvd/graphics/orc_walk.sprite"
 
     Turn(engine.ability.type.Turn):
         Turn.turn_speed = inf

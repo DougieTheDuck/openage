@@ -189,6 +189,10 @@ void fvd_scenario() {
 	auto tower_graphics = renderer::resources::parser::parse_sprite_file(graphics / "tower.sprite");
 	TESTEQUALS(plains_graphics.get_texture_count(), 1);
 	TESTEQUALS(builder_graphics.get_texture_count(), 1);
+	auto animated_idle = renderer::resources::parser::parse_sprite_file(graphics / "orc_idle.sprite");
+	auto animated_walk = renderer::resources::parser::parse_sprite_file(graphics / "orc_walk.sprite");
+	TESTEQUALS(animated_idle.get_texture_count(), size_t{16});
+	TESTEQUALS(animated_walk.get_texture_count(), size_t{16});
 	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
 	for (const auto &info : {plains_graphics.get_texture(0),

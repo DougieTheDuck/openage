@@ -29,9 +29,14 @@
     RenderEntity sprite direction. Add wire order/rejection, timed expiry
     and retask correction regressions; protocol v11 rejects older peers.
     **Awaiting Windows/Linux builds and 2/4/8-client visual verification.**
-  - [ ] 1.4b Synchronize animation identity/start phase for idle/move changes
-    (current FVD assets reuse the same idle sprite); verify local/remote
-    facing and animated frames after retask, snapshot and recovery.
+  - [x] 1.4b Wire Idle/Move animation identity and authoritative start
+    timestamp through host snapshots and guest deltas, including sprite
+    selection and consistent loop phase after recovery. Demo asset set uses
+    existing 16-angle Orc idle/walk spritesheets as a temporary Builder.
+    **Awaiting compilation and on-screen Windows/Linux verification.**
+  - [ ] 1.4c Validate frame-by-frame parity, proper direction mapping, 2/4/8
+    process animation changes and animation/resource budget on real hardware;
+    extend to Horse-specific artwork, attacks, building and death.
 - [x] 1.5a Retain uniquely identified arrow launches for a bounded
   3-second post-impact history; deliver them in normal recipient deltas
   even when the 0.2-second flight ends between captures. Guests dedupe
