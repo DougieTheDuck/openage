@@ -619,4 +619,6 @@ ShaderProgram prog = = renderer->add_shader({source});
 
 
 ## Thread-safety
-This level might or might not be threadsafe depending on the concrete backend. The OpenGL version is, in typical GL fashion, so not-threadsafe it's almost anti-threadsafe. All code must be executed sequentially on a dedicated window thread, the same one on which the window and renderer were initially created. The plan for the Vulkan version is to make it at least independent of thread-local storage and hopefully completely threadsafe.
+This level might or might not be threadsafe depending on the concrete backend.
+The OpenGL version is not threadsafe, so all code must execute sequentially on the application main thread where the window and renderer were created.
+The plan for the Vulkan version is to make it at least independent of thread-local storage and hopefully completely threadsafe.

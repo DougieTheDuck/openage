@@ -18,6 +18,10 @@ GuiApplication::GuiApplication(std::shared_ptr<GuiApplicationImpl> application) 
 
 GuiApplication::~GuiApplication() = default;
 
+int GuiApplication::run_event_loop(const std::function<bool()> &on_frame) {
+	return this->application->runEventLoop(on_frame);
+}
+
 void GuiApplication::process_events() {
 	this->application->processEvents();
 }

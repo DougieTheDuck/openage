@@ -313,7 +313,7 @@ Item {
 				visible: root.hud !== null && root.hud.killsLabel.length > 0
 				color: "#d6e6db"
 				font.pixelSize: 13
-				text: root.hud.killsLabel + (!root.hud.killsAvailable ? "—" : root.hud.kills)
+				text: root.hud === null ? "" : root.hud.killsLabel + (!root.hud.killsAvailable ? "—" : root.hud.kills)
 			}
 			Text {
 				visible: root.constructionStatus.length > 0

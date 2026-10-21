@@ -53,8 +53,9 @@ The current data flow of openage is just to display the raw simulation data.
 
 ![Engine architecture workflow](images/engine_architecture.svg)
 
-The presenter, simulation, and time subsystems each run in a loop in their own threads.
-They are largely decoupled from each other and only communicate via defined interfaces.
+In graphical runs, the application main thread owns Qt, the presenter, the window, input, and rendering.
+The simulation and time loops run on worker threads and communicate with the presenter only through defined interfaces.
+Headless runs omit the presenter and run the simulation on the calling thread.
 
 Communication between all subsystems forms a larger *main* loop that encompasses everything
 happening in an engine run. It's workflow is roughly like this:

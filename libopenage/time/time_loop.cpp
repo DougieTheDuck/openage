@@ -21,8 +21,7 @@ TimeLoop::TimeLoop(const std::shared_ptr<Clock> clock) :
 	clock{clock} {}
 
 void TimeLoop::run() {
-	this->start();
-	while (this->running) {
+	while (this->running.load()) {
 		this->clock->update_time();
 		if (this->clock->get_state() != ClockState::RUNNING) {
 			std::this_thread::sleep_for(std::chrono::milliseconds{10});
@@ -34,7 +33,7 @@ void TimeLoop::run() {
 void TimeLoop::start() {
 	std::unique_lock lock{this->mutex};
 
-	this->running = true;
+	this->running.store(true);
 
 	if (this->clock->get_state() == ClockState::INIT) {
 		this->clock->start();
@@ -46,9 +45,9 @@ void TimeLoop::start() {
 void TimeLoop::stop() {
 	std::unique_lock lock{this->mutex};
 
-	this->running = false;
-
-	log::log(MSG(info) << "Time loop stopped");
+	if (this->running.exchange(false)) {
+		log::log(MSG(info) << "Time loop stopped");
+	}
 }
 
 const std::shared_ptr<Clock> TimeLoop::get_clock() {

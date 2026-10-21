@@ -2,6 +2,10 @@
 
 **Important Notice**: This document is outdated and subject to change.
 
+Qt application, GUI, window, and rendering objects are created, used, and destroyed on the application main thread.
+Graphical runs use the Qt event loop to dispatch platform events and schedule presenter frames.
+Each presenter frame dispatches queued input before updating presentation state and rendering.
+
 ## Using Qt Creator Integrated Development Environment (IDE)
 
 See [Qt Creator IDE](/doc/ide/qt_creator.md).

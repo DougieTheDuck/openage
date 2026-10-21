@@ -10,6 +10,7 @@
 
 #include "assets/mod_manager.h"
 #include "config.h"
+#include "cvar/cvar.h"
 #include "event/event_loop.h"
 #include "gamestate/api/ability.h"
 #include "gamestate/api/animation.h"
@@ -41,6 +42,7 @@
 #include "gamestate/terrain_factory.h"
 #include "gamestate/terrain_tile.h"
 #include "network/command_bridge.h"
+#include "network/construction_presentation.h"
 #include "network/match_connection_state.h"
 #include "pathfinding/cost_field.h"
 #include "pathfinding/definitions.h"
@@ -53,6 +55,7 @@
 #include "renderer/resources/texture_info.h"
 #include "renderer/stages/world/render_entity.h"
 #include "testing/testing.h"
+#include "time/time_loop.h"
 #include "util/fslike/directory.h"
 #include "util/path.h"
 
@@ -836,8 +839,7 @@ void fvd_hunter_combat() {
 
 	// A separate horse in melee range damages a tower, with armour
 	// reducing but not preventing all damage.
-	auto melee = entities->spawn_game_entity(loop, state, 1, "fvd.data.entities.Horse",
-	                                        {67, 69, 0}, at(33));
+	auto melee = entities->spawn_game_entity(loop, state, 1, "fvd.data.entities.Horse", {67.5, 69.5, 0}, at(33));
 	TESTEQUALS(fvd->issue_attack_move(state, 1, {melee->get_id()},
 	                                  {67, 70, 0}, at(33)), true);
 	fvd->combat_tick(state, at(33));
@@ -1293,6 +1295,63 @@ void fvd_hunter_focus_attack() {
 		at(28), "fvd.data.entities.Health")->get(at(28)), other_hp);
 }
 
+void fvd_presentation_snapshot() {
+	auto root = util::Path{
+		std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto cvars = std::make_shared<cvar::CVarManager>(root);
+	auto clock = std::make_shared<time::TimeLoop>();
+	GameSimulation simulation{root, cvars, clock};
+	simulation.set_modpacks({"fvd"});
+	simulation.initialize();
+	auto initial = simulation.get_fvd_presentation_state();
+	TESTEQUALS(initial != nullptr, true);
+	TESTEQUALS(initial->entities.size(), size_t{7});
+	TESTEQUALS(network::make_construction_presentation(*initial).sites.empty(), true);
+	auto builder = std::find_if(
+		initial->entities.begin(), initial->entities.end(), [](const auto &entity) { return entity.owner_id == 2; });
+	TESTEQUALS(builder != initial->entities.end(), true);
+
+	auto state = simulation.get_game()->get_state();
+	auto fvd = state->get_fvd();
+	network::AuthenticatedCommand command{};
+	command.identity.player_id = 2;
+	command.intent.command_id = 1;
+	command.intent.kind = network::CommandKind::BUILD_TOWER;
+	command.intent.entity_ids = {builder->entity_id};
+	command.intent.target = {61, 66, 0};
+	bool accepted = false;
+	auto on_build = [&](bool result) {
+		accepted = result;
+		TESTEQUALS(fvd->queue_build(state, 2, {builder->entity_id}, {57, 66, 0}, time::TIME_ZERO), true);
+		TESTEQUALS(fvd->queue_build(state, 2, {builder->entity_id}, {54, 66, 0}, time::TIME_ZERO), true);
+		// A reader during command execution keeps the last completed world.
+		TESTEQUALS(simulation.get_fvd_presentation_state() == initial, true);
+		simulation.stop();
+	};
+	TESTEQUALS(simulation.submit_network_command(command, on_build), true);
+	simulation.run();
+	TESTEQUALS(accepted, true);
+	auto building = simulation.get_fvd_presentation_state();
+	TESTEQUALS(building != nullptr, true);
+	TESTEQUALS(building == initial, false);
+	const auto view = network::make_construction_presentation(*building);
+	TESTEQUALS(view.sites.size(), size_t{3});
+	TESTEQUALS(std::count_if(view.sites.begin(), view.sites.end(), [](const auto &site) {
+				   return site.phase == network::SitePresentationPhase::BUILDING;
+			   }),
+	           1);
+	TESTEQUALS(std::count_if(view.sites.begin(), view.sites.end(), [](const auto &site) {
+				   return site.phase == network::SitePresentationPhase::QUEUED;
+			   }),
+	           2);
+	// Replacement and cancellation cannot change a snapshot held by the HUD.
+	TESTEQUALS(network::make_construction_presentation(*initial).sites.empty(), true);
+	TESTEQUALS(fvd->cancel_build(state, builder->entity_id, time::TIME_ZERO), true);
+	const auto canceled = network::capture_fvd_presentation_state(state, time::TIME_ZERO);
+	TESTEQUALS(network::make_construction_presentation(canceled).sites.empty(), true);
+	TESTEQUALS(network::make_construction_presentation(*building).sites.size(), size_t{3});
+}
+
 void fvd_build_queue() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
@@ -1340,9 +1399,18 @@ void fvd_build_queue() {
 	TESTEQUALS(fvd->is_tile_reserved({54, 66}), true);
 	TESTEQUALS(queue({57, 66, 0}, 0), false);
 	TESTEQUALS(fvd->can_place_tower(state, 2, selected, {57, 66, 0}, at(0)), false);
+	const auto queued_world = network::capture_fvd_presentation_state(state, at(0));
+	TESTEQUALS(network::make_construction_presentation(queued_world).sites.size(), size_t{3});
 	loop->reach_time(at(0.1), state);
 	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{1});
 	TESTEQUALS(fvd->get_build_order(*builder)->get_target(), (coord::tile{57, 66}));
+	const auto advanced_world = network::capture_fvd_presentation_state(state, at(0.1));
+	const auto advanced_view = network::make_construction_presentation(advanced_world);
+	TESTEQUALS(advanced_view.sites.size(), size_t{3});
+	TESTEQUALS(std::count_if(advanced_view.sites.begin(), advanced_view.sites.end(), [](const auto &site) {
+				   return site.phase == network::SitePresentationPhase::COMPLETE;
+			   }),
+	           1);
 	loop->reach_time(at(40), state);
 	TESTEQUALS(fvd->get_build_order(*builder) == nullptr, true);
 	TESTEQUALS(fvd->get_queued_build_count(*builder), size_t{0});
@@ -1353,6 +1421,15 @@ void fvd_build_queue() {
 		}
 	}
 	TESTEQUALS(towers, size_t{3});
+	const auto completed_world = network::capture_fvd_presentation_state(state, at(40));
+	const auto completed_view = network::make_construction_presentation(completed_world);
+	TESTEQUALS(completed_view.sites.size(), size_t{3});
+	TESTEQUALS(completed_view.reservations.empty(), true);
+	TESTEQUALS(std::all_of(completed_view.sites.begin(), completed_view.sites.end(), [](const auto &site) {
+				   return site.phase == network::SitePresentationPhase::COMPLETE;
+			   }),
+	           true);
+	TESTEQUALS(network::make_construction_presentation(queued_world).sites.size(), size_t{3});
 	TESTEQUALS(fvd->is_tile_reserved({57, 66}), false);
 	TESTEQUALS(fvd->is_tile_reserved({54, 66}), false);
 	TESTEQUALS(queue({45, 66, 0}, 41), true);

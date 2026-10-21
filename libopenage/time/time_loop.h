@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <shared_mutex>
 
@@ -26,7 +27,7 @@ public:
 	~TimeLoop() = default;
 
 	/**
-	 * Run the time loop.
+	 * Run the time loop after start() has activated it.
 	 *
 	 * Updates the clock and dispatches events that happened.
 	 */
@@ -53,7 +54,7 @@ private:
 	/**
 	 * State of the time loop.
 	 */
-	bool running;
+	std::atomic<bool> running;
 
 	/**
 	 * Manage time and speed inside the simulation.

@@ -5,17 +5,18 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "coord/pixel.h"
 #include "gamestate/types.h"
 #include "network/messages.h"
 #include "presenter/guest_clock.h"
 #include "presenter/hud_mouse_capture.h"
-#include <vector>
 
 #include "renderer/window.h"
 #include "util/path.h"
@@ -115,8 +116,10 @@ public:
 	 * Start the presenter and initialize subsystems.
 	 *
 	 * @param window_settings The settings to customize the display window (e.g. size, display mode, vsync).
+	 * @param on_initialized Callback invoked after the renderer is attached and before the event loop starts.
 	 */
-	void run(const renderer::window_settings window_settings = {});
+	void run(const renderer::window_settings window_settings = {},
+	         const std::function<void()> &on_initialized = {});
 
 	/**
 	 * Request that the presenter exits its draw loop.

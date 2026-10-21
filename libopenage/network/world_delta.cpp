@@ -42,8 +42,7 @@ coord::phys3 position_at(const EntityState &entity,
 		if (now <= key.time) {
 			const auto span = key.time - from_time;
 			if (span <= time::TIME_ZERO) return key.position;
-			const auto fraction = (now - from_time).to_double() / span.to_double();
-			return from + (key.position - from) * fraction;
+			return from + (key.position - from) / span * (now - from_time);
 		}
 		from = key.position;
 		from_time = key.time;

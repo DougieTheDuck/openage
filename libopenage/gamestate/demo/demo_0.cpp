@@ -16,7 +16,7 @@ void simulation_demo_0(const util::Path &path) {
 
 	simulation->set_modpacks({"engine"});
 
-	simulation->start();
+	simulation->initialize();
 }
 
 } // namespace openage::gamestate::tests

@@ -6,6 +6,7 @@
 #include <locale>
 
 #include <QSurfaceFormat>
+#include <QTimer>
 #include <QtDebug>
 #include <QtGlobal>
 
@@ -31,6 +32,22 @@ std::shared_ptr<GuiApplicationImpl> GuiApplicationImpl::get() {
 
 GuiApplicationImpl::~GuiApplicationImpl() {
 	assert(std::this_thread::get_id() == this->owner);
+}
+
+int GuiApplicationImpl::runEventLoop(const std::function<bool()> &on_frame) {
+	assert(std::this_thread::get_id() == this->owner);
+
+	QTimer frame_timer;
+	frame_timer.setTimerType(Qt::PreciseTimer);
+	frame_timer.setInterval(0);
+	QObject::connect(&frame_timer, &QTimer::timeout, &this->app, [this, &on_frame]() {
+		if (not on_frame()) {
+			this->app.quit();
+		}
+	});
+	frame_timer.start();
+
+	return this->app.exec();
 }
 
 void GuiApplicationImpl::processEvents() {

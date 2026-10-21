@@ -146,10 +146,22 @@ public:
 	virtual void set_size(size_t width, size_t height) = 0;
 
 	/**
-	 * Polls for window events, calls callbacks for these events, swaps front and back framebuffers
-	 * to present graphics onto screen. This has to be called at the end of every graphics frame.
+	 * Dispatch queued window events to their registered callbacks.
 	 */
-	virtual void update() = 0;
+	void process_events();
+
+	/**
+	 * Present rendered graphics on screen.
+	 */
+	virtual void present() = 0;
+
+	/**
+	 * Dispatch queued events and present the rendered frame.
+	 *
+	 * This compatibility wrapper is intended for simple demos.
+	 * Latency-sensitive loops should call process_events() before updating the frame and present() afterwards.
+	 */
+	void update();
 
 	/**
 	 * Creates a renderer which uses the window's graphics API and targets the window.

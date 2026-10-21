@@ -2,14 +2,18 @@
 
 #include "engine.h"
 
-#include "log/log.h"
-#include "log/message.h"
+#include <condition_variable>
+#include <exception>
+#include <future>
+#include <mutex>
 
 #include "cvar/cvar.h"
 #include "gamestate/simulation.h"
+#include "log/log.h"
+#include "log/message.h"
 #include "presenter/presenter.h"
-#include "time/time_loop.h"
 #include "time/clock.h"
+#include "time/time_loop.h"
 
 
 namespace openage::engine {
@@ -20,9 +24,10 @@ Engine::Engine(mode mode,
                const renderer::window_settings &window_settings,
                bool fvd_lobby_enabled,
                std::chrono::milliseconds network_update_interval) :
-	running{true},
+	running{false},
 	run_mode{mode},
 	root_dir{root_dir},
+	window_settings{window_settings},
 	threads{} {
 	log::log(INFO
 	         << "launching engine with root directory"
@@ -39,7 +44,6 @@ Engine::Engine(mode mode,
 	}
 
 	// game simulation
-	// this is run in the main thread
 	this->simulation = std::make_shared<gamestate::GameSimulation>(this->root_dir,
 	                                                               this->cvar_manager,
 	                                                               this->time_loop);
@@ -52,52 +56,141 @@ Engine::Engine(mode mode,
 		                                                         this->time_loop);
 		this->presenter->set_fvd_lobby_enabled(fvd_lobby_enabled, network_update_interval);
 	}
-
-	// spawn thread to run time loop
-	this->threads.emplace_back([&]() {
-		this->time_loop->run();
-
-		this->time_loop.reset();
-	});
-
-	// if presenter is used, run it in a separate thread
-	if (this->run_mode == mode::FULL) {
-		this->threads.emplace_back([&]() {
-			this->presenter->run(window_settings);
-
-			// Make sure that the presenter gets destructed in the same thread
-			// otherwise OpenGL complains about missing contexts
-			this->presenter.reset();
-			this->running = false;
-		});
-	}
-
-	log::log(INFO << "Using " << this->threads.size() + 1 << " threads "
-	              << "(" << std::jthread::hardware_concurrency() << " available)");
 }
 
 void Engine::loop() {
-	try {
-		// Run the main game simulation loop:
-		this->simulation->run();
-	}
-	catch (...) {
-		// Background loops must exit before the exception can cross the Cython
-		// boundary and report the startup failure to the user.
+	this->running = true;
+
+	std::mutex startup_mutex;
+	std::condition_variable startup_condition;
+	bool presenter_initialized = false;
+	bool startup_aborted = false;
+
+	std::mutex failure_mutex;
+	std::exception_ptr worker_failure{};
+	auto get_worker_failure = [&]() {
+		std::lock_guard lock{failure_mutex};
+		return worker_failure;
+	};
+	auto record_worker_failure = [&](std::exception_ptr failure) {
+		{
+			std::lock_guard lock{failure_mutex};
+			if (not worker_failure) {
+				worker_failure = failure;
+			}
+		}
+		{
+			std::lock_guard lock{startup_mutex};
+			startup_aborted = true;
+		}
+		startup_condition.notify_all();
+
 		if (this->presenter) {
 			this->presenter->stop();
 		}
 		this->simulation->stop();
 		this->time_loop->stop();
-		this->threads.clear();
+	};
+	auto stop_subsystems = [&]() {
+		{
+			std::lock_guard lock{startup_mutex};
+			startup_aborted = true;
+		}
+		startup_condition.notify_all();
 
-		throw;
+		if (this->presenter) {
+			this->presenter->stop();
+		}
+		this->simulation->stop();
+		this->time_loop->stop();
+	};
+
+	std::exception_ptr main_failure{};
+	try {
+		this->time_loop->start();
+		this->threads.emplace_back([&]() {
+			try {
+				this->time_loop->run();
+			}
+			catch (...) {
+				record_worker_failure(std::current_exception());
+			}
+		});
+
+		if (this->run_mode == mode::FULL) {
+			std::promise<void> simulation_initialized;
+			auto initialized = simulation_initialized.get_future();
+			this->threads.emplace_back([&, initialized_signal = std::move(simulation_initialized)]() mutable {
+				bool initialization_reported = false;
+				try {
+					this->simulation->initialize();
+					initialized_signal.set_value();
+					initialization_reported = true;
+
+					std::unique_lock lock{startup_mutex};
+					startup_condition.wait(lock, [&]() {
+						return presenter_initialized or startup_aborted;
+					});
+					if (startup_aborted) {
+						return;
+					}
+					lock.unlock();
+
+					this->simulation->run();
+				}
+				catch (...) {
+					auto failure = std::current_exception();
+					if (not initialization_reported) {
+						initialized_signal.set_exception(failure);
+					}
+					record_worker_failure(failure);
+				}
+			});
+
+			initialized.get();
+			if (auto failure = get_worker_failure()) {
+				std::rethrow_exception(failure);
+			}
+
+			log::log(INFO << "Using " << this->threads.size() + 1 << " threads "
+			              << "(" << std::jthread::hardware_concurrency() << " available)");
+			this->presenter->run(this->window_settings, [&]() {
+				{
+					std::lock_guard lock{startup_mutex};
+					presenter_initialized = true;
+				}
+				startup_condition.notify_all();
+			});
+		}
+		else {
+			this->simulation->initialize();
+			if (auto failure = get_worker_failure()) {
+				std::rethrow_exception(failure);
+			}
+
+			log::log(INFO << "Using " << this->threads.size() + 1 << " threads "
+			              << "(" << std::jthread::hardware_concurrency() << " available)");
+			this->simulation->run();
+		}
+	}
+	catch (...) {
+		main_failure = std::current_exception();
 	}
 
-	// After stopping, clean up the simulation
+	stop_subsystems();
+	this->threads.clear();
+
+	// Qt, the window, and OpenGL resources must be destroyed on the main thread.
+	this->presenter.reset();
 	this->simulation.reset();
-	if (this->run_mode != mode::FULL) {
-		this->running = false;
+	this->time_loop.reset();
+	this->running = false;
+
+	if (main_failure) {
+		std::rethrow_exception(main_failure);
+	}
+	if (auto failure = get_worker_failure()) {
+		std::rethrow_exception(failure);
 	}
 }
 

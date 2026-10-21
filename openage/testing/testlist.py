@@ -193,6 +193,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_presentation_snapshot",
+        "FVD immutable HUD snapshots across construction transitions",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_build_queue",
         "FVD FIFO tower construction and reserved queued sites",
         lambda env: env["has_assets"],

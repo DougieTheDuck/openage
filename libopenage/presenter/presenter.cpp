@@ -5,6 +5,7 @@
 #include <eigen3/Eigen/Dense>
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <QEvent>
 #include <QMouseEvent>
 #include <QVariantList>
@@ -24,9 +25,6 @@
 #include "gamestate/api/animation.h"
 #include "gamestate/api/property.h"
 #include "gamestate/api/types.h"
-#include "gamestate/component/internal/ownership.h"
-#include "gamestate/component/internal/position.h"
-#include "gamestate/component/types.h"
 #include "gamestate/fvd.h"
 #include "gamestate/game.h"
 #include "gamestate/game_entity.h"
@@ -104,46 +102,62 @@ void Presenter::set_fvd_lobby_enabled(bool enabled, std::chrono::milliseconds up
 }
 
 
-void Presenter::run(const renderer::window_settings window_settings) {
+void Presenter::run(const renderer::window_settings window_settings,
+                    const std::function<void()> &on_initialized) {
 	log::log(INFO << "Presenter: Launching subsystems...");
 
 	this->init_graphics(window_settings);
 
 	this->init_input();
 
-	while (not this->stop_requested and not this->window->should_close()) {
-		{
-			util::StallProfiler profile{"presenter.process_events"};
-			this->gui_app->process_events();
-		}
-
-		{
-			util::StallProfiler profile{"presenter.render"};
-			this->render();
-		}
-
-		{
-			util::StallProfiler profile{"presenter.check_renderer_error"};
-			this->renderer->check_error();
-		}
-
-		{
-			util::StallProfiler profile{"presenter.window_update"};
-			this->window->update();
-		}
+	if (on_initialized) {
+		on_initialized();
 	}
+
+	std::exception_ptr frame_error{};
+	this->gui_app->run_event_loop([this, &frame_error]() {
+		if (this->stop_requested) {
+			return false;
+		}
+
+		try {
+			{
+				util::StallProfiler profile{"presenter.process_input"};
+				this->window->process_events();
+			}
+			if (this->window->should_close()) {
+				return false;
+			}
+
+			{
+				util::StallProfiler profile{"presenter.render"};
+				this->render();
+			}
+
+			{
+				util::StallProfiler profile{"presenter.check_renderer_error"};
+				this->renderer->check_error();
+			}
+
+			{
+				util::StallProfiler profile{"presenter.window_present"};
+				this->window->present();
+			}
+		}
+		catch (...) {
+			frame_error = std::current_exception();
+			return false;
+		}
+
+		return true;
+	});
 
 	log::log(MSG(info) << "Presenter: Draw loop exited");
-
-	if (this->simulation) {
-		this->simulation->stop();
-	}
-
-	if (this->time_loop) {
-		this->time_loop->stop();
-	}
-
 	this->window->close();
+
+	if (frame_error) {
+		std::rethrow_exception(frame_error);
+	}
 }
 
 void Presenter::stop() {
@@ -1221,6 +1235,9 @@ void Presenter::render() {
 			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 			if (fvd) {
 				auto now = this->time_loop->get_clock()->get_time();
+				auto replica_for_hud = this->fvd_replication ? this->fvd_replication->get_world_state() : std::nullopt;
+				const auto local_hud = this->fvd_replication ? nullptr : this->simulation->get_fvd_presentation_state();
+				const network::WorldState *construction_world = replica_for_hud ? &*replica_for_hud : local_hud.get();
 				std::vector<gamestate::FVD::ArrowTrail> arrows{};
 				if (this->fvd_replication) {
 					// Replicate each launch once. The guest animates the flight and
@@ -1340,39 +1357,28 @@ void Presenter::render() {
 				if (this->game_controller->is_tower_placement_active()
 				    and controlled >= 2 and builder
 				    and this->placement_cursor and selected.ids.size() == 1) {
-					auto state = this->simulation->get_game()->get_state();
 					auto mouse = this->placement_cursor->to_phys3(this->camera);
 					auto site = mouse.to_tile();
-					auto replica = this->fvd_replication
-						? this->fvd_replication->get_world_state() : std::nullopt;
-					if (replica) {
+					if (construction_world) {
 						// Cosmetic preview against the latest authoritative
 						// occupied/reserved cells. The host still makes the
 						// final decision when the build request arrives.
-						valid = true;
+						valid = std::any_of(construction_world->entities.begin(),
+						                    construction_world->entities.end(),
+						                    [&](const network::EntityState &entry) {
+												return entry.entity_id == selected.ids.front()
+							                           and entry.owner_id == controlled
+							                           and entry.definition == "fvd.data.entities.Builder";
+											});
 						for (const auto &tile : fvd->get_tower_footprint(site)) {
 							if (tile.ne < 0 or tile.se < 0
-							    or tile.ne >= replica->map_size
-							    or tile.se >= replica->map_size
-							    or std::any_of(replica->reservations.begin(),
-							                   replica->reservations.end(),
-							                   [&](const network::TileReservation &reserved) {
-								                   return reserved.tile == tile;
-							                   })
-							    or std::any_of(replica->entities.begin(),
-							                   replica->entities.end(),
-							                   [&](const network::EntityState &entry) {
-								                   return entry.position.to_tile() == tile;
-							                   })) {
+							    or tile.ne >= construction_world->map_size
+							    or tile.se >= construction_world->map_size
+							    or std::any_of(construction_world->reservations.begin(), construction_world->reservations.end(), [&](const network::TileReservation &reserved) { return reserved.tile == tile; }) or std::any_of(construction_world->entities.begin(), construction_world->entities.end(), [&](const network::EntityState &entry) { return entry.position.to_tile() == tile; })) {
 								valid = false;
 								break;
 							}
 						}
-					}
-					else {
-						valid = fvd->can_place_tower(
-							state, static_cast<gamestate::player_id_t>(controlled),
-							selected.ids, mouse, now);
 					}
 					for (const auto &tile : fvd->get_tower_footprint(site)) {
 						const auto a = project_tile(tile.ne, tile.se);
@@ -1391,49 +1397,10 @@ void Presenter::render() {
 					this->fvd_hud_state->insert("placementFootprint", footprint);
 				}
 				this->fvd_hud_state->insert("placementValid", valid);
-				auto replica_for_hud = this->fvd_replication
-					? this->fvd_replication->get_world_state() : std::nullopt;
 				// Both the Hunter and every Builder see the same authoritative
-				// world sites. Host and solo read live simulation records; guests
-				// use only accepted replication, never their paused local world.
+				// world sites. Local snapshots and guest replication each contain
+				// a complete construction transition from the simulation thread.
 				network::ConstructionPresentation construction_view{};
-				std::optional<network::WorldState> host_construction_world{};
-				const network::WorldState *construction_world = replica_for_hud
-					? &*replica_for_hud : nullptr;
-				if (not construction_world and not this->fvd_replication) {
-					host_construction_world.emplace();
-					auto &host_world = *host_construction_world;
-					auto game_state = this->simulation->get_game()->get_state();
-					for (const auto &[id, entity] : game_state->get_game_entities()) {
-						const auto &definition = entity->get_definition();
-						if (definition != "fvd.data.entities.Builder"
-						    and definition != "fvd.data.entities.Foundation"
-						    and definition != "fvd.data.entities.Tower") continue;
-						auto position = std::dynamic_pointer_cast<gamestate::component::Position>(
-							entity->get_component(gamestate::component::component_t::POSITION));
-						auto ownership = std::dynamic_pointer_cast<gamestate::component::Ownership>(
-							entity->get_component(gamestate::component::component_t::OWNERSHIP));
-						if (not position or not ownership) {
-							throw Error{MSG(err) << "FVD construction marker lacks game components"};
-						}
-						host_world.entities.push_back({
-							id, ownership->get_owners().get(now), definition,
-							position->get_positions().get(now)});
-					}
-					for (const auto &reservation : fvd->get_reserved_tiles()) {
-						host_world.reservations.push_back({
-							reservation.tile, reservation.builder_id});
-					}
-					for (const auto &order : fvd->get_construction_state()) {
-						host_world.constructions.push_back({
-							order.order_id, order.owner, order.builder_id, order.target,
-							order.phase == gamestate::FVDConstructionPhase::PLANNED
-								? network::ConstructionPhase::PLANNED
-								: network::ConstructionPhase::UNDER_CONSTRUCTION,
-							order.phase_end_time, order.phase_start_time, order.site_entity_id});
-					}
-					construction_world = &host_world;
-				}
 				if (construction_world) {
 					construction_view = network::make_construction_presentation(*construction_world);
 				}
@@ -1491,14 +1458,14 @@ void Presenter::render() {
 				int construction_percent = -1;
 				int queued_towers = 0;
 				if (builder and controlled >= 2 and selected.ids.size() == 1) {
-					if (replica_for_hud) {
+					if (construction_world) {
 						auto builder_id = selected.ids.front();
 						for (const auto &site : construction_view.sites) {
 							if (site.phase == network::SitePresentationPhase::QUEUED
 							    and site.builder_id == builder_id
 							    and site.owner_id == controlled) ++queued_towers;
 						}
-						for (const auto &order : replica_for_hud->constructions) {
+						for (const auto &order : construction_world->constructions) {
 							if (order.builder_id != builder_id
 							    or order.owner_id != controlled) continue;
 							if (order.phase == network::ConstructionPhase::PLANNED) {
@@ -1506,28 +1473,7 @@ void Presenter::render() {
 									construction_status = QString{"Walking to tower site"};
 							}
 							else {
-								construction_percent = order.progress_percent(*guest_time);
-								construction_status = QString{"Building: %1%"}
-									.arg(construction_percent);
-							}
-						}
-					}
-					else {
-						queued_towers = static_cast<int>(
-							fvd->get_queued_build_count(selected.ids.front()));
-						const auto orders = fvd->get_construction_state();
-						const auto current = std::find_if(
-							orders.begin(), orders.end(),
-							[&](const auto &order) {
-								return order.builder_id == selected.ids.front()
-								       and order.owner == controlled;
-							});
-						if (current != orders.end()) {
-							if (current->phase == gamestate::FVDConstructionPhase::PLANNED) {
-								construction_status = QString{"Walking to tower site"};
-							}
-							else {
-								construction_percent = current->progress_percent(now);
+								construction_percent = order.progress_percent(now);
 								construction_status = QString{"Building: %1%"}
 									.arg(construction_percent);
 							}

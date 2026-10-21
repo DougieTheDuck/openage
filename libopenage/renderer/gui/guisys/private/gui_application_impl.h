@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <thread>
 
@@ -10,15 +11,15 @@
 namespace qtgui {
 
 /**
- * Houses gui logic event queue.
- *
- * To launch it in a dedicated thread, use qtgui::GuiDedicatedThread instead.
+ * Houses the GUI logic event queue on the application main thread.
  */
 class GuiApplicationImpl {
 public:
 	static std::shared_ptr<GuiApplicationImpl> get();
 
 	~GuiApplicationImpl();
+
+	int runEventLoop(const std::function<bool()> &on_frame);
 
 	void processEvents();
 

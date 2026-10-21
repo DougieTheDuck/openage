@@ -99,8 +99,7 @@ public:
 	void loop();
 
 	/**
-	 * current simulation state variable.
-	 * to be set to false to stop the simulation loop.
+	 * Whether the engine loop is active.
 	 */
 	bool running;
 
@@ -114,6 +113,11 @@ private:
 	 * openage root directory.
 	 */
 	util::Path root_dir;
+
+	/**
+	 * Settings for the window created on the application main thread.
+	 */
+	renderer::window_settings window_settings;
 
 	/**
 	 * The threads used by the engine.

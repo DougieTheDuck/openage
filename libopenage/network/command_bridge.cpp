@@ -124,13 +124,9 @@ void submit_authenticated_command(
 		std::move(result_callback));
 }
 
-WorldState capture_fvd_state(
+WorldState capture_fvd_presentation_state(
 	const std::shared_ptr<gamestate::GameState> &state,
-	const MatchConnectionState &connections,
-	const time::time_t &time,
-	uint64_t base_revision,
-	uint64_t world_revision,
-	gamestate::player_id_t recipient) {
+	const time::time_t &time) {
 	auto fvd = state->get_fvd();
 	if (not fvd) {
 		throw Error{MSG(err) << "FVD world replication requires an FVD scenario"};
@@ -138,29 +134,9 @@ WorldState capture_fvd_state(
 	if (fvd->get_map_size() > std::numeric_limits<uint32_t>::max()) {
 		throw Error{MSG(err) << "FVD map is too large for network replication"};
 	}
-	if (recipient == 0 or recipient > fvd->get_player_count()) {
-		throw Error{MSG(err) << "FVD world replication requires a playable recipient"};
-	}
-	if (connections.get_player_count() != fvd->get_player_count()) {
-		throw Error{MSG(err) << "FVD connection state does not match the playable player count"};
-	}
-
 	WorldState result{};
-	result.base_revision = base_revision;
-	result.world_revision = world_revision;
 	result.simulation_time = time;
 	result.map_size = static_cast<uint32_t>(fvd->get_map_size());
-	result.local_player_id = recipient;
-	result.local_kill_count = fvd->get_kills(recipient);
-	result.players.reserve(fvd->get_player_count());
-	for (gamestate::player_id_t player_id = 1;
-	     player_id <= fvd->get_player_count(); ++player_id) {
-		result.players.push_back({
-			player_id,
-			player_id == 1 ? PlayerRole::HUNTER : PlayerRole::BUILDER,
-			connections.is_connected(player_id),
-		});
-	}
 
 	std::vector<gamestate::entity_id_t> entity_ids{};
 	entity_ids.reserve(state->get_game_entities().size());
@@ -185,13 +161,64 @@ WorldState capture_fvd_state(
 			throw Error{MSG(err) << "Game entity " << entity_id
 			                     << " has invalid replicated FVD components"};
 		}
-		auto health = entity_health(entity, time);
-		EntityState entity_state{
+		result.entities.push_back({
 			entity_id,
 			ownership->get_owners().get(time),
 			entity->get_definition(),
 			position->get_positions().get(time),
-		};
+		});
+	}
+	for (const auto &reservation : fvd->get_reserved_tiles()) {
+		result.reservations.push_back({reservation.tile, reservation.builder_id});
+	}
+	for (const auto &construction : fvd->get_construction_state()) {
+		result.constructions.push_back({
+			construction.order_id,
+			construction.owner,
+			construction.builder_id,
+			construction.target,
+			construction.phase == gamestate::FVDConstructionPhase::PLANNED ? ConstructionPhase::PLANNED : ConstructionPhase::UNDER_CONSTRUCTION,
+			construction.phase_end_time,
+			construction.phase_start_time,
+			construction.site_entity_id,
+		});
+	}
+	return result;
+}
+
+WorldState capture_fvd_state(
+	const std::shared_ptr<gamestate::GameState> &state,
+	const MatchConnectionState &connections,
+	const time::time_t &time,
+	uint64_t base_revision,
+	uint64_t world_revision,
+	gamestate::player_id_t recipient) {
+	auto result = capture_fvd_presentation_state(state, time);
+	auto fvd = state->get_fvd();
+	if (recipient == 0 or recipient > fvd->get_player_count()) {
+		throw Error{MSG(err) << "FVD world replication requires a playable recipient"};
+	}
+	if (connections.get_player_count() != fvd->get_player_count()) {
+		throw Error{MSG(err) << "FVD connection state does not match the playable player count"};
+	}
+	result.base_revision = base_revision;
+	result.world_revision = world_revision;
+	result.local_player_id = recipient;
+	result.local_kill_count = fvd->get_kills(recipient);
+	result.players.reserve(fvd->get_player_count());
+	for (gamestate::player_id_t player_id = 1;
+	     player_id <= fvd->get_player_count();
+	     ++player_id) {
+		result.players.push_back({
+			player_id,
+			player_id == 1 ? PlayerRole::HUNTER : PlayerRole::BUILDER,
+			connections.is_connected(player_id),
+		});
+	}
+	for (auto &entity_state : result.entities) {
+		auto entity = state->get_game_entity(entity_state.entity_id);
+		auto position = std::dynamic_pointer_cast<gamestate::component::Position>(
+			entity->get_component(gamestate::component::component_t::POSITION));
 		// Position curves are calculated on the simulation thread already:
 		// copy only upcoming segments, never past history. Idle entities
 		// naturally emit zero future keys. An update can replace this plan
@@ -205,32 +232,15 @@ WorldState capture_fvd_state(
 			const auto &key = positions.get(index);
 			entity_state.motion_keys.push_back({key.time(), key.val()});
 		}
+		auto health = entity_health(entity, time);
 		if (health) {
 			entity_state.health = health->first;
 			entity_state.maximum_health = health->second;
 		}
 		if (entity_state.definition == "fvd.data.entities.Tower"
 		    and entity_state.owner_id == recipient) {
-			entity_state.tower_kills = fvd->get_tower_kills(entity_id, recipient);
+			entity_state.tower_kills = fvd->get_tower_kills(entity_state.entity_id, recipient);
 		}
-		result.entities.push_back(std::move(entity_state));
-	}
-	for (const auto &reservation : fvd->get_reserved_tiles()) {
-		result.reservations.push_back({reservation.tile, reservation.builder_id});
-	}
-	for (const auto &construction : fvd->get_construction_state()) {
-		result.constructions.push_back({
-			construction.order_id,
-			construction.owner,
-			construction.builder_id,
-			construction.target,
-			construction.phase == gamestate::FVDConstructionPhase::PLANNED
-				? ConstructionPhase::PLANNED
-				: ConstructionPhase::UNDER_CONSTRUCTION,
-			construction.phase_end_time,
-			construction.phase_start_time,
-			construction.site_entity_id,
-		});
 	}
 	for (const auto &order : fvd->get_attack_order_state()) {
 		result.attack_orders.push_back({

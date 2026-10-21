@@ -418,7 +418,9 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		wounded.health.has_value() or TESTFAIL;
 		TESTEQUALS(*wounded.health,
 		           *spawned_victim.health - state->get_fvd()->get_tower_damage());
-		impacted.arrows.empty() or TESTFAIL;
+		TESTEQUALS(impacted.arrows.size(), size_t{1});
+		TESTEQUALS(arrow_visible_at(impacted.arrows.front(), first_arrow->impact_time),
+		           false);
 		TESTEQUALS(impacted.local_kill_count, uint64_t{0});
 		connection.send_frame(session.make_frame(
 			MessageType::WORLD_DELTA,
@@ -438,7 +440,8 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			auto arrow = std::find_if(
 				arrows.begin(), arrows.end(),
 				[&](const auto &candidate) {
-					return candidate.target_id == victim->get_id();
+					return candidate.target_id == victim->get_id()
+					    and candidate.launch_time == next_launch;
 				});
 			arrow != arrows.end() or TESTFAIL;
 			loop->reach_time(arrow->impact_time, state);
@@ -841,7 +844,10 @@ void run_guest(uint16_t port) {
 	auto impacted = replication.get_world_state().value();
 	TESTEQUALS(impacted_patch.changed.base_revision, uint64_t{6});
 	TESTEQUALS(impacted.world_revision, uint64_t{7});
-	impacted.arrows.empty() or TESTFAIL;
+	TESTEQUALS(impacted.arrows.size(), size_t{1});
+	TESTEQUALS(arrow_visible_at(impacted.arrows.front(),
+	                           impacted.simulation_time),
+	           false);
 	const auto &wounded = find_entity(impacted, victim_id);
 	wounded.health.has_value() or TESTFAIL;
 	wounded.maximum_health.has_value() or TESTFAIL;

@@ -33,7 +33,7 @@ public:
 
 	void set_size(size_t width, size_t height) override;
 
-	void update() override;
+	void present() override;
 
 	std::shared_ptr<Renderer> make_renderer() override;
 

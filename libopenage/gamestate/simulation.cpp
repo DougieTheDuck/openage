@@ -84,8 +84,16 @@ GameSimulation::GameSimulation(const util::Path &root_dir,
 
 
 void GameSimulation::run() {
-	this->start();
-	while (this->running) {
+	{
+		std::shared_lock lock{this->mutex};
+		if (not this->game) {
+			throw Error{MSG(err) << "Cannot run an uninitialized game simulation"};
+		}
+	}
+
+	log::log(MSG(info) << "Game simulation started");
+
+	while (this->running.load()) {
 		bool reset = false;
 		{
 			std::lock_guard reset_lock{this->reset_mutex};
@@ -114,6 +122,11 @@ void GameSimulation::run() {
 					fvd->start_hunter_wave(
 						this->game->get_state(), time::TIME_ZERO);
 				}
+				{
+					std::lock_guard presentation_lock{this->presentation_mutex};
+					this->presentation_requested = true;
+				}
+				this->update_fvd_presentation_state(time::TIME_ZERO);
 			}
 			{
 				std::lock_guard reset_lock{this->reset_mutex};
@@ -162,6 +175,7 @@ void GameSimulation::run() {
 				this->game->get_state(), current_time, std::move(request.callback));
 		}
 		this->event_loop->reach_time(current_time, this->game->get_state());
+		this->update_fvd_presentation_state(current_time);
 		// Capture only on the simulation owner thread: entity and event state
 		// must not be enumerated concurrently from the Qt/render thread.
 		std::optional<BootstrapRequest> bootstrap{};
@@ -245,12 +259,14 @@ void GameSimulation::run() {
 }
 
 
-void GameSimulation::start() {
+void GameSimulation::initialize() {
 	std::unique_lock lock{this->mutex};
+	if (this->game) {
+		throw Error{MSG(err) << "Game simulation is already initialized"};
+	}
 
 	this->init_event_handlers();
 
-	// TODO: wait for presenter to initialize before starting?
 	this->game = std::make_shared<gamestate::Game>(event_loop,
 	                                               this->mod_manager,
 	                                               this->entity_factory,
@@ -260,18 +276,16 @@ void GameSimulation::start() {
 		fvd->start_hunter_wave(this->game->get_state(),
 		                       this->time_loop->get_clock()->get_time());
 	}
-	this->running = true;
-
-	log::log(MSG(info) << "Game simulation started");
+	this->update_fvd_presentation_state(this->time_loop->get_clock()->get_time());
+	this->running.store(true);
+	log::log(MSG(info) << "Game simulation initialized");
 }
 
 
 void GameSimulation::stop() {
-	std::unique_lock lock{this->mutex};
-
-	this->running = false;
-
-	log::log(MSG(info) << "Game simulation stopped");
+	if (this->running.exchange(false)) {
+		log::log(MSG(info) << "Game simulation stopped");
+	}
 }
 
 
@@ -382,6 +396,28 @@ void GameSimulation::request_network_update(player_id_t recipient, uint64_t revi
 std::optional<network::WorldState> GameSimulation::take_network_update() {
 	std::lock_guard lock{this->bootstrap_mutex};
 	return std::exchange(this->update_ready, std::nullopt);
+}
+
+std::shared_ptr<const network::WorldState> GameSimulation::get_fvd_presentation_state() {
+	std::lock_guard lock{this->presentation_mutex};
+	this->presentation_requested = true;
+	return this->presentation_state;
+}
+
+void GameSimulation::update_fvd_presentation_state(const time::time_t &time) {
+	{
+		std::lock_guard lock{this->presentation_mutex};
+		if (not std::exchange(this->presentation_requested, false)) {
+			return;
+		}
+	}
+	std::shared_ptr<const network::WorldState> snapshot{};
+	if (this->game->get_state()->get_fvd()) {
+		snapshot = std::make_shared<const network::WorldState>(
+			network::capture_fvd_presentation_state(this->game->get_state(), time));
+	}
+	std::lock_guard lock{this->presentation_mutex};
+	this->presentation_state = std::move(snapshot);
 }
 
 bool GameSimulation::submit_network_command(

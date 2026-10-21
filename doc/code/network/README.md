@@ -684,6 +684,12 @@ with fresh Builders and a full 20-second Hunter spawn countdown. Reconnects,
 new rooms, and rematches should not inherit any previous entity IDs or orders.
 The Windows two-client rematch still requires manual validation.
 
+The host and solo construction HUDs request immutable presentation snapshots from the simulation thread.
+Entity positions, construction orders and reserved tiles are captured together after event processing, so a frame cannot mix a removed foundation with its replacement tower's active order.
+Placement previews, site markers, queue counts and construction progress use the same completed snapshot for each frame.
+The next refresh is requested when the HUD reads a snapshot, bounding capture work to presentation demand.
+Guests continue to derive these construction views from their accepted authoritative worlds.
+
 The guest HUD reads its current Builder queue, construction phase, health,
 score, and Hunter countdown from the latest recipient-authoritative state.
 When precise construction progress cannot be reconstructed from the wire

@@ -107,61 +107,7 @@ void GlWindow::set_size(size_t width, size_t height) {
 }
 
 
-void GlWindow::update() {
-	// TODO: move this event handling to presenter
-
-	auto events = this->event_handler->pop_events();
-
-	for (auto &&event : events) {
-		switch (event->type()) {
-		case QEvent::Resize: {
-			// TODO: resize can be handled before the engine event processing
-			auto ev = std::dynamic_pointer_cast<QResizeEvent>(event);
-			size_t width = ev->size().width();
-			size_t height = ev->size().height();
-			log::log(MSG(dbg) << "Window resized to: " << width << "x" << height);
-
-			this->size = {width, height};
-			for (auto &cb : this->on_resize) {
-				cb(width, height, this->scale_dpr);
-			}
-		} break;
-		case QEvent::Close: {
-			this->should_be_closed = true;
-		} break;
-
-		case QEvent::KeyPress:
-		case QEvent::KeyRelease: {
-			auto const ev = std::dynamic_pointer_cast<QKeyEvent>(event);
-			for (auto &cb : this->on_key) {
-				cb(*ev);
-			}
-		} break;
-		case QEvent::MouseButtonPress:
-		case QEvent::MouseButtonRelease:
-		case QEvent::MouseButtonDblClick: {
-			auto const ev = std::dynamic_pointer_cast<QMouseEvent>(event);
-			for (auto &cb : this->on_mouse_button) {
-				cb(*ev);
-			}
-		} break;
-		case QEvent::MouseMove: {
-			auto const ev = std::dynamic_pointer_cast<QMouseEvent>(event);
-			for (auto &cb : this->on_mouse_move) {
-				cb(*ev);
-			}
-		} break;
-		case QEvent::Wheel: {
-			auto const ev = std::dynamic_pointer_cast<QWheelEvent>(event);
-			for (auto &cb : this->on_mouse_wheel) {
-				cb(*ev);
-			}
-		} break;
-		default:
-			break; // unhandled event
-		}
-	}
-
+void GlWindow::present() {
 	this->context->get_raw_context()->swapBuffers(this->window.get());
 }
 

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <shared_mutex>
 #include <cstddef>
 #include <deque>
@@ -89,17 +90,17 @@ public:
 	~GameSimulation() = default;
 
 	/**
-	 * Run the simulation loop.
+	 * Initialize the simulation on its owning thread.
+	 */
+	void initialize();
+
+	/**
+	 * Run the initialized simulation loop.
 	 */
 	void run();
 
 	/**
-	 * Start the simulation loop.
-	 */
-	void start();
-
-	/**
-	 * Stop of the simulation loop.
+	 * Stop the simulation loop.
 	 */
 	void stop();
 
@@ -184,6 +185,15 @@ public:
 	void request_network_update(gamestate::player_id_t recipient, uint64_t revision);
 	std::optional<network::WorldState> take_network_update();
 
+	/**
+	 * Get the last completed local HUD snapshot and request its next refresh.
+	 *
+	 * The simulation captures entity positions, orders and reservations after
+	 * processing events. Readers retain an immutable snapshot while it advances.
+	 * Returns nullptr for scenarios without FVD construction.
+	 */
+	std::shared_ptr<const network::WorldState> get_fvd_presentation_state();
+
 	/** Enqueue guest input for owner-thread authentication and execution. */
 	bool submit_network_command(network::AuthenticatedCommand command,
 	                            std::function<void(bool)> result_callback,
@@ -202,16 +212,18 @@ public:
 	void cancel_network_bootstrap();
 
 	/**
-	 * current simulation state variable.
-	 * to be set to false to stop the simulation loop.
+	 * Whether the initialized simulation remains active.
 	 */
-	bool running;
+	std::atomic<bool> running;
 
 private:
 	/**
 	 * Initialize event handlers.
 	 */
 	void init_event_handlers();
+
+	/** Publish a requested HUD refresh on the simulation owner thread. */
+	void update_fvd_presentation_state(const time::time_t &time);
 
 	/**
 	 * The simulation root directory.
@@ -265,6 +277,10 @@ private:
 	 * Mutex for thread-safe access to the simulation.
 	 */
 	std::shared_mutex mutex;
+
+	std::mutex presentation_mutex;
+	bool presentation_requested{true};
+	std::shared_ptr<const network::WorldState> presentation_state{};
 
 	std::mutex bootstrap_mutex;
 	struct BootstrapRequest {

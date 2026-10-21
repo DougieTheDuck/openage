@@ -58,7 +58,18 @@ void submit_authenticated_command(
 	const time::time_t &time,
 	command_result_callback_t result_callback);
 
-/** Capture complete authoritative FVD state at a simulation time. */
+/**
+ * Capture entity positions, construction orders and reservations together.
+ *
+ * Call only on the simulation owner thread, after processing events.
+ * This local presentation snapshot omits network identity, private scores,
+ * health, future motion and projectiles; it must not be sent over the wire.
+ */
+WorldState capture_fvd_presentation_state(
+	const std::shared_ptr<gamestate::GameState> &state,
+	const time::time_t &time);
+
+/** Capture complete authoritative FVD state on the simulation owner thread. */
 WorldState capture_fvd_state(
 	const std::shared_ptr<gamestate::GameState> &state,
 	const MatchConnectionState &connections,
