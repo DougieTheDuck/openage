@@ -170,6 +170,7 @@ private:
 	std::shared_ptr<renderer::world::RenderEntity> render_entity;
 	AnimationAction animation_action{AnimationAction::IDLE};
 	time::time_t animation_started_at{time::TIME_ZERO};
+	bool animation_initialized{false};
 
 	/**
 	 * Event manager.

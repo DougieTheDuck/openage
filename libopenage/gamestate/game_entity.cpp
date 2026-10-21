@@ -72,9 +72,10 @@ bool GameEntity::has_component(component::component_t type) {
 void GameEntity::render_update(const time::time_t &time,
                                const std::string &animation_path,
                                AnimationAction action) {
-	if (this->animation_action != action) {
+	if (not this->animation_initialized or this->animation_action != action) {
 		this->animation_action = action;
 		this->animation_started_at = time;
+		this->animation_initialized = true;
 	}
 	if (this->render_entity != nullptr) {
 		const auto &pos = dynamic_pointer_cast<component::Position>(
@@ -83,7 +84,8 @@ void GameEntity::render_update(const time::time_t &time,
 		const auto &angle = dynamic_pointer_cast<component::Position>(
 								this->components.at(component::component_t::POSITION))
 		                        ->get_angles();
-		this->render_entity->update(this->id, pos, angle, animation_path, time);
+		this->render_entity->update(
+			this->id, pos, angle, animation_path, time, this->animation_started_at);
 
 		if (this->has_component(component::component_t::LIVE)) {
 			auto live = dynamic_pointer_cast<component::Live>(

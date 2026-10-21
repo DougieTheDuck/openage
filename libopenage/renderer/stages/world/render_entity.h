@@ -46,7 +46,8 @@ public:
 	            const curve::Continuous<coord::phys3> &position,
 	            const curve::Segmented<coord::phys_angle_t> &angle,
 	            const std::string animation_path,
-	            const time::time_t time = 0.0);
+	            const time::time_t time = 0.0,
+	            std::optional<time::time_t> animation_started_at = std::nullopt);
 
 	/**
 	 * This function is for DEBUGGING and should not be used.

@@ -1540,6 +1540,19 @@ void fvd_build_queue() {
 }
 
 void fvd_animation_phase() {
+	// An entity spawned after match start begins its very first idle
+	// animation at spawn time, not when the match clock was zero.
+	GameEntity spawned{77};
+	spawned.render_update(time::time_t::from_int(20),
+	                     "fvd/orc_idle.sprite", AnimationAction::IDLE);
+	TESTEQUALS(spawned.get_animation_started_at(), time::time_t::from_int(20));
+	spawned.render_update(time::time_t::from_int(21),
+	                     "fvd/orc_idle.sprite", AnimationAction::IDLE);
+	TESTEQUALS(spawned.get_animation_started_at(), time::time_t::from_int(20));
+	spawned.render_update(time::time_t::from_int(22),
+	                     "fvd/orc_walk.sprite", AnimationAction::MOVE);
+	TESTEQUALS(spawned.get_animation_started_at(), time::time_t::from_int(22));
+
 	// The renderer must retain absolute host animation start times even
 	// when it receives the first snapshot partway through the cycle.
 	renderer::world::RenderEntity entity{};

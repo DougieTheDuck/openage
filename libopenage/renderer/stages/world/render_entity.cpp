@@ -27,7 +27,8 @@ void RenderEntity::update(const uint32_t ref_id,
                           const curve::Continuous<coord::phys3> &position,
                           const curve::Segmented<coord::phys_angle_t> &angle,
                           const std::string animation_path,
-                          const time::time_t time) {
+                          const time::time_t time,
+                          std::optional<time::time_t> animation_started_at) {
 	std::unique_lock lock{this->mutex};
 
 	this->ref_id = ref_id;
@@ -40,7 +41,11 @@ void RenderEntity::update(const uint32_t ref_id,
 						}),
 	                    this->last_update);
 	this->angle.sync(angle, this->last_update);
-	this->animation_path.set_last(time, animation_path);
+	const auto start_at = animation_started_at.value_or(time);
+	const auto current = this->animation_path.get_time(time);
+	if (current.second != animation_path or current.first != start_at) {
+		this->animation_path.set_last(start_at, animation_path);
+	}
 	this->changed = true;
 	this->last_update = time;
 }
