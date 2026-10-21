@@ -76,6 +76,9 @@ ConstructionPresentation make_construction_presentation(const WorldState &world)
 			// A queued foundation retains its entity and center-tile reservation.
 			const auto reserved = reserved_by.find(key(site));
 			if (reserved == reserved_by.end()) {
+				result.sites.push_back({
+					entity.entity_id, entity.owner_id, 0, site,
+					SitePresentationPhase::ORPHANED});
 				continue;
 			}
 			const auto builder = builders.find(reserved->second);
@@ -97,6 +100,26 @@ ConstructionPresentation make_construction_presentation(const WorldState &world)
 	}
 	std::sort(result.sites.begin(), result.sites.end(),
 	          [](const auto &a, const auto &b) { return a.entity_id < b.entity_id; });
+	std::unordered_map<gamestate::entity_id_t, std::vector<size_t>> queues{};
+	for (size_t index = 0; index < result.sites.size(); ++index) {
+		const auto &site = result.sites[index];
+		if (site.phase == SitePresentationPhase::QUEUED
+		    or site.phase == SitePresentationPhase::PLANNED
+		    or site.phase == SitePresentationPhase::BUILDING) {
+			queues[site.builder_id].push_back(index);
+		}
+	}
+	for (auto &[builder, entries] : queues) {
+		std::stable_sort(entries.begin(), entries.end(), [&](size_t a, size_t b) {
+			const bool queued_a = result.sites[a].phase == SitePresentationPhase::QUEUED;
+			const bool queued_b = result.sites[b].phase == SitePresentationPhase::QUEUED;
+			if (queued_a != queued_b) return not queued_a;
+			return result.sites[a].entity_id < result.sites[b].entity_id;
+		});
+		for (size_t index = 0; index < entries.size(); ++index) {
+			result.sites[entries[index]].queue_position = static_cast<uint32_t>(index + 1);
+		}
+	}
 	return result;
 }
 

@@ -1432,6 +1432,9 @@ void Presenter::render() {
 					case network::SitePresentationPhase::QUEUED:
 						phase = "Queued";
 						break;
+					case network::SitePresentationPhase::ORPHANED:
+						phase = "Orphaned";
+						break;
 					case network::SitePresentationPhase::PLANNED:
 						phase = "Planned";
 						break;
@@ -1444,7 +1447,9 @@ void Presenter::render() {
 					}
 					site_markers.push_back(QVariantMap{
 						{"x", center.x()}, {"y", center.y()},
-						{"owner", static_cast<int>(site.owner_id)}, {"phase", phase}});
+						{"owner", static_cast<int>(site.owner_id)}, {"phase", phase},
+						{"queueNumber", site.owner_id == controlled
+						    ? static_cast<int>(site.queue_position) : 0}});
 				}
 				if (not reserved_footprints.isEmpty()
 				    or not this->fvd_hud_state->value("reservedFootprints").toList().empty()) {

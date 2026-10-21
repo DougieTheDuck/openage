@@ -102,7 +102,8 @@ Item {
 				var labelWidth = ctx.measureText(text).width + 12
 				var left = site.x - labelWidth / 2
 				var top = site.y - 34
-				var outline = site.phase === "Queued" ? "#f1c66c"
+				var outline = site.phase === "Orphaned" ? "#a9b8b1"
+				            : site.phase === "Queued" ? "#f1c66c"
 				            : site.phase === "Planned" ? "#8cccf5"
 				            : site.phase === "Building" ? "#92e1ae"
 				            : "#cedbd1"
@@ -113,6 +114,19 @@ Item {
 				ctx.strokeRect(left, top, labelWidth, 18)
 				ctx.fillStyle = outline
 				ctx.fillText(text, site.x, top + 9)
+				if (site.queueNumber > 0) {
+					var number = String(site.queueNumber)
+					ctx.font = "bold 10px sans-serif"
+					ctx.fillStyle = "rgba(20, 34, 30, 0.95)"
+					ctx.beginPath()
+					ctx.arc(site.x, site.y - 8, 9, 0, Math.PI * 2)
+					ctx.fill()
+					ctx.strokeStyle = "#f1c66c"
+					ctx.stroke()
+					ctx.fillStyle = "#fff4d5"
+					ctx.fillText(number, site.x, site.y - 8)
+					ctx.font = "bold 11px sans-serif"
+				}
 			}
 		}
 	}
