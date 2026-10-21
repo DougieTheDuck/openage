@@ -236,6 +236,12 @@ void Controller::set_drag_select_start(const coord::input &start) {
 	this->drag_select_start = start;
 }
 
+
+std::optional<coord::input> Controller::get_drag_select_start_optional() const {
+	std::unique_lock lock{this->mutex};
+	return this->drag_select_start;
+}
+
 const coord::input Controller::get_drag_select_start() const {
 	std::unique_lock lock{this->mutex};
 
@@ -251,6 +257,22 @@ void Controller::reset_drag_select() {
 
 	log::log(DBG << "Drag select start reset");
 	this->drag_select_start = std::nullopt;
+}
+
+std::vector<coord::tile> tower_line_sites(const coord::tile &start,
+                                          const coord::tile &end) {
+	const auto ne_delta = end.ne - start.ne;
+	const auto se_delta = end.se - start.se;
+	const bool along_ne = std::abs(ne_delta) >= std::abs(se_delta);
+	const auto delta = along_ne ? ne_delta : se_delta;
+	const auto step = delta < 0 ? -1 : 1;
+	std::vector<coord::tile> sites;
+	sites.reserve(static_cast<size_t>(std::abs(delta)) + 1);
+	for (auto i = 0; i <= std::abs(delta); ++i) {
+		sites.emplace_back(start.ne + (along_ne ? i * step : 0),
+		                   start.se + (along_ne ? 0 : i * step));
+	}
+	return sites;
 }
 
 namespace {
@@ -587,20 +609,58 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		QEvent::MouseButtonPress};
 
 	ctx->bind(ev_mouse_lmb_press, init_drag_selection_action);
+	ctx->bind(Event{event_class::MOUSE_BUTTON, Qt::MouseButton::LeftButton,
+	                Qt::KeyboardModifier::ShiftModifier, QEvent::MouseButtonPress},
+	          init_drag_selection_action);
 
 	binding_func_t drag_selection{
-		[simulation, time_loop, camera, pick_entity, create_entity_event, attack_move_event, guest_world](const event_arguments &args,
+		[simulation, time_loop, camera, pick_entity, create_entity_event, attack_move_event,
+		 send_guest_command, guest_world](const event_arguments &args,
 	        const std::shared_ptr<Controller> controller) {
-			if (controller->is_tower_placement_active()) {
+			const bool shift = (args.e.mod_code & Qt::ShiftModifier) != 0;
+			const auto start = controller->get_drag_select_start_optional();
+			const auto selection = controller->get_selection_details();
+			if (shift and selection.kind == SelectionKind::BUILDER
+			    and controller->begin_tower_placement()) {
+				const auto drag_delta = start ? args.mouse - *start : coord::input{0, 0};
+				const auto threshold = QGuiApplication::styleHints()->startDragDistance();
+				if (start and (std::abs(drag_delta.x) >= threshold
+			               or std::abs(drag_delta.y) >= threshold)) {
+					const auto sites = tower_line_sites(start->to_phys3(camera).to_tile(),
+					                                    args.mouse.to_phys3(camera).to_tile());
+					const auto state = simulation->get_game()->get_state();
+					const bool remote = guest_world and guest_world().has_value();
+					for (const auto &site : sites) {
+						if (remote) {
+							network::CommandIntent intent{
+								0, network::CommandKind::BUILD_TOWER, selection.ids,
+								site.to_phys3_center()};
+							intent.queue = true;
+							if (not send_guest_command or not send_guest_command(std::move(intent))) {
+								break;
+							}
+						}
+						else {
+							event::EventHandler::param_map::map_t params{
+								{"type", gamestate::component::command::command_t::BUILD_TOWER},
+								{"target", site.to_phys3_center()},
+								{"queue", true},
+								{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
+								{"entity_ids", selection.ids},
+							};
+							simulation->get_event_loop()->submit_event(
+								"game.send_command", simulation->get_commander(), state,
+								time_loop->get_clock()->get_time(), params);
+						}
+					}
+				}
+				else {
+					create_entity_event(args, controller);
+				}
 				controller->reset_drag_select();
-				create_entity_event(args, controller);
 				return;
 			}
-			// Shift-click queues a tower even after a normal click exited
-			// placement mode; no second press of B is required.
-			if ((args.e.mod_code & Qt::ShiftModifier) != 0
-			    and controller->get_selection_details().kind == SelectionKind::BUILDER
-			    and controller->begin_tower_placement()) {
+			if (controller->is_tower_placement_active()) {
 				controller->reset_drag_select();
 				create_entity_event(args, controller);
 				return;
@@ -726,8 +786,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		QEvent::MouseButtonRelease};
 
 	ctx->bind(ev_mouse_lmb_release, drag_selection_action);
-	// Shift+left release goes through the same placement handler, which
-	// appends a site and deliberately stays in placement mode.
+	// Shift+left release queues a click or a constrained multi-site drag.
 	ctx->bind(Event{event_class::MOUSE_BUTTON, Qt::MouseButton::LeftButton,
 	                Qt::KeyboardModifier::ShiftModifier, QEvent::MouseButtonRelease},
 	          drag_selection_action);

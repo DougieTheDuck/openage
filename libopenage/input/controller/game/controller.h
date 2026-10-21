@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "coord/pixel.h"
+#include "coord/tile.h"
 #include "curve/discrete.h"
 #include "gamestate/types.h"
 #include "input/event.h"
@@ -164,6 +165,9 @@ public:
 	 */
 	const coord::input get_drag_select_start() const;
 
+	/** Current left-button drag origin, or none when no drag is underway. */
+	std::optional<coord::input> get_drag_select_start_optional() const;
+
 	/**
 	 * Reset the drag select start position.
 	 */
@@ -209,10 +213,15 @@ private:
 	mutable std::recursive_mutex mutex;
 };
 
+/** Ordered sites constrained to whichever isometric map axis spans the drag furthest. */
+std::vector<coord::tile> tower_line_sites(const coord::tile &start,
+                                          const coord::tile &end);
+
 /**
  * Setup default controller action bindings:
  *
  * - B, then Left Mouse click: Build a tower; Shift-click to append sites.
+ * - Shift+left-drag: queue a straight line of foundations along one map axis.
  * - Right Mouse click: Move to terrain; Hunter right-clicks enemy to
  *   focus-attack, while a Builder right-clicks a queued foundation to
  *   clear its other orders and construct that foundation.

@@ -6,6 +6,19 @@
 
 namespace openage::input::game::tests {
 
+void tower_line_axis_lock() {
+	using coord::tile;
+	TESTEQUALS(tower_line_sites({10, 20}, {10, 20}), (std::vector<tile>{{10, 20}}));
+	TESTEQUALS(tower_line_sites({10, 20}, {14, 21}),
+	           (std::vector<tile>{{10, 20}, {11, 20}, {12, 20}, {13, 20}, {14, 20}}));
+	TESTEQUALS(tower_line_sites({10, 20}, {7, 19}),
+	           (std::vector<tile>{{10, 20}, {9, 20}, {8, 20}, {7, 20}}));
+	TESTEQUALS(tower_line_sites({10, 20}, {11, 16}),
+	           (std::vector<tile>{{10, 20}, {10, 19}, {10, 18}, {10, 17}, {10, 16}}));
+	TESTEQUALS(tower_line_sites({10, 20}, {11, 21}),
+	           (std::vector<tile>{{10, 20}, {11, 20}}));
+}
+
 void tower_placement_mode() {
 	Controller controller{{1, 2, 3}, 2};
 

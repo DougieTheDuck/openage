@@ -171,6 +171,7 @@ def tests_cpp():
     yield "openage::curve::tests::container"
     yield "openage::curve::tests::curve_types"
     yield "openage::event::tests::eventtrigger"
+    yield "openage::input::game::tests::tower_line_axis_lock"
     yield "openage::input::game::tests::tower_placement_mode"
     yield "openage::presenter::tests::hud_mouse_capture"
     yield "openage::presenter::tests::guest_interpolation"
