@@ -201,6 +201,7 @@ def tests_cpp():
     )
     yield (
         "openage::gamestate::tests::fvd_build_queue",
+        "openage::gamestate::tests::fvd_build_line_order",
         "FVD FIFO tower construction and reserved queued sites",
         lambda env: env["has_assets"],
     )

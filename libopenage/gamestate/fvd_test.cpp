@@ -1464,6 +1464,72 @@ void fvd_build_queue() {
 	TESTEQUALS(fvd->is_tile_reserved({42, 66}), true);
 }
 
+void fvd_build_line_order() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	entity_id_t builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto owner = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (owner->get_owners().get(time::TIME_ZERO) == player_id_t{2}) {
+			builder = id;
+			break;
+		}
+	}
+	builder != 0 or TESTFAIL;
+	event::SendCommandHandler command;
+	const std::vector<entity_id_t> selected{builder};
+	auto submit_line = [&](const std::vector<coord::phys3> &line) {
+		bool accepted = false;
+		command.invoke(*loop, nullptr, state, time::TIME_ZERO,
+		               {{"type", component::command::command_t::BUILD_TOWER},
+		                {"owner", player_id_t{2}}, {"queue", true},
+		                {"entity_ids", selected}, {"target", line.front()},
+		                {"build_line", line},
+		                {"result_cb", std::function<void(bool)>{[&](bool result) {
+			                accepted = result;
+		                }}}});
+		return accepted;
+	};
+	const std::vector<coord::phys3> sites{
+		{55.5, 71.5, 0}, {56.5, 71.5, 0}, {57.5, 71.5, 0}, {58.5, 71.5, 0}};
+	TESTEQUALS(submit_line(sites), true);
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{55, 71}));
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{3});
+	const auto first_world = network::capture_fvd_presentation_state(state, time::TIME_ZERO);
+	const auto first_view = network::make_construction_presentation(first_world);
+	TESTEQUALS(first_view.sites.size(), size_t{4});
+	for (size_t i = 0; i < sites.size(); ++i) {
+		const auto tile = sites[i].to_tile();
+		auto found = std::find_if(first_view.sites.begin(), first_view.sites.end(),
+		                          [tile](const auto &site) { return site.site == tile; });
+		TESTEQUALS(found != first_view.sites.end(), true);
+		TESTEQUALS(found->queue_position, static_cast<uint32_t>(i + 1));
+		TESTEQUALS(found->phase, i == 0
+		    ? network::SitePresentationPhase::PLANNED
+		    : network::SitePresentationPhase::QUEUED);
+	}
+	// Invalid diagonal input must not mutate an existing build queue.
+	TESTEQUALS(submit_line({{52.5, 78.5, 0}, {53.5, 79.5, 0}}), false);
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{55, 71}));
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{3});
+	TESTEQUALS(fvd->cancel_build(state, builder, time::TIME_ZERO), true);
+	TESTEQUALS(submit_line({{61.5, 77.5, 0}, {60.5, 77.5, 0}, {59.5, 77.5, 0}}), true);
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), (coord::tile{61, 77}));
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{2});
+}
+
 void fvd_retask_foundation() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
