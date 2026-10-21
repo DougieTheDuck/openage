@@ -261,12 +261,12 @@ Item {
 			color: "#ffffff"
 			font.pixelSize: 14
 			text: root.placing
-			    ? "Build: click to place | Shift+click to queue | Right-click or Esc cancels"
+			    ? "Build: click to place | Shift+click to queue | Shift+drag: tower line | Esc cancels"
 			    : root.attacking ? "Attack-move: click destination | Right-click or Esc cancels"
 			    : root.canAttack
 			    ? "Hunter: right-click enemy to focus attack | Right-click ground to move | A: Attack-move"
 			    : root.canBuild
-			    ? "Builder: right-click foundation to prioritize | B: Build Tower | Shift+click queues"
+			    ? "Builder: right-click foundation to resume | B: Build Tower | Shift+drag: line"
 			    : "Drag to select your units | Right-click to move"
 			horizontalAlignment: Text.AlignHCenter
 		}

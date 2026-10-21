@@ -7,6 +7,7 @@
 #include <chrono>
 #include <exception>
 #include <QEvent>
+#include <QGuiApplication>
 #include <QMouseEvent>
 #include <QVariantList>
 #include <QVariantMap>
@@ -1232,6 +1233,10 @@ void Presenter::render() {
 			this->fvd_hud_state->insert("canBuild", controlled >= 2 and builder);
 			this->fvd_hud_state->insert("canAttack", controlled == 1 and hunter_horse);
 			this->fvd_hud_state->insert("attacking", this->game_controller->is_attack_move_active());
+			const auto drag_start = this->game_controller->get_drag_select_start_optional();
+			const bool preview_line = controlled >= 2 and builder and drag_start.has_value()
+				// Shift-drag can begin without pressing B first.
+				and (QGuiApplication::keyboardModifiers() & Qt::ShiftModifier);
 			auto fvd = this->simulation->get_game()->get_state()->get_fvd();
 			if (fvd) {
 				auto now = this->time_loop->get_clock()->get_time();
@@ -1354,42 +1359,50 @@ void Presenter::render() {
 				};
 				QVariantList footprint;
 				bool valid = false;
-				if (this->game_controller->is_tower_placement_active()
+				if ((this->game_controller->is_tower_placement_active() or preview_line)
 				    and controlled >= 2 and builder
 				    and this->placement_cursor and selected.ids.size() == 1) {
 					auto mouse = this->placement_cursor->to_phys3(this->camera);
-					auto site = mouse.to_tile();
-					if (construction_world) {
-						// Cosmetic preview against the latest authoritative
-						// occupied/reserved cells. The host still makes the
-						// final decision when the build request arrives.
-						valid = std::any_of(construction_world->entities.begin(),
-						                    construction_world->entities.end(),
-						                    [&](const network::EntityState &entry) {
-												return entry.entity_id == selected.ids.front()
-							                           and entry.owner_id == controlled
-							                           and entry.definition == "fvd.data.entities.Builder";
-											});
+					auto sites = preview_line
+						? input::game::tower_line_sites(
+							drag_start->to_phys3(this->camera).to_tile(), mouse.to_tile())
+						: std::vector<coord::tile>{mouse.to_tile()};
+					valid = construction_world != nullptr
+					    and std::any_of(construction_world->entities.begin(),
+					                    construction_world->entities.end(),
+					                    [&](const network::EntityState &entry) {
+						                    return entry.entity_id == selected.ids.front()
+						                        and entry.owner_id == controlled
+						                        and entry.definition == "fvd.data.entities.Builder";
+					                    });
+					for (const auto &site : sites) {
 						for (const auto &tile : fvd->get_tower_footprint(site)) {
-							if (tile.ne < 0 or tile.se < 0
-							    or tile.ne >= construction_world->map_size
-							    or tile.se >= construction_world->map_size
-							    or std::any_of(construction_world->reservations.begin(), construction_world->reservations.end(), [&](const network::TileReservation &reserved) { return reserved.tile == tile; }) or std::any_of(construction_world->entities.begin(), construction_world->entities.end(), [&](const network::EntityState &entry) { return entry.position.to_tile() == tile; })) {
+							if (construction_world
+							    and (tile.ne < 0 or tile.se < 0
+							         or tile.ne >= construction_world->map_size
+							         or tile.se >= construction_world->map_size
+							         or std::any_of(construction_world->reservations.begin(),
+							                        construction_world->reservations.end(),
+							                        [&](const network::TileReservation &reserved) {
+								                        return reserved.tile == tile;
+							                        })
+							         or std::any_of(construction_world->entities.begin(),
+							                        construction_world->entities.end(),
+							                        [&](const network::EntityState &entry) {
+								                        return entry.position.to_tile() == tile;
+							                        }))) {
 								valid = false;
-								break;
 							}
+							const auto a = project_tile(tile.ne, tile.se);
+							const auto b = project_tile(tile.ne + 1.0, tile.se);
+							const auto c = project_tile(tile.ne + 1.0, tile.se + 1.0);
+							const auto d = project_tile(tile.ne, tile.se + 1.0);
+							footprint.push_back(QVariantMap{
+								{"ax", a.x()}, {"ay", a.y()},
+								{"bx", b.x()}, {"by", b.y()},
+								{"cx", c.x()}, {"cy", c.y()},
+								{"dx", d.x()}, {"dy", d.y()}});
 						}
-					}
-					for (const auto &tile : fvd->get_tower_footprint(site)) {
-						const auto a = project_tile(tile.ne, tile.se);
-						const auto b = project_tile(tile.ne + 1.0, tile.se);
-						const auto c = project_tile(tile.ne + 1.0, tile.se + 1.0);
-						const auto d = project_tile(tile.ne, tile.se + 1.0);
-						footprint.push_back(QVariantMap{
-							{"ax", a.x()}, {"ay", a.y()},
-							{"bx", b.x()}, {"by", b.y()},
-							{"cx", c.x()}, {"cy", c.y()},
-							{"dx", d.x()}, {"dy", d.y()}});
 					}
 				}
 				if (not footprint.isEmpty()
@@ -1523,7 +1536,7 @@ void Presenter::render() {
 					static_cast<qlonglong>(fvd->get_tower_armor()));
 			}
 			this->fvd_hud_state->insert(
-				"placing", this->game_controller->is_tower_placement_active());
+				"placing", this->game_controller->is_tower_placement_active() or preview_line);
 		}
 	}
 	{

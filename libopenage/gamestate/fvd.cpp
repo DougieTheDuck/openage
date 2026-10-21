@@ -626,7 +626,7 @@ bool FVD::queue_build(const std::shared_ptr<GameState> &state,
 		// Shift-clicking the first tower starts work immediately.
 		return this->request_build(state, owner, selected, position, time);
 	}
-	constexpr size_t max_queued_towers = 64;
+	constexpr size_t max_queued_towers = 256;
 	auto &waiting = this->queued_builds[builder];
 	if (waiting.size() >= max_queued_towers) {
 		return false;
