@@ -96,6 +96,9 @@ void submit_authenticated_command(
 	if (command.intent.target_entity) {
 		params.emplace("target_entity", *command.intent.target_entity);
 	}
+	if (not command.intent.build_line.empty()) {
+		params.emplace("build_line", command.intent.build_line);
+	}
 	event_loop->submit_event(
 		"game.send_command",
 		commander,

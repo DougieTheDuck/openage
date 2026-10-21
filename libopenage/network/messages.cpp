@@ -16,6 +16,7 @@ namespace {
 constexpr size_t COMMAND_PREFIX_SIZE = 16;
 constexpr uint16_t COMMAND_HAS_TARGET_ENTITY = 1 << 0;
 constexpr uint16_t COMMAND_APPEND_BUILD = 1 << 1;
+constexpr uint16_t COMMAND_HAS_BUILD_LINE = 1 << 2;
 constexpr uint16_t PLAYER_CONNECTED = 1 << 0;
 constexpr uint16_t ENTITY_HAS_HEALTH = 1 << 0;
 constexpr uint16_t ENTITY_HAS_TOWER_KILLS = 1 << 1;
@@ -378,12 +379,19 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 	if (intent.queue and intent.kind != CommandKind::BUILD_TOWER) {
 		throw Error{MSG(err) << "FVD queue flag applies only to tower construction"};
 	}
+	if (not intent.build_line.empty()
+	    and (not intent.queue or intent.kind != CommandKind::BUILD_TOWER
+	         or intent.build_line.size() > MAX_BUILD_LINE_SITES
+	         or intent.build_line.front() != intent.target)) {
+		throw Error{MSG(err) << "Invalid ordered FVD tower construction line"};
+	}
 	std::vector<uint8_t> output{};
 	output.reserve(COMMAND_PREFIX_SIZE + intent.entity_ids.size() * sizeof(uint64_t) + 32);
 	append_u64(output, intent.command_id);
 	append_u16(output, static_cast<uint16_t>(intent.kind));
 	const auto flags = (intent.target_entity ? COMMAND_HAS_TARGET_ENTITY : 0)
-	                 | (intent.queue ? COMMAND_APPEND_BUILD : 0);
+	                 | (intent.queue ? COMMAND_APPEND_BUILD : 0)
+	                 | (intent.build_line.empty() ? 0 : COMMAND_HAS_BUILD_LINE);
 	append_u16(output, flags);
 	append_u32(output, static_cast<uint32_t>(intent.entity_ids.size()));
 	for (auto entity_id : intent.entity_ids) {
@@ -392,6 +400,12 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 	append_position(output, intent.target);
 	if (intent.target_entity) {
 		append_u64(output, *intent.target_entity);
+	}
+	if (not intent.build_line.empty()) {
+		append_u32(output, static_cast<uint32_t>(intent.build_line.size()));
+		for (const auto &site : intent.build_line) {
+			append_position(output, site);
+		}
 	}
 	return output;
 }
@@ -406,7 +420,7 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 	}
 	intent.kind = static_cast<CommandKind>(kind);
 	const auto flags = reader.u16();
-	if (flags & ~(COMMAND_HAS_TARGET_ENTITY | COMMAND_APPEND_BUILD)) {
+	if (flags & ~(COMMAND_HAS_TARGET_ENTITY | COMMAND_APPEND_BUILD | COMMAND_HAS_BUILD_LINE)) {
 		throw Error{MSG(err) << "Unsupported FVD command payload flags"};
 	}
 	intent.queue = (flags & COMMAND_APPEND_BUILD) != 0;
@@ -423,9 +437,22 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 	if (flags & COMMAND_HAS_TARGET_ENTITY) {
 		intent.target_entity = reader.u64();
 	}
+	if (flags & COMMAND_HAS_BUILD_LINE) {
+		const auto count = reader.u32();
+		if (count == 0 or count > MAX_BUILD_LINE_SITES) {
+			throw Error{MSG(err) << "Invalid FVD construction line length"};
+		}
+		intent.build_line.reserve(count);
+		for (uint32_t i = 0; i < count; ++i) {
+			intent.build_line.push_back(read_position(reader));
+		}
+	}
 	if ((intent.kind == CommandKind::FOCUS_ATTACK
 	     or intent.kind == CommandKind::PRIORITIZE_FOUNDATION) != intent.target_entity.has_value()
-	    or (intent.queue and intent.kind != CommandKind::BUILD_TOWER)) {
+	    or (intent.queue and intent.kind != CommandKind::BUILD_TOWER)
+	    or (not intent.build_line.empty()
+	        and (intent.kind != CommandKind::BUILD_TOWER or not intent.queue
+	             or intent.build_line.front() != intent.target))) {
 		throw Error{MSG(err) << "Invalid FVD targeted/queued command payload"};
 	}
 	reader.finish();

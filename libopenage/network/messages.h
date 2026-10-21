@@ -47,6 +47,8 @@ constexpr uint16_t MAX_ENTITY_MOTION_KEYS = 16;
 
 /** Largest displayable command rejection reason. */
 constexpr uint32_t MAX_REJECTION_REASON_SIZE = 4096;
+/** Maximum sites in one ordered tower placement line. */
+constexpr uint32_t MAX_BUILD_LINE_SITES = 256;
 
 /** Commands a client may request from the authoritative host. */
 enum class CommandKind : uint16_t {
@@ -106,6 +108,8 @@ struct CommandIntent {
 	std::optional<gamestate::entity_id_t> target_entity{};
 	/** Append a tower to an existing Builder construction queue. */
 	bool queue{false};
+	/** Site positions in drag order; empty for ordinary one-site placement. */
+	std::vector<coord::phys3> build_line{};
 };
 
 /** Authoritative result for one submitted command. */
