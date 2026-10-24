@@ -25,8 +25,10 @@ void alpha_mask() {
 	const std::vector<std::pair<size_t, size_t>> opaque{
 		{0, 0}, {4, 0}, {2, 1}, {0, 2}, {3, 2}};
 	for (auto [x, y] : opaque) {
-		pixels[(y * width + x) * 4 + 3] = 1;
+		pixels[(y * width + x) * 4 + 3] = ALPHA_MASK_CUTOFF + 1;
 	}
+	pixels[(0 * width + 1) * 4 + 3] = 1;
+	pixels[(1 * width + 3) * 4 + 3] = ALPHA_MASK_CUTOFF;
 
 	Texture2dInfo info{width, height, pixel_format::rgba8};
 	Texture2dData texture{info, std::move(pixels)};

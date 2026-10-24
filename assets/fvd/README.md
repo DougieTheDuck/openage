@@ -15,9 +15,11 @@ start for both local and guest rendering, not guest-estimated velocity.
 To try it, start a solo match with `bin/run game --solo --modpacks fvd`,
 select your Builder and right-click around the map. You should see the
 Orc idle loop while stopped and its 16-direction walk cycle when moving.
-The Horse still uses its original static art until a dedicated animation set
-is prepared. Remote clients use the same animation action and absolute frame
-clock after snapshots/deltas; cross-platform visual confirmation is pending.
+Hunter Horses use a 12-frame gallop cycle for each of 16 directions, with the first frame of each direction serving as the stationary pose.
+The atlas layout and source angles are recorded in `graphics/ethereal-hunter-horse/ethereal-hunter-horse_metadata.json`.
+Source angle 0 faces down and right on screen and maps to openage angle 337 after a one-slot clockwise calibration.
+The atlas rows advance counter-clockwise, so their order is reversed and offset by one to match openage's clockwise angle sequence.
+Remote clients use the same animation action and absolute frame clock after snapshots/deltas; cross-platform visual confirmation is pending.
 Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
 `bin/run test openage::gamestate::tests::fvd_animation_phase`,
 `bin/run test openage::network::tests::messages` and

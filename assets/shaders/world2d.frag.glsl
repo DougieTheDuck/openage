@@ -18,9 +18,15 @@ vec2 uv = vec2(
 void main() {
 	vec4 tex_val = texture(tex, uv);
 	int alpha = int(round(tex_val.a * 255));
-	if (alpha == 0) {
+	// Texture export noise must not write depth through transparent sprite padding.
+	// Keep this cutoff synchronized with ALPHA_MASK_CUTOFF in texture_data.h.
+	if (alpha <= 16) {
 		discard;
 	}
+	// Translucent shadows and effects belong behind opaque sprite pixels.
+	// Moving their depth to the far plane keeps them visible on empty ground
+	// while allowing every ordinary sprite fragment to render in front.
+	gl_FragDepth = alpha < 128 ? 1.0 : gl_FragCoord.z;
 	if (!cbits) {
 		col = tex_val;
 		return;

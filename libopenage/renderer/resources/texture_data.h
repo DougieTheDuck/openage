@@ -19,6 +19,12 @@ class Path;
 }
 namespace renderer::resources {
 
+/**
+ * Largest alpha value treated as fully transparent by world rendering and
+ * sprite hit testing.
+ */
+inline constexpr uint8_t ALPHA_MASK_CUTOFF = 16;
+
 /// Stores 2D texture data in a CPU-accessible byte buffer. Provides methods for loading from
 /// and storing onto disk, as well as sending to and receiving from graphics hardware.
 class Texture2dData {
@@ -87,7 +93,7 @@ public:
 	/**
 	 * Create a one-bit alpha mask from RGBA texture data.
 	 *
-	 * Pixels with a nonzero alpha value are opaque.
+	 * Pixels with alpha values above \p ALPHA_MASK_CUTOFF are opaque.
 	 *
 	 * @param texture Texture data to convert.
 	 */
@@ -98,7 +104,7 @@ public:
 	 *
 	 * @param x Horizontal pixel coordinate.
 	 * @param y Vertical pixel coordinate.
-	 * @return true if the pixel alpha is nonzero.
+	 * @return true if the pixel alpha is above \p ALPHA_MASK_CUTOFF.
 	 */
 	bool is_opaque(size_t x, size_t y) const;
 

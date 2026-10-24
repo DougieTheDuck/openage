@@ -49,6 +49,8 @@
 #include "pathfinding/grid.h"
 #include "pathfinding/pathfinder.h"
 #include "pathfinding/sector.h"
+#include "renderer/resources/animation/angle_info.h"
+#include "renderer/resources/animation/frame_info.h"
 #include "renderer/resources/frame_timing.h"
 #include "renderer/resources/parser/parse_sprite.h"
 #include "renderer/resources/parser/parse_texture.h"
@@ -193,21 +195,61 @@ void fvd_scenario() {
 	TESTEQUALS(builder_graphics.get_texture_count(), 1);
 	auto animated_idle = renderer::resources::parser::parse_sprite_file(graphics / "orc_idle.sprite");
 	auto animated_walk = renderer::resources::parser::parse_sprite_file(graphics / "orc_walk.sprite");
+	auto horse_idle = renderer::resources::parser::parse_sprite_file(graphics / "horse.sprite");
+	auto horse_gallop = renderer::resources::parser::parse_sprite_file(graphics / "horse_gallop.sprite");
 	TESTEQUALS(animated_idle.get_texture_count(), size_t{16});
 	TESTEQUALS(animated_walk.get_texture_count(), size_t{16});
+	TESTEQUALS(horse_idle.get_texture_count(), size_t{1});
+	TESTEQUALS(horse_gallop.get_texture_count(), size_t{1});
 	const auto &idle_layer = animated_idle.get_layer(0);
 	const auto &walk_layer = animated_walk.get_layer(0);
+	const auto &horse_idle_layer = horse_idle.get_layer(0);
+	const auto &horse_gallop_layer = horse_gallop.get_layer(0);
 	TESTEQUALS(idle_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(walk_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(horse_idle_layer.get_display_mode(),
+	           renderer::resources::display_mode::OFF);
+	TESTEQUALS(horse_gallop_layer.get_display_mode(),
+	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(horse_idle_layer.get_angle_count(), size_t{16});
+	TESTEQUALS(horse_gallop_layer.get_angle_count(), size_t{16});
 	// A frame duration is measured in seconds, not milliseconds.
 	TESTEQUALS(idle_layer.get_time_per_frame(), 0.125f);
 	TESTEQUALS(walk_layer.get_time_per_frame(), 0.07f);
+	TESTEQUALS(horse_gallop_layer.get_time_per_frame(), 0.08f);
 	const auto idle_frames = idle_layer.get_frame_timing();
 	const auto walk_frames = walk_layer.get_frame_timing();
 	TESTEQUALS(idle_frames->size(), size_t{16});
 	TESTEQUALS(walk_frames->size(), size_t{20});
+	TESTEQUALS(horse_gallop_layer.get_frame_timing()->size(), size_t{12});
+	const std::array<std::pair<float, size_t>, 16> horse_direction_rows{{
+		{0.0f, 15},
+		{22.0f, 14},
+		{45.0f, 13},
+		{67.0f, 12},
+		{90.0f, 11},
+		{112.0f, 10},
+		{135.0f, 9},
+		{157.0f, 8},
+		{180.0f, 7},
+		{202.0f, 6},
+		{225.0f, 5},
+		{247.0f, 4},
+		{270.0f, 3},
+		{292.0f, 2},
+		{315.0f, 1},
+		{337.0f, 0},
+	}};
+	for (const auto &[angle, row] : horse_direction_rows) {
+		const auto &idle_angle = horse_idle_layer.get_direction_angle(angle);
+		const auto &gallop_angle = horse_gallop_layer.get_direction_angle(angle);
+		TESTEQUALS(idle_angle->get_frame(0)->get_subtexture_idx(), row * 12);
+		TESTEQUALS(gallop_angle->get_frame_count(), size_t{12});
+		TESTEQUALS(gallop_angle->get_frame(0)->get_subtexture_idx(), row * 12);
+		TESTEQUALS(gallop_angle->get_frame(11)->get_subtexture_idx(), row * 12 + 11);
+	}
 	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(0.26),
 	                                  time::TIME_ZERO), size_t{2});
 	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(1.95),
@@ -233,10 +275,15 @@ void fvd_scenario() {
 	TESTEQUALS(walk_sheet.get_size(), (std::pair<int32_t, int32_t>{1280, 1024}));
 	TESTEQUALS(idle_sheet.get_subtex_count(), size_t{16});
 	TESTEQUALS(walk_sheet.get_subtex_count(), size_t{20});
+	auto horse_sheet = renderer::resources::parser::parse_texture_file(
+		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse.texture");
+	TESTEQUALS(horse_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
+	TESTEQUALS(horse_sheet.get_subtex_count(), size_t{192});
 	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
 	for (const auto &info : {plains_graphics.get_texture(0),
 	                        builder_graphics.get_texture(0),
+	                        horse_idle.get_texture(0),
 	                        foundation_graphics.get_texture(0),
 	                        tower_graphics.get_texture(0)}) {
 		auto texture = renderer::resources::Texture2dData{info->get_image_path().value()};
@@ -259,9 +306,13 @@ void fvd_scenario() {
 	// The guest's replicated units do not all exist locally (Horses spawn
 	// only on the authoritative host). Resolve the same namespaced sprite
 	// references used by Idle::idle for all four FVD entity definitions.
-	for (const std::string definition : {
-	         "fvd.data.entities.Builder", "fvd.data.entities.Horse",
-	         "fvd.data.entities.Tower", "fvd.data.entities.Foundation"}) {
+	const std::array<std::pair<std::string, size_t>, 4> idle_resources{{
+		{"fvd.data.entities.Builder", 16},
+		{"fvd.data.entities.Horse", 1},
+		{"fvd.data.entities.Tower", 1},
+		{"fvd.data.entities.Foundation", 1},
+	}};
+	for (const auto &[definition, texture_count] : idle_resources) {
 		const auto idle = state->get_db_view()->get_object(definition + ".Idle");
 		const auto animated = api::APIAbility::get_property(
 			idle, api::ability_property_t::ANIMATED);
@@ -271,8 +322,26 @@ void fvd_scenario() {
 		const auto sprite = root / "assets" / "converted" / paths.front();
 		TESTEQUALS(sprite.is_file(), true);
 		const auto parsed = renderer::resources::parser::parse_sprite_file(sprite);
-		TESTEQUALS(parsed.get_texture_count(), size_t{1});
+		TESTEQUALS(parsed.get_texture_count(), texture_count);
 	}
+	const auto horse_move = state->get_db_view()->get_object(
+		"fvd.data.entities.Horse.Move");
+	const auto horse_move_animated = api::APIAbility::get_property(
+		horse_move, api::ability_property_t::ANIMATED);
+	const auto horse_move_animations = api::APIAbilityProperty::get_animations(
+		horse_move_animated);
+	const auto horse_move_paths = api::APIAnimation::get_animation_paths(
+		horse_move_animations);
+	TESTEQUALS(horse_move_paths.size(), size_t{1});
+	const auto horse_move_sprite = root / "assets" / "converted" / horse_move_paths.front();
+	TESTEQUALS(horse_move_sprite.is_file(), true);
+	const auto parsed_horse_move = renderer::resources::parser::parse_sprite_file(
+		horse_move_sprite);
+	const auto &horse_move_layer = parsed_horse_move.get_layer(0);
+	TESTEQUALS(horse_move_layer.get_display_mode(),
+	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(horse_move_layer.get_angle_count(), size_t{16});
+	TESTEQUALS(horse_move_layer.get_frame_timing()->size(), size_t{12});
 
 	auto fvd = state->get_fvd();
 	TESTEQUALS(fvd->get_player_count(), 8);

@@ -95,7 +95,13 @@ Horse(engine.util.game_entity.GameEntity):
         Move.speed = 3.0
         Move.modes = {}
         Move.path_type = fvd.data.terrain.Land
-        Ability.properties = {engine.ability.property.type.Animated: Horse.Idle.Animated}
+        Ability.properties = {engine.ability.property.type.Animated: Animated}
+
+        Animated(engine.ability.property.type.Animated):
+            Animated.animations = {Animation}
+
+            Animation(engine.util.graphics.Animation):
+                Animation.sprite = "../../../fvd/graphics/horse_gallop.sprite"
 
     Turn(engine.ability.type.Turn):
         Turn.turn_speed = inf

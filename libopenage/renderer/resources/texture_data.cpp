@@ -163,7 +163,7 @@ AlphaMask::AlphaMask(const Texture2dData &texture) :
 	for (size_t y = 0; y < this->height; ++y) {
 		for (size_t x = 0; x < this->width; ++x) {
 			auto alpha = data[y * row_size + x * 4 + 3];
-			if (alpha != 0) {
+			if (alpha > ALPHA_MASK_CUTOFF) {
 				auto index = y * this->width + x;
 				this->bits[index / 8] |= static_cast<uint8_t>(1u << (index % 8));
 			}
