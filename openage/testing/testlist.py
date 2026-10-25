@@ -201,11 +201,15 @@ def tests_cpp():
     )
     yield (
         "openage::gamestate::tests::fvd_build_queue",
-        "openage::gamestate::tests::fvd_build_line_order",
-        "openage::gamestate::tests::fvd_animation_phase",
         "FVD FIFO tower construction and reserved queued sites",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_build_line_order",
+        "FVD line placement queues valid tower foundations in order",
+        lambda env: env["has_assets"],
+    )
+    yield "openage::gamestate::tests::fvd_animation_phase"
     yield (
         "openage::gamestate::tests::fvd_retask_foundation",
         "FVD persistent queued foundations and Builder right-click retasking",

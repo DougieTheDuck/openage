@@ -803,18 +803,21 @@ void Presenter::refresh_fvd_guest_visuals() {
 			const auto animated = gamestate::api::APIAbility::get_property(
 				ability, gamestate::api::ability_property_t::ANIMATED);
 			const auto animations = gamestate::api::APIAbilityProperty::get_animations(animated);
-			const auto paths = gamestate::api::APIAnimation::get_animation_paths(animations);
+			auto paths = gamestate::api::APIAnimation::get_animation_paths(animations);
 			if (paths.empty()) {
 				throw Error{MSG(err) << "FVD replica has no animation: " << cache_key};
 			}
-			const auto resolved = this->root_dir / "assets" / "converted" / paths.front();
-			if (not resolved.is_file()) {
-				throw Error{MSG(err) << "FVD replica sprite not found: " << resolved};
+			std::sort(paths.begin(), paths.end());
+			for (const auto &sprite_path : paths) {
+				const auto resolved = this->root_dir / "assets" / "converted" / sprite_path;
+				if (not resolved.is_file()) {
+					throw Error{MSG(err) << "FVD replica sprite not found: " << resolved};
+				}
 			}
-			path = this->fvd_guest_sprite_paths.emplace(cache_key, paths.front()).first;
-			log::log(INFO << "FVD guest sprite " << entity.definition << " -> " << paths.front());
+			path = this->fvd_guest_sprite_paths.emplace(cache_key, std::move(paths)).first;
+			log::log(INFO << "FVD guest sprite " << entity.definition << " has "
+			              << path->second.size() << " variant(s)");
 		}
-
 		present.insert(entity.entity_id);
 		auto &visual = this->fvd_guest_entities[entity.entity_id];
 		const bool new_entity = not visual;

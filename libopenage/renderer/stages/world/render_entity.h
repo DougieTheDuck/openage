@@ -49,6 +49,14 @@ public:
 	            const time::time_t time = 0.0,
 	            std::optional<time::time_t> animation_started_at = std::nullopt);
 
+	/** Update with animation variants that may change after each completed loop. */
+	void update(const uint32_t ref_id,
+	            const curve::Continuous<coord::phys3> &position,
+	            const curve::Segmented<coord::phys_angle_t> &angle,
+	            const std::vector<std::string> &animation_paths,
+	            const time::time_t time = 0.0,
+	            std::optional<time::time_t> animation_started_at = std::nullopt);
+
 	/**
 	 * This function is for DEBUGGING and should not be used.
 	 *
@@ -86,6 +94,15 @@ public:
 	void update_sample(uint32_t ref_id,
 	                   const coord::phys3 &position,
 	                   const std::string &animation_path,
+	                   time::time_t time,
+	                   std::optional<time::time_t> interpolate_from,
+	                   const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys = {},
+	                   std::optional<time::time_t> animation_started_at = std::nullopt);
+
+	/** Append a position sample with interchangeable animation variants. */
+	void update_sample(uint32_t ref_id,
+	                   const coord::phys3 &position,
+	                   const std::vector<std::string> &animation_paths,
 	                   time::time_t time,
 	                   std::optional<time::time_t> interpolate_from,
 	                   const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys = {},
@@ -136,14 +153,12 @@ public:
 	const curve::Segmented<coord::phys_angle_t> &get_angle();
 
 	/**
-	 * Get the animation definition path.
+	 * Get the animation variants and the start time of their active state.
 	 *
-	 * Accessing the animation path curve requires a read lock on the render entity
+	 * Accessing the curve requires a read lock on the render entity
 	 * (using \p get_read_lock()) to ensure thread safety.
-	 *
-	 * @return Path to the animation definition file.
 	 */
-	const curve::Discrete<std::string> &get_animation_path();
+	const curve::Discrete<std::vector<std::string>> &get_animation_paths();
 
 	/**
 	 * Check whether the entity has health data for HUD rendering.
@@ -200,10 +215,8 @@ private:
 	 */
 	curve::Segmented<coord::phys_angle_t> angle;
 
-	/**
-	 * Path to the animation definition file.
-	 */
-	curve::Discrete<std::string> animation_path;
+	/** Animation variants that may change after each completed loop. */
+	curve::Discrete<std::vector<std::string>> animation_paths;
 
 	/**
 	 * Whether health data is available for this entity.

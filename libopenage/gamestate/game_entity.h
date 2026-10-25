@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "gamestate/component/types.h"
 #include "gamestate/types.h"
@@ -122,6 +123,17 @@ public:
 	                   const std::string &animation_path,
 	                   AnimationAction action = AnimationAction::IDLE);
 
+	/**
+	 * Update the render entity with interchangeable animation variants.
+	 *
+	 * @param time Simulation time of the update.
+	 * @param animation_paths Variants that may change after each completed loop.
+	 * @param action Semantic animation action.
+	 */
+	void render_update(const time::time_t &time,
+	                   const std::vector<std::string> &animation_paths,
+	                   AnimationAction action = AnimationAction::IDLE);
+
 	AnimationAction get_animation_action() const;
 	time::time_t get_animation_started_at() const;
 
@@ -170,6 +182,7 @@ private:
 	std::shared_ptr<renderer::world::RenderEntity> render_entity;
 	AnimationAction animation_action{AnimationAction::IDLE};
 	time::time_t animation_started_at{time::TIME_ZERO};
+	std::vector<std::string> animation_paths{};
 	bool animation_initialized{false};
 
 	/**

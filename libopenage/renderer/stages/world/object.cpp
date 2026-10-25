@@ -10,6 +10,8 @@
 
 #include <eigen3/Eigen/Dense>
 
+#include "error/error.h"
+#include "log/message.h"
 #include "renderer/camera/camera.h"
 #include "renderer/camera/frustum_2d.h"
 #include "renderer/definitions.h"
@@ -40,7 +42,14 @@ WorldObject::WorldObject(const std::shared_ptr<renderer::resources::AssetManager
 	ref_id{0},
 	position{nullptr, 0, "", nullptr, SCENE_ORIGIN},
 	angle{nullptr, 0, "", nullptr, 0},
-	animation_info{nullptr, 0},
+	animation_variants{nullptr, 0},
+	variant_cycle_initialized{false},
+	variant_state_start{time::TIME_ZERO},
+	variant_cycle_start{time::TIME_ZERO},
+	variant_cycle_end{time::TIME_ZERO},
+	variant_cycle{0},
+	active_variant{0},
+	variant_sources{},
 	layer_uniforms{},
 	rendered_position{SCENE_ORIGIN},
 	rendered_layers{},
@@ -71,19 +80,46 @@ void WorldObject::fetch_updates(const time::time_t &time) {
 	// Thread-safe access to curves needs a lock on the render entity's mutex
 	auto read_lock = this->render_entity->get_read_lock();
 	this->position.sync(this->render_entity->get_position());
-	this->animation_info.sync(this->render_entity->get_animation_path(),
-	                          std::function<std::shared_ptr<renderer::resources::Animation2dInfo>(const std::string &)>(
-								  [&](const std::string &path) {
-									  if (path.empty()) {
-										  auto placeholder = this->asset_manager->get_placeholder_animation();
-										  if (placeholder) {
-											  return (*placeholder).second;
-										  }
-										  return std::shared_ptr<renderer::resources::Animation2dInfo>{nullptr};
-									  }
-									  return this->asset_manager->request_animation(path);
-								  }),
-	                          time::TIME_MIN);
+	this->animation_variants.sync(
+		this->render_entity->get_animation_paths(),
+		std::function<std::vector<std::shared_ptr<renderer::resources::Animation2dInfo>>(
+			const std::vector<std::string> &)>([&](const std::vector<std::string> &paths) {
+			std::vector<std::shared_ptr<renderer::resources::Animation2dInfo>> variants;
+			variants.reserve(paths.size());
+			for (const auto &path : paths) {
+				if (path.empty()) {
+					auto placeholder = this->asset_manager->get_placeholder_animation();
+					variants.push_back(placeholder ? (*placeholder).second : nullptr);
+				}
+				else {
+					variants.push_back(this->asset_manager->request_animation(path));
+				}
+			}
+			if (variants.size() > 1) {
+				const auto &first = variants.front();
+				if (not first or first->get_layer_count() == 0) [[unlikely]] {
+					throw Error{ERR << "Animation variant has no playback layer"};
+				}
+				const auto &first_layer = first->get_layer(0);
+				if (first_layer.get_display_mode() != renderer::resources::display_mode::LOOP
+				    or not first_layer.get_frame_timing()
+				    or first_layer.get_frame_timing()->get_total_length() <= time::TIME_ZERO) [[unlikely]] {
+					throw Error{ERR << "Animation variants must use a looping first layer"};
+				}
+				for (const auto &variant : variants) {
+					if (not variant or variant->get_layer_count() != first->get_layer_count()
+					    or variant->get_layer(0).get_display_mode()
+					           != renderer::resources::display_mode::LOOP
+					    or not variant->get_layer(0).get_frame_timing()
+					    or variant->get_layer(0).get_frame_timing()->get_total_length()
+					           <= time::TIME_ZERO) [[unlikely]] {
+						throw Error{ERR << "Animation variants must have matching layers and positive loops"};
+					}
+				}
+			}
+			return variants;
+		}),
+		time::TIME_MIN);
 	// Preserve the actual keyframe start time of each animation. Syncing
 	// only from last_update would drop a remotely received start in the
 	// past, causing late-join and recovery clients to restart the loop.
@@ -119,7 +155,7 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 	auto angle_degrees = this->angle.get(time).to_float();
 
 	// Animation information
-	auto [last_update, animation_info] = this->animation_info.frame(time);
+	auto [last_update, animation_info] = this->get_animation_info(time);
 
 	this->rendered_layers.clear();
 	this->rendered_layers.reserve(this->layer_uniforms.size());
@@ -234,7 +270,7 @@ void WorldObject::clear_requires_renderable() {
 }
 
 size_t WorldObject::get_required_layer_count(const time::time_t &time) const {
-	auto animation_info = this->animation_info.get(time);
+	auto animation_info = this->get_animation_info(time).second;
 	if (not animation_info) {
 		return 0;
 	}
@@ -243,7 +279,7 @@ size_t WorldObject::get_required_layer_count(const time::time_t &time) const {
 }
 
 std::vector<size_t> WorldObject::get_layer_positions(const time::time_t &time) const {
-	auto animation_info = this->animation_info.get(time);
+	auto animation_info = this->get_animation_info(time).second;
 	if (not animation_info) {
 		return {};
 	}
@@ -273,11 +309,47 @@ bool WorldObject::is_visible(const camera::Frustum2d &frustum,
                              const time::time_t &time) {
 	static const Eigen::Matrix4f model_matrix = this->get_model_matrix();
 	Eigen::Vector3f current_pos = this->position.get(time).to_world_space();
-	auto animation_info = this->animation_info.get(time);
+	auto animation_info = this->get_animation_info(time).second;
 	return frustum.in_frustum(current_pos,
 	                          model_matrix,
 	                          animation_info->get_scalefactor(),
 	                          animation_info->get_max_bounds());
+}
+
+std::pair<time::time_t, std::shared_ptr<renderer::resources::Animation2dInfo>>
+WorldObject::get_animation_info(const time::time_t &time) const {
+	auto [start_time, variants] = this->animation_variants.frame(time);
+	if (variants.empty()) {
+		return {start_time, nullptr};
+	}
+	if (variants.size() == 1) {
+		return {start_time, variants.front()};
+	}
+	const auto reset = not this->variant_cycle_initialized
+	                   or this->variant_state_start != start_time
+	                   or this->variant_sources != variants
+	                   or time < this->variant_cycle_start;
+	if (reset) {
+		this->variant_cycle_initialized = true;
+		this->variant_state_start = start_time;
+		this->variant_cycle_start = start_time;
+		this->variant_cycle = 0;
+		this->variant_sources = variants;
+		this->active_variant = renderer::resources::select_animation_variant(
+			this->ref_id, start_time, this->variant_cycle, variants.size());
+		this->variant_cycle_end = start_time
+		                          + variants[this->active_variant]->get_layer(0)
+		                                .get_frame_timing()->get_total_length();
+	}
+	while (time >= this->variant_cycle_end) {
+		this->variant_cycle_start = this->variant_cycle_end;
+		++this->variant_cycle;
+		this->active_variant = renderer::resources::select_animation_variant(
+			this->ref_id, start_time, this->variant_cycle, variants.size());
+		this->variant_cycle_end += variants[this->active_variant]->get_layer(0)
+		                             .get_frame_timing()->get_total_length();
+	}
+	return {this->variant_cycle_start, variants[this->active_variant]};
 }
 
 std::optional<WorldObject::HitTestResult> WorldObject::hit_test(

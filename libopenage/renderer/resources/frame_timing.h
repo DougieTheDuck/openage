@@ -80,6 +80,13 @@ public:
 	 */
 	size_t size() const;
 
+	/**
+	 * Get the total duration of the frame sequence.
+	 *
+	 * @return Sequence duration in seconds.
+	 */
+	const time::time_t &get_total_length() const;
+
 private:
 	/**
 	 * Search for the closest frame index with t <= time.

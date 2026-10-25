@@ -2,12 +2,32 @@
 
 #include "animation_info.h"
 
+#include "error/error.h"
+#include "log/message.h"
 #include "renderer/resources/animation/angle_info.h"
 #include "renderer/resources/animation/frame_info.h"
 #include "renderer/resources/texture_info.h"
 
 
 namespace openage::renderer::resources {
+
+size_t select_animation_variant(uint64_t identity,
+                                const time::time_t &start_time,
+                                uint64_t cycle,
+                                size_t variant_count) {
+	if (variant_count == 0) [[unlikely]] {
+		throw Error{ERR << "Cannot select from an empty animation variant set"};
+	}
+
+	auto mixed = identity ^ static_cast<uint64_t>(start_time.get_raw_value());
+	mixed ^= cycle + 0x9e3779b97f4a7c15ULL + (mixed << 6) + (mixed >> 2);
+	mixed ^= mixed >> 30;
+	mixed *= 0xbf58476d1ce4e5b9ULL;
+	mixed ^= mixed >> 27;
+	mixed *= 0x94d049bb133111ebULL;
+	mixed ^= mixed >> 31;
+	return static_cast<size_t>(mixed % variant_count);
+}
 
 Animation2dInfo::Animation2dInfo(const float scalefactor,
                                  std::vector<std::shared_ptr<Texture2dInfo>> &textures,

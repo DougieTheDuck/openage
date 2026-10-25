@@ -160,7 +160,7 @@ void guest_interpolation() {
 	expect_position(second * 3 / 2, {14, 20, 0});
 	{
 		auto lock = visual.get_read_lock();
-		TESTEQUALS(visual.get_animation_path().frame(second).first, time::TIME_ZERO);
+		TESTEQUALS(visual.get_animation_paths().frame(second).first, time::TIME_ZERO);
 	}
 
 	// Equal timestamps replace the endpoint without a duplicate or a jump at playback time.

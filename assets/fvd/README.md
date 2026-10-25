@@ -16,8 +16,9 @@ To try it, start a solo match with `bin/run game --solo --modpacks fvd`,
 select your Builder and right-click around the map. You should see the
 Orc idle loop while stopped and its 16-direction walk cycle when moving.
 Hunter Horses use a 12-frame gallop cycle for each of 16 directions at 0.08 seconds per frame.
-When stationary, the horses instead play two 12-frame idle variations in sequence at 0.48 seconds per frame (six times the gallop duration); the combined loop repeats every 11.52 seconds.
-The atlas layout and source angles are recorded in `graphics/ethereal-hunter-horse/ethereal-hunter-horse_metadata.json`.
+At the start of every idle loop, the renderer selects either idle1 or idle2 using the horse ID, authoritative animation start time and loop number.
+Idle1 uses 24 frames at 0.15 seconds per frame for a 3.6-second loop, while idle2 uses 12 frames at 0.4 seconds per frame for a 4.8-second loop.
+The atlas layouts and source angles are recorded in the JSON metadata files under `graphics/ethereal-hunter-horse/`.
 Source angle 0 faces down and right on screen and maps to openage angle 337 after a one-slot clockwise calibration.
 The atlas rows advance counter-clockwise, so their order is reversed and offset by one to match openage's clockwise angle sequence.
 Remote clients use the same animation action and absolute frame clock after snapshots/deltas; cross-platform visual confirmation is pending.

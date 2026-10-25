@@ -195,37 +195,48 @@ void fvd_scenario() {
 	TESTEQUALS(builder_graphics.get_texture_count(), 1);
 	auto animated_idle = renderer::resources::parser::parse_sprite_file(graphics / "orc_idle.sprite");
 	auto animated_walk = renderer::resources::parser::parse_sprite_file(graphics / "orc_walk.sprite");
-	auto horse_idle = renderer::resources::parser::parse_sprite_file(graphics / "horse.sprite");
-	auto horse_gallop = renderer::resources::parser::parse_sprite_file(graphics / "horse_gallop.sprite");
+	auto horse_idle1 = renderer::resources::parser::parse_sprite_file(
+		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-idle1.sprite");
+	auto horse_idle2 = renderer::resources::parser::parse_sprite_file(
+		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-idle2.sprite");
+	auto horse_gallop = renderer::resources::parser::parse_sprite_file(
+		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-gallop.sprite");
 	TESTEQUALS(animated_idle.get_texture_count(), size_t{16});
 	TESTEQUALS(animated_walk.get_texture_count(), size_t{16});
-	TESTEQUALS(horse_idle.get_texture_count(), size_t{2});
+	TESTEQUALS(horse_idle1.get_texture_count(), size_t{2});
+	TESTEQUALS(horse_idle2.get_texture_count(), size_t{1});
 	TESTEQUALS(horse_gallop.get_texture_count(), size_t{1});
 	const auto &idle_layer = animated_idle.get_layer(0);
 	const auto &walk_layer = animated_walk.get_layer(0);
-	const auto &horse_idle_layer = horse_idle.get_layer(0);
+	const auto &horse_idle1_layer = horse_idle1.get_layer(0);
+	const auto &horse_idle2_layer = horse_idle2.get_layer(0);
 	const auto &horse_gallop_layer = horse_gallop.get_layer(0);
 	TESTEQUALS(idle_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(walk_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
-	TESTEQUALS(horse_idle_layer.get_display_mode(),
+	TESTEQUALS(horse_idle1_layer.get_display_mode(),
+	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(horse_idle2_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_gallop_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
-	TESTEQUALS(horse_idle_layer.get_angle_count(), size_t{16});
+	TESTEQUALS(horse_idle1_layer.get_angle_count(), size_t{16});
+	TESTEQUALS(horse_idle2_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_gallop_layer.get_angle_count(), size_t{16});
 	// A frame duration is measured in seconds, not milliseconds.
 	TESTEQUALS(idle_layer.get_time_per_frame(), 0.125f);
 	TESTEQUALS(walk_layer.get_time_per_frame(), 0.07f);
 	TESTEQUALS(horse_gallop_layer.get_time_per_frame(), 0.08f);
-	TESTEQUALS(horse_idle_layer.get_time_per_frame(), 0.48f);
+	TESTEQUALS(horse_idle1_layer.get_time_per_frame(), 0.15f);
+	TESTEQUALS(horse_idle2_layer.get_time_per_frame(), 0.4f);
 	const auto idle_frames = idle_layer.get_frame_timing();
 	const auto walk_frames = walk_layer.get_frame_timing();
 	TESTEQUALS(idle_frames->size(), size_t{16});
 	TESTEQUALS(walk_frames->size(), size_t{20});
 	TESTEQUALS(horse_gallop_layer.get_frame_timing()->size(), size_t{12});
-	TESTEQUALS(horse_idle_layer.get_frame_timing()->size(), size_t{24});
+	TESTEQUALS(horse_idle1_layer.get_frame_timing()->size(), size_t{24});
+	TESTEQUALS(horse_idle2_layer.get_frame_timing()->size(), size_t{12});
 	const std::array<std::pair<float, size_t>, 16> horse_direction_rows{{
 		{0.0f, 15},
 		{22.0f, 14},
@@ -245,14 +256,20 @@ void fvd_scenario() {
 		{337.0f, 0},
 	}};
 	for (const auto &[angle, row] : horse_direction_rows) {
-		const auto &idle_angle = horse_idle_layer.get_direction_angle(angle);
+		const auto &idle1_angle = horse_idle1_layer.get_direction_angle(angle);
+		const auto &idle2_angle = horse_idle2_layer.get_direction_angle(angle);
 		const auto &gallop_angle = horse_gallop_layer.get_direction_angle(angle);
-		TESTEQUALS(idle_angle->get_frame_count(), size_t{24});
+		TESTEQUALS(idle1_angle->get_frame_count(), size_t{24});
+		TESTEQUALS(idle2_angle->get_frame_count(), size_t{12});
+		const auto idle1_texture = row < 8 ? size_t{0} : size_t{1};
+		const auto idle1_row = row % 8;
+		for (size_t frame = 0; frame < 24; ++frame) {
+			TESTEQUALS(idle1_angle->get_frame(frame)->get_texture_idx(), idle1_texture);
+			TESTEQUALS(idle1_angle->get_frame(frame)->get_subtexture_idx(), idle1_row * 24 + frame);
+		}
 		for (size_t frame = 0; frame < 12; ++frame) {
-			TESTEQUALS(idle_angle->get_frame(frame)->get_texture_idx(), size_t{0});
-			TESTEQUALS(idle_angle->get_frame(frame)->get_subtexture_idx(), row * 12 + frame);
-			TESTEQUALS(idle_angle->get_frame(frame + 12)->get_texture_idx(), size_t{1});
-			TESTEQUALS(idle_angle->get_frame(frame + 12)->get_subtexture_idx(), row * 12 + frame);
+			TESTEQUALS(idle2_angle->get_frame(frame)->get_texture_idx(), size_t{0});
+			TESTEQUALS(idle2_angle->get_frame(frame)->get_subtexture_idx(), row * 12 + frame);
 		}
 		TESTEQUALS(gallop_angle->get_frame_count(), size_t{12});
 		TESTEQUALS(gallop_angle->get_frame(0)->get_subtexture_idx(), row * 12);
@@ -270,13 +287,16 @@ void fvd_scenario() {
 	                                  time::TIME_ZERO), size_t{19});
 	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(1.45),
 	                                  time::TIME_ZERO), size_t{0});
-	const auto horse_idle_frames = horse_idle_layer.get_frame_timing();
-	TESTEQUALS(horse_idle_frames->get_frame(time::time_t::from_double(0.9),
-	                                       time::TIME_ZERO), size_t{1});
-	TESTEQUALS(horse_idle_frames->get_frame(time::time_t::from_double(5.9),
-	                                       time::TIME_ZERO), size_t{12});
-	TESTEQUALS(horse_idle_frames->get_frame(time::time_t::from_double(11.6),
-	                                       time::TIME_ZERO), size_t{0});
+	const auto horse_idle1_frames = horse_idle1_layer.get_frame_timing();
+	const auto horse_idle2_frames = horse_idle2_layer.get_frame_timing();
+	TESTEQUALS(horse_idle1_frames->get_frame(time::time_t::from_double(0.91),
+	                                        time::TIME_ZERO), size_t{6});
+	TESTEQUALS(horse_idle1_frames->get_frame(time::time_t::from_double(5.9),
+	                                        time::TIME_ZERO), size_t{15});
+	TESTEQUALS(horse_idle2_frames->get_frame(time::time_t::from_double(0.9),
+	                                        time::TIME_ZERO), size_t{2});
+	TESTEQUALS(horse_idle2_frames->get_frame(time::time_t::from_double(5.9),
+	                                        time::TIME_ZERO), size_t{2});
 	// Phase is relative to the host's start time, not packet arrival.
 	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(10.16),
 	                                  time::time_t::from_int(10)), size_t{2});
@@ -291,10 +311,11 @@ void fvd_scenario() {
 	TESTEQUALS(idle_sheet.get_subtex_count(), size_t{16});
 	TESTEQUALS(walk_sheet.get_subtex_count(), size_t{20});
 	auto horse_sheet = renderer::resources::parser::parse_texture_file(
-		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse.texture");
+		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-gallop.texture");
 	TESTEQUALS(horse_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
 	TESTEQUALS(horse_sheet.get_subtex_count(), size_t{192});
-	for (const auto &idle_name : {"ethereal-hunter-horse-idle1.texture",
+	for (const auto &idle_name : {"ethereal-hunter-horse-idle1_page_00.texture",
+	                              "ethereal-hunter-horse-idle1_page_01.texture",
 	                              "ethereal-hunter-horse-idle2.texture"}) {
 		auto idle_sheet = renderer::resources::parser::parse_texture_file(
 			graphics / "ethereal-hunter-horse" / idle_name);
@@ -305,8 +326,9 @@ void fvd_scenario() {
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
 	for (const auto &info : {plains_graphics.get_texture(0),
 	                        builder_graphics.get_texture(0),
-	                        horse_idle.get_texture(0),
-	                        horse_idle.get_texture(1),
+	                        horse_idle1.get_texture(0),
+	                        horse_idle1.get_texture(1),
+	                        horse_idle2.get_texture(0),
 	                        foundation_graphics.get_texture(0),
 	                        tower_graphics.get_texture(0)}) {
 		auto texture = renderer::resources::Texture2dData{info->get_image_path().value()};
@@ -329,9 +351,8 @@ void fvd_scenario() {
 	// The guest's replicated units do not all exist locally (Horses spawn
 	// only on the authoritative host). Resolve the same namespaced sprite
 	// references used by Idle::idle for all four FVD entity definitions.
-	const std::array<std::pair<std::string, size_t>, 4> idle_resources{{
+	const std::array<std::pair<std::string, size_t>, 3> idle_resources{{
 		{"fvd.data.entities.Builder", 16},
-		{"fvd.data.entities.Horse", 2},
 		{"fvd.data.entities.Tower", 1},
 		{"fvd.data.entities.Foundation", 1},
 	}};
@@ -347,6 +368,26 @@ void fvd_scenario() {
 		const auto parsed = renderer::resources::parser::parse_sprite_file(sprite);
 		TESTEQUALS(parsed.get_texture_count(), texture_count);
 	}
+	const auto horse_idle = state->get_db_view()->get_object(
+		"fvd.data.entities.Horse.Idle");
+	const auto horse_idle_animated = api::APIAbility::get_property(
+		horse_idle, api::ability_property_t::ANIMATED);
+	const auto horse_idle_animations = api::APIAbilityProperty::get_animations(
+		horse_idle_animated);
+	auto horse_idle_paths = api::APIAnimation::get_animation_paths(
+		horse_idle_animations);
+	std::sort(horse_idle_paths.begin(), horse_idle_paths.end());
+	TESTEQUALS(horse_idle_paths.size(), size_t{2});
+	TESTEQUALS(horse_idle_paths[0].ends_with("ethereal-hunter-horse-idle1.sprite"), true);
+	TESTEQUALS(horse_idle_paths[1].ends_with("ethereal-hunter-horse-idle2.sprite"), true);
+	TESTEQUALS(renderer::resources::parser::parse_sprite_file(
+		           root / "assets" / "converted" / horse_idle_paths[0])
+	             .get_texture_count(),
+	           size_t{2});
+	TESTEQUALS(renderer::resources::parser::parse_sprite_file(
+		           root / "assets" / "converted" / horse_idle_paths[1])
+	             .get_texture_count(),
+	           size_t{1});
 	const auto horse_move = state->get_db_view()->get_object(
 		"fvd.data.entities.Horse.Move");
 	const auto horse_move_animated = api::APIAbility::get_property(
@@ -513,7 +554,7 @@ void fvd_scenario() {
 		entity->set_render_entity(render);
 		system::Idle::idle(entity, time::TIME_ZERO);
 		auto lock = render->get_read_lock();
-		TESTEQUALS(render->get_animation_path().get(time::TIME_ZERO).ends_with("foundation.sprite"), true);
+		TESTEQUALS(render->get_animation_paths().get(time::TIME_ZERO).front().ends_with("foundation.sprite"), true);
 	}
 	TESTEQUALS(first_foundation != 0, true);
 
@@ -1672,6 +1713,35 @@ void fvd_build_queue() {
 }
 
 void fvd_animation_phase() {
+	TESTTHROWS(renderer::resources::select_animation_variant(
+		77, time::TIME_ZERO, 0, 0));
+	std::array<bool, 2> selected_variants{};
+	for (uint64_t cycle = 0; cycle < 64; ++cycle) {
+		const auto selected = renderer::resources::select_animation_variant(
+			77, time::time_t::from_int(20), cycle, selected_variants.size());
+		TESTEQUALS(selected,
+		           renderer::resources::select_animation_variant(
+			           77, time::time_t::from_int(20), cycle,
+			           selected_variants.size()));
+		selected_variants.at(selected) = true;
+	}
+	TESTEQUALS(std::all_of(selected_variants.begin(), selected_variants.end(),
+	                       [](bool selected) { return selected; }),
+	           true);
+	renderer::world::RenderEntity variant_entity{};
+	const std::vector<std::string> idle_variants{
+		"fvd/idle1.sprite", "fvd/idle2.sprite"};
+	variant_entity.update_sample(77, coord::phys3{20, 20, 0}, idle_variants,
+	                             time::time_t::from_int(20), std::nullopt, {},
+	                             time::time_t::from_int(20));
+	{
+		auto lock = variant_entity.get_read_lock();
+		const auto variants = variant_entity.get_animation_paths().get_time(
+			time::time_t::from_int(20));
+		TESTEQUALS(variants.first, time::time_t::from_int(20));
+		TESTEQUALS(variants.second, idle_variants);
+	}
+
 	// An entity spawned after match start begins its very first idle
 	// animation at spawn time, not when the match clock was zero.
 	GameEntity spawned{77};
@@ -1681,6 +1751,9 @@ void fvd_animation_phase() {
 	spawned.render_update(time::time_t::from_int(21),
 	                     "fvd/orc_idle.sprite", AnimationAction::IDLE);
 	TESTEQUALS(spawned.get_animation_started_at(), time::time_t::from_int(20));
+	spawned.render_update(time::time_t::from_double(21.5),
+	                     "fvd/orc_idle_alternate.sprite", AnimationAction::IDLE);
+	TESTEQUALS(spawned.get_animation_started_at(), time::time_t::from_double(21.5));
 	spawned.render_update(time::time_t::from_int(22),
 	                     "fvd/orc_walk.sprite", AnimationAction::MOVE);
 	TESTEQUALS(spawned.get_animation_started_at(), time::time_t::from_int(22));
@@ -1694,32 +1767,32 @@ void fvd_animation_phase() {
 	                     {}, at(1.25));
 	{
 		auto lock = entity.get_read_lock();
-		const auto phase = entity.get_animation_path().get_time(at(5));
+		const auto phase = entity.get_animation_paths().get_time(at(5));
 		TESTEQUALS(phase.first, at(1.25));
-		TESTEQUALS(phase.second, std::string{"fvd/orc_idle.sprite"});
+		TESTEQUALS(phase.second, (std::vector<std::string>{"fvd/orc_idle.sprite"}));
 	}
 	entity.update_sample(77, coord::phys3{21, 20, 0},
 	                     "fvd/orc_idle.sprite", at(5.25), at(5),
 	                     {}, at(1.25));
 	{
 		auto lock = entity.get_read_lock();
-		TESTEQUALS(entity.get_animation_path().get_time(at(5.25)).first, at(1.25));
+		TESTEQUALS(entity.get_animation_paths().get_time(at(5.25)).first, at(1.25));
 	}
 	entity.update_sample(77, coord::phys3{22, 20, 0},
 	                     "fvd/orc_walk.sprite", at(5.75), at(5.25),
 	                     {}, at(5.5));
 	{
 		auto lock = entity.get_read_lock();
-		const auto phase = entity.get_animation_path().get_time(at(5.75));
+		const auto phase = entity.get_animation_paths().get_time(at(5.75));
 		TESTEQUALS(phase.first, at(5.5));
-		TESTEQUALS(phase.second, std::string{"fvd/orc_walk.sprite"});
+		TESTEQUALS(phase.second, (std::vector<std::string>{"fvd/orc_walk.sprite"}));
 	}
 	entity.update_sample(77, coord::phys3{23, 20, 0},
 	                     "fvd/orc_idle.sprite", at(6.5), std::nullopt,
 	                     {}, at(6.25));
 	{
 		auto lock = entity.get_read_lock();
-		TESTEQUALS(entity.get_animation_path().get_time(at(6.5)).first, at(6.25));
+		TESTEQUALS(entity.get_animation_paths().get_time(at(6.5)).first, at(6.25));
 	}
 }
 

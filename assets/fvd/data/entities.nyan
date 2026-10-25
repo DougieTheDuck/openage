@@ -77,10 +77,13 @@ Horse(engine.util.game_entity.GameEntity):
         Ability.properties = {engine.ability.property.type.Animated: Animated}
 
         Animated(engine.ability.property.type.Animated):
-            Animated.animations = {Animation}
+            Animated.animations = {Idle1Animation, Idle2Animation}
 
-            Animation(engine.util.graphics.Animation):
-                Animation.sprite = "../../../fvd/graphics/horse.sprite"
+            Idle1Animation(engine.util.graphics.Animation):
+                Animation.sprite = "../../../fvd/graphics/ethereal-hunter-horse/ethereal-hunter-horse-idle1.sprite"
+
+            Idle2Animation(engine.util.graphics.Animation):
+                Animation.sprite = "../../../fvd/graphics/ethereal-hunter-horse/ethereal-hunter-horse-idle2.sprite"
 
     Live(engine.ability.type.Live):
         Live.attributes = {HealthSetting}
@@ -101,7 +104,7 @@ Horse(engine.util.game_entity.GameEntity):
             Animated.animations = {Animation}
 
             Animation(engine.util.graphics.Animation):
-                Animation.sprite = "../../../fvd/graphics/horse_gallop.sprite"
+                Animation.sprite = "../../../fvd/graphics/ethereal-hunter-horse/ethereal-hunter-horse-gallop.sprite"
 
     Turn(engine.ability.type.Turn):
         Turn.turn_speed = inf

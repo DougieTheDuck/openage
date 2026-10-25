@@ -2,6 +2,9 @@
 
 #include "game_entity.h"
 
+#include <algorithm>
+
+#include "error/error.h"
 #include "gamestate/api/ability.h"
 #include "gamestate/api/animation.h"
 #include "gamestate/api/property.h"
@@ -10,6 +13,7 @@
 #include "gamestate/component/api/move.h"
 #include "gamestate/component/base_component.h"
 #include "gamestate/component/internal/position.h"
+#include "log/message.h"
 #include "renderer/stages/world/render_entity.h"
 
 namespace openage::gamestate {
@@ -72,9 +76,22 @@ bool GameEntity::has_component(component::component_t type) {
 void GameEntity::render_update(const time::time_t &time,
                                const std::string &animation_path,
                                AnimationAction action) {
-	if (not this->animation_initialized or this->animation_action != action) {
+	this->render_update(time, std::vector<std::string>{animation_path}, action);
+}
+
+void GameEntity::render_update(const time::time_t &time,
+                               const std::vector<std::string> &animation_paths,
+                               AnimationAction action) {
+	if (animation_paths.empty()) [[unlikely]] {
+		throw Error{ERR << "Entity " << this->id << " has no animation variants."};
+	}
+	auto sorted_paths = animation_paths;
+	std::sort(sorted_paths.begin(), sorted_paths.end());
+	if (not this->animation_initialized or this->animation_action != action
+	    or this->animation_paths != sorted_paths) {
 		this->animation_action = action;
 		this->animation_started_at = time;
+		this->animation_paths = sorted_paths;
 		this->animation_initialized = true;
 	}
 	if (this->render_entity != nullptr) {
@@ -85,7 +102,7 @@ void GameEntity::render_update(const time::time_t &time,
 								this->components.at(component::component_t::POSITION))
 		                        ->get_angles();
 		this->render_entity->update(
-			this->id, pos, angle, animation_path, time, this->animation_started_at);
+			this->id, pos, angle, sorted_paths, time, this->animation_started_at);
 
 		if (this->has_component(component::component_t::LIVE)) {
 			auto live = dynamic_pointer_cast<component::Live>(

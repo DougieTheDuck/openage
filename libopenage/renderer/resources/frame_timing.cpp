@@ -54,6 +54,10 @@ size_t FrameTiming::size() const {
 	return this->keyframes.size();
 }
 
+const time::time_t &FrameTiming::get_total_length() const {
+	return this->total_length;
+}
+
 size_t FrameTiming::search_frame(const time::time_t &time) const {
 	size_t left = 0;
 	size_t right = this->keyframes.size();

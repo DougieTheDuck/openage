@@ -5,6 +5,8 @@
 #include <functional>
 #include <mutex>
 
+#include "error/error.h"
+#include "log/message.h"
 #include "renderer/definitions.h"
 
 
@@ -15,7 +17,7 @@ RenderEntity::RenderEntity(bool pickable) :
 	ref_id{0},
 	position{nullptr, 0, "", nullptr, SCENE_ORIGIN},
 	angle{nullptr, 0, "", nullptr, 0},
-	animation_path{nullptr, 0},
+	animation_paths{nullptr, 0},
 	health_available{false},
 	active{true},
 	pickable{pickable},
@@ -29,6 +31,19 @@ void RenderEntity::update(const uint32_t ref_id,
                           const std::string animation_path,
                           const time::time_t time,
                           std::optional<time::time_t> animation_started_at) {
+	this->update(ref_id, position, angle, std::vector<std::string>{animation_path},
+	             time, animation_started_at);
+}
+
+void RenderEntity::update(const uint32_t ref_id,
+                          const curve::Continuous<coord::phys3> &position,
+                          const curve::Segmented<coord::phys_angle_t> &angle,
+                          const std::vector<std::string> &animation_paths,
+                          const time::time_t time,
+                          std::optional<time::time_t> animation_started_at) {
+	if (animation_paths.empty()) [[unlikely]] {
+		throw Error{MSG(err) << "World render entity has no animation variants"};
+	}
 	std::unique_lock lock{this->mutex};
 
 	this->ref_id = ref_id;
@@ -42,9 +57,9 @@ void RenderEntity::update(const uint32_t ref_id,
 	                    this->last_update);
 	this->angle.sync(angle, this->last_update);
 	const auto start_at = animation_started_at.value_or(time);
-	const auto current = this->animation_path.get_time(time);
-	if (current.second != animation_path or current.first != start_at) {
-		this->animation_path.set_last(start_at, animation_path);
+	const auto current = this->animation_paths.get_time(time);
+	if (current.second != animation_paths or current.first != start_at) {
+		this->animation_paths.set_last(start_at, animation_paths);
 	}
 	this->changed = true;
 	this->last_update = time;
@@ -91,7 +106,7 @@ void RenderEntity::update(const uint32_t ref_id,
 
 	this->ref_id = ref_id;
 	this->position.set_last(time, position.to_scene3());
-	this->animation_path.set_last(time, animation_path);
+	this->animation_paths.set_last(time, {animation_path});
 	this->changed = true;
 	this->last_update = time;
 }
@@ -103,6 +118,20 @@ void RenderEntity::update_sample(uint32_t ref_id,
                                  std::optional<time::time_t> interpolate_from,
                                  const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys,
                                  std::optional<time::time_t> animation_started_at) {
+	this->update_sample(ref_id, position, std::vector<std::string>{animation_path},
+	                    time, interpolate_from, future_keys, animation_started_at);
+}
+
+void RenderEntity::update_sample(uint32_t ref_id,
+                                 const coord::phys3 &position,
+                                 const std::vector<std::string> &animation_paths,
+                                 time::time_t time,
+                                 std::optional<time::time_t> interpolate_from,
+                                 const std::vector<std::pair<time::time_t, coord::phys3>> &future_keys,
+                                 std::optional<time::time_t> animation_started_at) {
+	if (animation_paths.empty()) [[unlikely]] {
+		throw Error{MSG(err) << "Replicated world entity has no animation variants"};
+	}
 	std::unique_lock lock{this->mutex};
 	if (interpolate_from and *interpolate_from > time) {
 		throw Error{MSG(err) << "Position sample precedes presentation time"};
@@ -129,12 +158,12 @@ void RenderEntity::update_sample(uint32_t ref_id,
 	}
 	this->position.sync(samples);
 	const auto start_at = animation_started_at.value_or(interpolate_from.value_or(time));
-	const auto current_animation = this->animation_path.get_time(time);
-	if (not interpolate_from or current_animation.second != animation_path
+	const auto current_animation = this->animation_paths.get_time(time);
+	if (not interpolate_from or current_animation.second != animation_paths
 	    or (animation_started_at and current_animation.first != *animation_started_at)) {
 		// Match the authoritative phase even if the first guest snapshot
 		// arrives mid-loop. Clock-only deltas must not restart the animation.
-		this->animation_path.set_last(start_at, animation_path);
+		this->animation_paths.set_last(start_at, animation_paths);
 	}
 	this->ref_id = ref_id;
 	this->changed = true;
@@ -155,8 +184,8 @@ const curve::Segmented<coord::phys_angle_t> &RenderEntity::get_angle() {
 	return this->angle;
 }
 
-const curve::Discrete<std::string> &RenderEntity::get_animation_path() {
-	return this->animation_path;
+const curve::Discrete<std::vector<std::string>> &RenderEntity::get_animation_paths() {
+	return this->animation_paths;
 }
 
 bool RenderEntity::has_health() {

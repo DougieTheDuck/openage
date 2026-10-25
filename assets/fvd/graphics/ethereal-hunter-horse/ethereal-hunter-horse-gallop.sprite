@@ -2,7 +2,7 @@
 # FVD Hunter horse 12-frame, 16-direction gallop cycle.
 version 2
 
-texture 0 "ethereal-hunter-horse/ethereal-hunter-horse.texture"
+texture 0 "ethereal-hunter-horse-gallop.texture"
 
 scalefactor 1.0
 

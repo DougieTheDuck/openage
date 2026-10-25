@@ -7,6 +7,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "coord/pixel.h"
 #include "coord/scene.h"
@@ -225,7 +227,19 @@ private:
 	/**
 	 * Animation information for the layers.
 	 */
-	curve::Discrete<std::shared_ptr<renderer::resources::Animation2dInfo>> animation_info;
+	curve::Discrete<std::vector<std::shared_ptr<renderer::resources::Animation2dInfo>>> animation_variants;
+
+	/** Select the animation variant for the loop containing \p time. */
+	std::pair<time::time_t, std::shared_ptr<renderer::resources::Animation2dInfo>>
+	get_animation_info(const time::time_t &time) const;
+
+	mutable bool variant_cycle_initialized;
+	mutable time::time_t variant_state_start;
+	mutable time::time_t variant_cycle_start;
+	mutable time::time_t variant_cycle_end;
+	mutable uint64_t variant_cycle;
+	mutable size_t active_variant;
+	mutable std::vector<std::shared_ptr<renderer::resources::Animation2dInfo>> variant_sources;
 
 	/**
 	 * Shader uniforms for the layers of the object. Each layer corresponds to a

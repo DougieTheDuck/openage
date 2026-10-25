@@ -1,7 +1,7 @@
 # Copyright 2026 the openage authors. See copying.md for legal info.
 # FVD Hunter horse atlas: 12 frames across 16 directional rows.
 version 1
-imagefile "ethereal-hunter-horse.png"
+imagefile "ethereal-hunter-horse-gallop.png"
 size 3072 4096
 pxformat rgba8 cbits=False
 

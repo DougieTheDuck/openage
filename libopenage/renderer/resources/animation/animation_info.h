@@ -3,16 +3,32 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
 #include "renderer/resources/animation/layer_info.h"
+#include "time/time.h"
 #include "util/vector.h"
 
 
 namespace openage::renderer::resources {
 class Texture2dInfo;
 class Texture2dSubInfo;
+
+/**
+ * Choose a stable pseudo-random animation variant for one playback cycle.
+ *
+ * @param identity Stable render entity identity.
+ * @param start_time Absolute start time of the animation state.
+ * @param cycle Zero-based completed-loop count.
+ * @param variant_count Number of available variants.
+ * @return Index in the half-open range [0, variant_count).
+ */
+size_t select_animation_variant(uint64_t identity,
+                                const time::time_t &start_time,
+                                uint64_t cycle,
+                                size_t variant_count);
 
 /**
  * Contains information about a 2D animation. The animation data can be
