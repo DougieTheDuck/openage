@@ -199,7 +199,7 @@ void fvd_scenario() {
 	auto horse_gallop = renderer::resources::parser::parse_sprite_file(graphics / "horse_gallop.sprite");
 	TESTEQUALS(animated_idle.get_texture_count(), size_t{16});
 	TESTEQUALS(animated_walk.get_texture_count(), size_t{16});
-	TESTEQUALS(horse_idle.get_texture_count(), size_t{1});
+	TESTEQUALS(horse_idle.get_texture_count(), size_t{2});
 	TESTEQUALS(horse_gallop.get_texture_count(), size_t{1});
 	const auto &idle_layer = animated_idle.get_layer(0);
 	const auto &walk_layer = animated_walk.get_layer(0);
@@ -210,7 +210,7 @@ void fvd_scenario() {
 	TESTEQUALS(walk_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_idle_layer.get_display_mode(),
-	           renderer::resources::display_mode::OFF);
+	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_gallop_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_idle_layer.get_angle_count(), size_t{16});
@@ -219,11 +219,13 @@ void fvd_scenario() {
 	TESTEQUALS(idle_layer.get_time_per_frame(), 0.125f);
 	TESTEQUALS(walk_layer.get_time_per_frame(), 0.07f);
 	TESTEQUALS(horse_gallop_layer.get_time_per_frame(), 0.08f);
+	TESTEQUALS(horse_idle_layer.get_time_per_frame(), 0.48f);
 	const auto idle_frames = idle_layer.get_frame_timing();
 	const auto walk_frames = walk_layer.get_frame_timing();
 	TESTEQUALS(idle_frames->size(), size_t{16});
 	TESTEQUALS(walk_frames->size(), size_t{20});
 	TESTEQUALS(horse_gallop_layer.get_frame_timing()->size(), size_t{12});
+	TESTEQUALS(horse_idle_layer.get_frame_timing()->size(), size_t{24});
 	const std::array<std::pair<float, size_t>, 16> horse_direction_rows{{
 		{0.0f, 15},
 		{22.0f, 14},
@@ -245,7 +247,13 @@ void fvd_scenario() {
 	for (const auto &[angle, row] : horse_direction_rows) {
 		const auto &idle_angle = horse_idle_layer.get_direction_angle(angle);
 		const auto &gallop_angle = horse_gallop_layer.get_direction_angle(angle);
-		TESTEQUALS(idle_angle->get_frame(0)->get_subtexture_idx(), row * 12);
+		TESTEQUALS(idle_angle->get_frame_count(), size_t{24});
+		for (size_t frame = 0; frame < 12; ++frame) {
+			TESTEQUALS(idle_angle->get_frame(frame)->get_texture_idx(), size_t{0});
+			TESTEQUALS(idle_angle->get_frame(frame)->get_subtexture_idx(), row * 12 + frame);
+			TESTEQUALS(idle_angle->get_frame(frame + 12)->get_texture_idx(), size_t{1});
+			TESTEQUALS(idle_angle->get_frame(frame + 12)->get_subtexture_idx(), row * 12 + frame);
+		}
 		TESTEQUALS(gallop_angle->get_frame_count(), size_t{12});
 		TESTEQUALS(gallop_angle->get_frame(0)->get_subtexture_idx(), row * 12);
 		TESTEQUALS(gallop_angle->get_frame(11)->get_subtexture_idx(), row * 12 + 11);
@@ -262,6 +270,13 @@ void fvd_scenario() {
 	                                  time::TIME_ZERO), size_t{19});
 	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(1.45),
 	                                  time::TIME_ZERO), size_t{0});
+	const auto horse_idle_frames = horse_idle_layer.get_frame_timing();
+	TESTEQUALS(horse_idle_frames->get_frame(time::time_t::from_double(0.9),
+	                                       time::TIME_ZERO), size_t{1});
+	TESTEQUALS(horse_idle_frames->get_frame(time::time_t::from_double(5.9),
+	                                       time::TIME_ZERO), size_t{12});
+	TESTEQUALS(horse_idle_frames->get_frame(time::time_t::from_double(11.6),
+	                                       time::TIME_ZERO), size_t{0});
 	// Phase is relative to the host's start time, not packet arrival.
 	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(10.16),
 	                                  time::time_t::from_int(10)), size_t{2});
@@ -279,11 +294,19 @@ void fvd_scenario() {
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse.texture");
 	TESTEQUALS(horse_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
 	TESTEQUALS(horse_sheet.get_subtex_count(), size_t{192});
+	for (const auto &idle_name : {"ethereal-hunter-horse-idle1.texture",
+	                              "ethereal-hunter-horse-idle2.texture"}) {
+		auto idle_sheet = renderer::resources::parser::parse_texture_file(
+			graphics / "ethereal-hunter-horse" / idle_name);
+		TESTEQUALS(idle_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
+		TESTEQUALS(idle_sheet.get_subtex_count(), size_t{192});
+	}
 	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
 	for (const auto &info : {plains_graphics.get_texture(0),
 	                        builder_graphics.get_texture(0),
 	                        horse_idle.get_texture(0),
+	                        horse_idle.get_texture(1),
 	                        foundation_graphics.get_texture(0),
 	                        tower_graphics.get_texture(0)}) {
 		auto texture = renderer::resources::Texture2dData{info->get_image_path().value()};
@@ -308,7 +331,7 @@ void fvd_scenario() {
 	// references used by Idle::idle for all four FVD entity definitions.
 	const std::array<std::pair<std::string, size_t>, 4> idle_resources{{
 		{"fvd.data.entities.Builder", 16},
-		{"fvd.data.entities.Horse", 1},
+		{"fvd.data.entities.Horse", 2},
 		{"fvd.data.entities.Tower", 1},
 		{"fvd.data.entities.Foundation", 1},
 	}};

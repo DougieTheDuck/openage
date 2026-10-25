@@ -3,7 +3,7 @@
   "columns": 12,
   "rows": 16,
   "view_count": 16,
-  "start_angle_degrees": 0.0,
+  "start_angle_degrees": 0,
   "angle_step_degrees": 22.5,
   "max_sprite_width": 256,
   "max_sprite_height": 256,
@@ -12,8 +12,8 @@
       "name": "FVD_Horse_Idle_view_00",
       "row": 0,
       "angle_index": 0,
-      "angle_degrees": 0.0,
-      "frame_count": 14,
+      "angle_degrees": 0,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -22,7 +22,7 @@
       "row": 1,
       "angle_index": 1,
       "angle_degrees": 22.5,
-      "frame_count": 14,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -30,8 +30,8 @@
       "name": "FVD_Horse_Idle_view_02",
       "row": 2,
       "angle_index": 2,
-      "angle_degrees": 45.0,
-      "frame_count": 14,
+      "angle_degrees": 45,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -40,7 +40,7 @@
       "row": 3,
       "angle_index": 3,
       "angle_degrees": 67.5,
-      "frame_count": 14,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -48,8 +48,8 @@
       "name": "FVD_Horse_Idle_view_04",
       "row": 4,
       "angle_index": 4,
-      "angle_degrees": 90.0,
-      "frame_count": 14,
+      "angle_degrees": 90,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -58,7 +58,7 @@
       "row": 5,
       "angle_index": 5,
       "angle_degrees": 112.5,
-      "frame_count": 14,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -66,8 +66,8 @@
       "name": "FVD_Horse_Idle_view_06",
       "row": 6,
       "angle_index": 6,
-      "angle_degrees": 135.0,
-      "frame_count": 14,
+      "angle_degrees": 135,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -76,7 +76,7 @@
       "row": 7,
       "angle_index": 7,
       "angle_degrees": 157.5,
-      "frame_count": 14,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -84,8 +84,8 @@
       "name": "FVD_Horse_Idle_view_08",
       "row": 8,
       "angle_index": 8,
-      "angle_degrees": 180.0,
-      "frame_count": 14,
+      "angle_degrees": 180,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -94,7 +94,7 @@
       "row": 9,
       "angle_index": 9,
       "angle_degrees": 202.5,
-      "frame_count": 14,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -102,8 +102,8 @@
       "name": "FVD_Horse_Idle_view_10",
       "row": 10,
       "angle_index": 10,
-      "angle_degrees": 225.0,
-      "frame_count": 14,
+      "angle_degrees": 225,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -112,7 +112,7 @@
       "row": 11,
       "angle_index": 11,
       "angle_degrees": 247.5,
-      "frame_count": 14,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -120,8 +120,8 @@
       "name": "FVD_Horse_Idle_view_12",
       "row": 12,
       "angle_index": 12,
-      "angle_degrees": 270.0,
-      "frame_count": 14,
+      "angle_degrees": 270,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -130,7 +130,7 @@
       "row": 13,
       "angle_index": 13,
       "angle_degrees": 292.5,
-      "frame_count": 14,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -138,8 +138,8 @@
       "name": "FVD_Horse_Idle_view_14",
       "row": 14,
       "angle_index": 14,
-      "angle_degrees": 315.0,
-      "frame_count": 14,
+      "angle_degrees": 315,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     },
@@ -148,7 +148,7 @@
       "row": 15,
       "angle_index": 15,
       "angle_degrees": 337.5,
-      "frame_count": 14,
+      "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
     }

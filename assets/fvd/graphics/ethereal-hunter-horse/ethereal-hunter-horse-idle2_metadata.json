@@ -1,9 +1,9 @@
 {
-  "sprite_sheet": "ethereal-hunter-horse-idle1.png",
+  "sprite_sheet": "ethereal-hunter-horse-idle2.png",
   "columns": 12,
   "rows": 16,
   "view_count": 16,
-  "start_angle_degrees": 0.0,
+  "start_angle_degrees": 0,
   "angle_step_degrees": 22.5,
   "max_sprite_width": 256,
   "max_sprite_height": 256,
@@ -12,7 +12,7 @@
       "name": "FVD_Horse_Idle2_view_00",
       "row": 0,
       "angle_index": 0,
-      "angle_degrees": 0.0,
+      "angle_degrees": 0,
       "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
@@ -30,7 +30,7 @@
       "name": "FVD_Horse_Idle2_view_02",
       "row": 2,
       "angle_index": 2,
-      "angle_degrees": 45.0,
+      "angle_degrees": 45,
       "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
@@ -48,7 +48,7 @@
       "name": "FVD_Horse_Idle2_view_04",
       "row": 4,
       "angle_index": 4,
-      "angle_degrees": 90.0,
+      "angle_degrees": 90,
       "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
@@ -66,7 +66,7 @@
       "name": "FVD_Horse_Idle2_view_06",
       "row": 6,
       "angle_index": 6,
-      "angle_degrees": 135.0,
+      "angle_degrees": 135,
       "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
@@ -84,7 +84,7 @@
       "name": "FVD_Horse_Idle2_view_08",
       "row": 8,
       "angle_index": 8,
-      "angle_degrees": 180.0,
+      "angle_degrees": 180,
       "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
@@ -102,7 +102,7 @@
       "name": "FVD_Horse_Idle2_view_10",
       "row": 10,
       "angle_index": 10,
-      "angle_degrees": 225.0,
+      "angle_degrees": 225,
       "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
@@ -120,7 +120,7 @@
       "name": "FVD_Horse_Idle2_view_12",
       "row": 12,
       "angle_index": 12,
-      "angle_degrees": 270.0,
+      "angle_degrees": 270,
       "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
@@ -138,7 +138,7 @@
       "name": "FVD_Horse_Idle2_view_14",
       "row": 14,
       "angle_index": 14,
-      "angle_degrees": 315.0,
+      "angle_degrees": 315,
       "frame_count": 12,
       "sprite_width": 256,
       "sprite_height": 256
