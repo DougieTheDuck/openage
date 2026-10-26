@@ -1388,6 +1388,24 @@ void FVD::cancel_attack_move(entity_id_t id) {
 	this->attack_orders.erase(id);
 }
 
+std::optional<entity_id_t> FVD::completed_tower_at(
+	const std::shared_ptr<GameState> &state, const coord::tile &tile) const {
+	std::optional<entity_id_t> found;
+	for (const auto &[id, footprint] : this->tower_footprints) {
+		if (footprint.under_construction
+		    or not state->get_game_entities().contains(id)) {
+			continue;
+		}
+		for (const auto &cell : footprint.cells) {
+			if (cell.tile == tile and (not found or id < *found)) {
+				found = id;
+				break;
+			}
+		}
+	}
+	return found;
+}
+
 bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
                             player_id_t owner, const std::vector<entity_id_t> &ids,
                             const coord::phys3 &destination, const time::time_t &time) {
@@ -1399,6 +1417,11 @@ bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
 	auto survivors = this->resolve_command_units(state, owner, ids, time);
 	if (not survivors) {
 		return false;
+	}
+	// Clicking a blocked tower footprint is an attack, not an
+	// unreachable movement destination.
+	if (auto tower = this->completed_tower_at(state, destination.to_tile())) {
+		return this->issue_focus_attack(state, owner, *survivors, *tower, time);
 	}
 	auto pathfinder = state->get_map()->get_pathfinder();
 	auto grid = state->get_map()->get_grid_id("fvd.data.terrain.Land");

@@ -1428,6 +1428,39 @@ void fvd_hunter_attack_move_regressions() {
 		                  accepted = result;
 	                  }}}});
 	TESTEQUALS(accepted, true);
+	// A-click directly on an occupied tower tile must not be rejected by
+	// ground pathfinding. Hunters should stop within four tiles to attack.
+	auto clicked_horse = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {64, 69, 0}, at(32));
+	TESTEQUALS(fvd->issue_attack_move(
+		state, 1, {clicked_horse->get_id()}, {68, 69, 0}, at(32)), true);
+	auto clicked_pos = std::dynamic_pointer_cast<component::Position>(
+		clicked_horse->get_component(component::component_t::POSITION));
+	fvd->combat_tick(state, at(32));
+	TESTEQUALS(clicked_horse->get_animation_action(), AnimationAction::ATTACK);
+	TESTEQUALS(clicked_pos->get_positions().get(at(32.2)), (coord::phys3{64, 69, 0}));
+
+	// A missed sprite pick still produces a ground Move command. Clicking
+	// the tower's actual tile must resolve to the same ranged focus order.
+	auto missed_pick_horse = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {68, 65, 0}, at(34));
+	bool clicked_accepted = false;
+	event::SendCommandHandler tower_click;
+	tower_click.invoke(*loop, nullptr, state, at(34),
+	                   {{"type", component::command::command_t::MOVE},
+	                    {"owner", player_id_t{1}},
+	                    {"entity_ids", std::vector<entity_id_t>{missed_pick_horse->get_id()}},
+	                    {"target", coord::phys3{68, 69, 0}},
+	                    {"result_cb", std::function<void(bool)>{[&clicked_accepted](bool accepted) {
+		                    clicked_accepted = accepted;
+	                    }}}});
+	TESTEQUALS(clicked_accepted, true);
+	auto missed_pick_pos = std::dynamic_pointer_cast<component::Position>(
+		missed_pick_horse->get_component(component::component_t::POSITION));
+	fvd->combat_tick(state, at(34));
+	TESTEQUALS(missed_pick_horse->get_animation_action(), AnimationAction::ATTACK);
+	TESTEQUALS(missed_pick_pos->get_positions().get(at(34.2)), (coord::phys3{68, 65, 0}));
+
 }
 
 void fvd_hunter_builder_aggro() {
@@ -1509,11 +1542,11 @@ void fvd_hunter_builder_aggro() {
 
 	// Exactly four tiles away: attack from the current position.
 	auto ranged_builder = entities->spawn_game_entity(
-		loop, state, 2, "fvd.data.entities.Builder", {124, 130, 0}, at(7));
+		loop, state, 2, "fvd.data.entities.Builder", {114, 120, 0}, at(7));
 	auto ranged_horse = entities->spawn_game_entity(
-		loop, state, 1, "fvd.data.entities.Horse", {120, 130, 0}, at(7));
+		loop, state, 1, "fvd.data.entities.Horse", {110, 120, 0}, at(7));
 	TESTEQUALS(fvd->issue_attack_move(state, 1, {ranged_horse->get_id()},
-	                                  {116, 130, 0}, at(7)), true);
+	                                  {106, 120, 0}, at(7)), true);
 	auto ranged_position = std::dynamic_pointer_cast<component::Position>(
 		ranged_horse->get_component(component::component_t::POSITION));
 	fvd->combat_tick(state, at(7));
@@ -1530,9 +1563,9 @@ void fvd_hunter_builder_aggro() {
 
 	// Five tiles away: focus order approaches a reachable ranged position.
 	auto distant_builder = entities->spawn_game_entity(
-		loop, state, 2, "fvd.data.entities.Builder", {126, 140, 0}, at(9));
+		loop, state, 2, "fvd.data.entities.Builder", {116, 124, 0}, at(9));
 	auto distant_horse = entities->spawn_game_entity(
-		loop, state, 1, "fvd.data.entities.Horse", {121, 140, 0}, at(9));
+		loop, state, 1, "fvd.data.entities.Horse", {111, 124, 0}, at(9));
 	TESTEQUALS(fvd->issue_focus_attack(
 		state, 1, {distant_horse->get_id()}, distant_builder->get_id(), at(9)), true);
 	auto distant_move = std::dynamic_pointer_cast<component::Move>(

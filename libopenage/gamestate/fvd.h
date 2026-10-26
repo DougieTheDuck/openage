@@ -206,6 +206,10 @@ public:
 	                       player_id_t owner, const std::vector<entity_id_t> &ids,
 	                       const time::time_t &time) const;
 
+	/** Resolve a completed tower at its occupied tile, if one exists. */
+	std::optional<entity_id_t> completed_tower_at(
+		const std::shared_ptr<GameState> &state, const coord::tile &tile) const;
+
 	/** Start Hunter AttackMove for every selected horse, or reject all. */
 	bool issue_attack_move(const std::shared_ptr<GameState> &state,
 	                       player_id_t owner, const std::vector<entity_id_t> &ids,
