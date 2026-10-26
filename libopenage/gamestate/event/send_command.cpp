@@ -146,7 +146,7 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 		if (command_type == component::command::command_t::MOVE
 		    and owner == 1 and not params.check_type<entity_id_t>("target_entity")
 		    and params.check_type<coord::phys3>("target")) {
-			auto destination = params.get<coord::phys3>("target");
+			auto destination = params.get<coord::phys3>("target", coord::phys3{0, 0, 0});
 			if (auto tower = fvd->completed_tower_at(gstate, destination.to_tile())) {
 				const bool accepted = fvd->issue_focus_attack(
 					gstate, owner, ids, *tower, time);
