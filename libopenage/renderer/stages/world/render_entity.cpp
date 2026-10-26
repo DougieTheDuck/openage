@@ -18,6 +18,8 @@ RenderEntity::RenderEntity(bool pickable) :
 	position{nullptr, 0, "", nullptr, SCENE_ORIGIN},
 	angle{nullptr, 0, "", nullptr, 0},
 	animation_paths{nullptr, 0},
+	occlusion{occlusion_mode::NONE},
+	player_id{0},
 	health_available{false},
 	active{true},
 	pickable{pickable},
@@ -84,6 +86,17 @@ void RenderEntity::update_facing(
 	this->angle.sync(new_angles);
 	this->changed = true;
 	this->last_update = time;
+}
+
+void RenderEntity::set_occlusion_mode(occlusion_mode mode, uint64_t player_id) {
+	std::unique_lock lock{this->mutex};
+	if (this->occlusion == mode and this->player_id == player_id) {
+		return;
+	}
+
+	this->occlusion = mode;
+	this->player_id = player_id;
+	this->changed = true;
 }
 
 void RenderEntity::update_health(const curve::Segmented<int64_t> &health,
@@ -186,6 +199,14 @@ const curve::Segmented<coord::phys_angle_t> &RenderEntity::get_angle() {
 
 const curve::Discrete<std::vector<std::string>> &RenderEntity::get_animation_paths() {
 	return this->animation_paths;
+}
+
+occlusion_mode RenderEntity::get_occlusion_mode() const {
+	return this->occlusion;
+}
+
+uint64_t RenderEntity::get_player_id() const {
+	return this->player_id;
 }
 
 bool RenderEntity::has_health() {

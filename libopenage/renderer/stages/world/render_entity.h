@@ -18,6 +18,13 @@
 
 namespace openage::renderer::world {
 
+/** Role of a world sprite in structure occlusion rendering. */
+enum class occlusion_mode {
+	NONE,
+	OUTLINED,
+	OCCLUDER,
+};
+
 /**
  * Render entity for pushing updates to the World renderer.
  */
@@ -113,6 +120,14 @@ public:
 	                   const std::vector<std::pair<time::time_t, coord::phys_angle_t>> &future_keys);
 
 	/**
+	 * Set how this entity participates in structure occlusion rendering.
+	 *
+	 * @param mode Whether the sprite is outlined or acts as an occluder.
+	 * @param player_id Player whose color is used for an outline.
+	 */
+	void set_occlusion_mode(occlusion_mode mode, uint64_t player_id = 0);
+
+	/**
 	 * Update the health displayed for the game entity.
 	 *
 	 * @param health Current health value curve.
@@ -159,6 +174,20 @@ public:
 	 * (using \p get_read_lock()) to ensure thread safety.
 	 */
 	const curve::Discrete<std::vector<std::string>> &get_animation_paths();
+
+	/**
+	 * Get the structure occlusion role.
+	 *
+	 * Access requires a read lock on the render entity.
+	 */
+	occlusion_mode get_occlusion_mode() const;
+
+	/**
+	 * Get the player whose color is used for the occlusion outline.
+	 *
+	 * Access requires a read lock on the render entity.
+	 */
+	uint64_t get_player_id() const;
 
 	/**
 	 * Check whether the entity has health data for HUD rendering.
@@ -217,6 +246,12 @@ private:
 
 	/** Animation variants that may change after each completed loop. */
 	curve::Discrete<std::vector<std::string>> animation_paths;
+
+	/** Role in the structure occlusion passes. */
+	occlusion_mode occlusion;
+
+	/** Player whose color identifies an outlined entity. */
+	uint64_t player_id;
 
 	/**
 	 * Whether health data is available for this entity.

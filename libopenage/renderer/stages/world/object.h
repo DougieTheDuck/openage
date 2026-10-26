@@ -36,6 +36,7 @@ class Animation2dInfo;
 
 namespace world {
 class RenderEntity;
+enum class occlusion_mode;
 
 /**
  * Stores the state of a renderable object in the World render stage.
@@ -88,6 +89,12 @@ public:
 
 	/** Whether pixel picking may return this object. */
 	bool is_pickable() const;
+
+	/** Get the object's role in structure occlusion rendering. */
+	occlusion_mode get_occlusion_mode() const;
+
+	/** Get the player whose color identifies this object. */
+	uint64_t get_player_id() const;
 
 	/**
 	 * Get the quad for creating the geometry.
@@ -146,9 +153,12 @@ public:
 	 * Set the uniform inputs for the layers of this object.
 	 * Layer uniforms are updated on every update call.
 	 *
-	 * @param uniforms Uniform inputs of this object's layers.
+	 * @param uniforms Uniform inputs of this object's normal sprite layers.
+	 * @param occlusion_uniforms Uniform inputs of the outline or occluder layers.
 	 */
-	void set_uniforms(std::vector<std::shared_ptr<renderer::UniformInput>> &&uniforms);
+	void set_uniforms(
+		std::vector<std::shared_ptr<renderer::UniformInput>> &&uniforms,
+		std::vector<std::shared_ptr<renderer::UniformInput>> &&occlusion_uniforms);
 
 	/**
 	 * Check whether the object is visible in the camera view.
@@ -229,6 +239,12 @@ private:
 	 */
 	curve::Discrete<std::vector<std::shared_ptr<renderer::resources::Animation2dInfo>>> animation_variants;
 
+	/** Role in the structure occlusion passes. */
+	occlusion_mode occlusion;
+
+	/** Player whose color identifies this object. */
+	uint64_t player_id;
+
 	/** Select the animation variant for the loop containing \p time. */
 	std::pair<time::time_t, std::shared_ptr<renderer::resources::Animation2dInfo>>
 	get_animation_info(const time::time_t &time) const;
@@ -246,6 +262,9 @@ private:
 	 * renderable in the render pass.
 	 */
 	std::vector<std::shared_ptr<renderer::UniformInput>> layer_uniforms;
+
+	/** Shader uniforms for matching outline or occluder sprite layers. */
+	std::vector<std::shared_ptr<renderer::UniformInput>> occlusion_uniforms;
 
 	struct RenderedLayer {
 		std::shared_ptr<renderer::resources::AlphaMask> alpha_mask;

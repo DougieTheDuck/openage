@@ -57,7 +57,7 @@ std::string describe_comparison_value(const T &value, const char *expression) {
  *
  * test_stuff() or TESTFAIL;
  */
-#define TESTFAIL ::openage::testing::fail(MSG(err))
+#define TESTFAIL ::openage::testing::fail(MSG(err) << __FILE__ << ":" << __LINE__)
 
 
 /**

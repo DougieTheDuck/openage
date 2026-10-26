@@ -163,6 +163,12 @@ private:
 	 */
 	std::shared_ptr<renderer::ShaderProgram> display_shader;
 
+	/** Shader that writes opaque structure pixels to depth only. */
+	std::shared_ptr<renderer::ShaderProgram> occluder_shader;
+
+	/** Shader that draws player-colored unit contours behind structures. */
+	std::shared_ptr<renderer::ShaderProgram> outline_shader;
+
 	/**
 	 * Simulation clock for timing animations.
 	 */

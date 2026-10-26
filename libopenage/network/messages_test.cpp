@@ -224,7 +224,7 @@ void messages() {
 		{time::time_t::from_double(3.75), {11.0, 20.5, 0}},
 		{time::time_t::from_double(4.25), {12.0, 21.0, 0}},
 	};
-	state.entities.front().animation_action = gamestate::AnimationAction::MOVE;
+	state.entities.front().animation_action = gamestate::AnimationAction::ATTACK;
 	state.entities.front().animation_started_at = time::time_t::from_int(2);
 	state.entities.front().angle = coord::phys_angle_t::from_int(315);
 	state.entities.front().facing_keys = {

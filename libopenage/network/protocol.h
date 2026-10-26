@@ -16,9 +16,9 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 /**
  * Current protocol version.
  */
-// Ordered tower-line commands change command framing. Reject older
-// clients instead of letting them misinterpret the extended command payload.
-constexpr uint16_t PROTOCOL_MAJOR = 12;
+// Replicated attack animation actions extend the world-state enum. Reject
+// older clients instead of letting them reject an active combat snapshot.
+constexpr uint16_t PROTOCOL_MAJOR = 13;
 constexpr uint16_t PROTOCOL_MINOR = 4;
 
 /** Oldest protocol minor version compatible with this implementation. */

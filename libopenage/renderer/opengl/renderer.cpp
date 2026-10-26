@@ -176,6 +176,9 @@ void GlRenderer::render(const std::shared_ptr<RenderPass> &pass) {
 	// see https://www.khronos.org/opengl/wiki/Vertex_Rendering#Causes_of_rendering_failure
 	shared_quad_vao->bind();
 
+	// glClear respects the write masks left by the previous render pass.
+	glDepthMask(GL_TRUE);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// TODO: Option for face culling
@@ -195,6 +198,7 @@ void GlRenderer::render(const std::shared_ptr<RenderPass> &pass) {
 		const auto &objects = renderables[i];
 
 		if (layer.clear_depth) {
+			glDepthMask(GL_TRUE);
 			glClear(GL_DEPTH_BUFFER_BIT);
 		}
 
@@ -211,6 +215,19 @@ void GlRenderer::render(const std::shared_ptr<RenderPass> &pass) {
 			}
 			else {
 				glDisable(GL_DEPTH_TEST);
+			}
+			glDepthMask(obj.depth_write ? GL_TRUE : GL_FALSE);
+			glColorMask(obj.color_write ? GL_TRUE : GL_FALSE,
+			            obj.color_write ? GL_TRUE : GL_FALSE,
+			            obj.color_write ? GL_TRUE : GL_FALSE,
+			            obj.color_write ? GL_TRUE : GL_FALSE);
+			switch (obj.depth_compare) {
+			case depth_compare_t::LESS_EQUAL:
+				glDepthFunc(GL_LEQUAL);
+				break;
+			case depth_compare_t::GREATER:
+				glDepthFunc(GL_GREATER);
+				break;
 			}
 
 			auto in = std::dynamic_pointer_cast<GlUniformInput>(obj.uniform);

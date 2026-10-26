@@ -222,6 +222,7 @@ std::vector<coord::tile> tower_line_sites(const coord::tile &start,
  *
  * - B, then Left Mouse click: Build a tower; Shift-click to append sites.
  * - Shift+left-drag: queue a straight line of foundations along one map axis.
+ * - F9: Skip the first Hunter spawn delay on the authoritative simulation.
  * - Right Mouse click: Move to terrain; Hunter right-clicks enemy to
  *   focus-attack, while a Builder right-clicks a queued foundation to
  *   clear its other orders and construct that foundation.
@@ -231,6 +232,7 @@ std::vector<coord::tile> tower_line_sites(const coord::tile &start,
  * @param simulation Game simulation.
  * @param camera Active game camera.
  * @param pick_entity Callback for finding the visible entity under a window pixel.
+ * @param can_spawn_hunter Whether this process owns the authoritative FVD simulation.
  */
 void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
                     const std::shared_ptr<time::TimeLoop> &time_loop,
@@ -241,7 +243,8 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		                const std::function<void(std::optional<gamestate::entity_id_t>)> &)> &pick_entity,
                     const std::function<bool(network::CommandIntent)> &send_guest_command = {},
                     const std::function<std::optional<network::WorldState>()> &guest_world = {},
-                    bool online_lobby = false);
+                    bool online_lobby = false,
+                    const std::function<bool()> &can_spawn_hunter = {});
 
 } // namespace input::game
 } // namespace openage

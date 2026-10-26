@@ -306,7 +306,7 @@ void world_delta() {
 	           coord::phys_angle_t::from_int(180));
 	TESTEQUALS(facing_guest.entities.front().facing_keys.empty(), true);
 
-	// A new idle/walk action changes the sprite but identical later samples
+	// A new idle, walk or attack action changes the sprite, but identical later samples
 	// keep the same host-authored animation phase without entity traffic.
 	auto animation_start = curve_start;
 	WorldDeltaBaseline animation_host{};
@@ -334,19 +334,31 @@ void world_delta() {
 	walking_guest = apply_world_delta(walking_guest, no_animation_patch);
 	TESTEQUALS(walking_guest.entities.front().animation_started_at,
 	           time::time_t::from_double(1.25));
-	auto idle_again = same_walk;
-	idle_again.world_revision = 4;
-	idle_again.simulation_time = time::time_t::from_int(2);
-	idle_again.entities.front().position = {3, 2, 0};
+	auto attacking = same_walk;
+	attacking.world_revision = 4;
+	attacking.simulation_time = time::time_t::from_int(2);
+	attacking.entities.front().position = {3, 2, 0};
+	attacking.entities.front().animation_action = gamestate::AnimationAction::ATTACK;
+	attacking.entities.front().animation_started_at = time::time_t::from_int(2);
+	auto attack_delta = animation_host.advance(attacking);
+	TESTEQUALS(attack_delta.changed.entities.size(), size_t{1});
+	walking_guest = apply_world_delta(walking_guest, attack_delta);
+	TESTEQUALS(walking_guest.entities.front().animation_action,
+	           gamestate::AnimationAction::ATTACK);
+	TESTEQUALS(walking_guest.entities.front().animation_started_at,
+	           time::time_t::from_int(2));
+	auto idle_again = attacking;
+	idle_again.world_revision = 5;
+	idle_again.simulation_time = time::time_t::from_double(2.5);
 	idle_again.entities.front().animation_action = gamestate::AnimationAction::IDLE;
-	idle_again.entities.front().animation_started_at = time::time_t::from_int(2);
+	idle_again.entities.front().animation_started_at = time::time_t::from_double(2.5);
 	auto idle_delta = animation_host.advance(idle_again);
 	TESTEQUALS(idle_delta.changed.entities.size(), size_t{1});
 	walking_guest = apply_world_delta(walking_guest, idle_delta);
 	TESTEQUALS(walking_guest.entities.front().animation_action,
 	           gamestate::AnimationAction::IDLE);
 	TESTEQUALS(walking_guest.entities.front().animation_started_at,
-	           time::time_t::from_int(2));
+	           time::time_t::from_double(2.5));
 
 	// Even with hundreds of Hunter horses and 2/4/8 player rosters,
 	// an unchanged scheduled route needs no repeated per-horse payload.

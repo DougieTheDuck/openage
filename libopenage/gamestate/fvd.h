@@ -24,6 +24,7 @@
 #include "time/time.h"
 
 namespace openage::event {
+class Event;
 class EventLoop;
 class EventEntity;
 }
@@ -187,9 +188,18 @@ public:
 	 */
 	std::optional<int> get_hunter_spawn_countdown(const time::time_t &now) const;
 
-	/** Spawn an idle Hunter horse and schedule the next one. */
+	/** Queue the first Hunter spawn immediately and replace its delayed schedule. */
+	void request_immediate_hunter_spawn(const std::shared_ptr<GameState> &state,
+	                                    const time::time_t &time);
+
+	/**
+	 * Spawn an idle Hunter horse and schedule the next one.
+	 *
+	 * @param skip_initial_delay Cancel the pending first spawn and begin the wave now.
+	 */
 	void spawn_hunter_horse(const std::shared_ptr<GameState> &state,
-	                       const time::time_t &time);
+	                       const time::time_t &time,
+	                       bool skip_initial_delay = false);
 
 	/** Validate a complete group of player-owned movable units. */
 	bool can_command_units(const std::shared_ptr<GameState> &state,
@@ -215,6 +225,11 @@ public:
 	/** Resolve one arrow with the firing tower's identity, even after its death. */
 	void arrow_hit(const std::shared_ptr<GameState> &state, entity_id_t target,
 	               player_id_t owner, entity_id_t firing_tower,
+	               int64_t damage, const time::time_t &time);
+
+	/** Apply a Hunter horse's pending strike at its animation's hit frame. */
+	void horse_hit(const std::shared_ptr<GameState> &state,
+	               entity_id_t horse, entity_id_t target,
 	               int64_t damage, const time::time_t &time);
 
 	/**
@@ -281,6 +296,7 @@ private:
 		time::time_t next_attack;
 		bool reached_destination = false;
 		bool focus_target = false;
+		std::optional<time::time_t> pending_hit{};
 	};
 
 	struct PendingBuild {
@@ -350,11 +366,13 @@ private:
 	time::time_t arrow_travel;
 	time::time_t tower_cooldown;
 	time::time_t horse_cooldown;
+	time::time_t horse_hit_delay;
 	time::time_t horse_shove_duration;
 	std::string hunter;
 	std::string builders;
 	std::string builder;
 	std::string horse;
+	std::string horse_attack_animation;
 	std::string foundation;
 	std::string tower;
 	std::string plains;
@@ -365,6 +383,7 @@ private:
 	std::weak_ptr<openage::event::EventLoop> event_loop;
 	std::weak_ptr<EntityFactory> entity_factory;
 	std::shared_ptr<openage::event::EventEntity> horse_spawn_target;
+	std::shared_ptr<openage::event::Event> next_hunter_spawn_event;
 	bool hunter_wave_started = false;
 	/** Protect the match-relative first-spawn deadline read by the presenter. */
 	mutable std::mutex hunter_spawn_time_mutex;

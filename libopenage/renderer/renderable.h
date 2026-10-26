@@ -10,6 +10,12 @@ namespace renderer {
 class Geometry;
 class UniformInput;
 
+/** Comparison used when testing a fragment against the depth buffer. */
+enum class depth_compare_t {
+	LESS_EQUAL,
+	GREATER,
+};
+
 /**
  * A renderable is a set of a shader UniformInput and a possible draw call.
  * Usually it is one "step" in a RenderPass.
@@ -42,6 +48,12 @@ struct Renderable {
 	bool alpha_blending = true;
 	/// Whether to perform depth testing and discard occluded fragments.
 	bool depth_test = true;
+	/// Whether fragments write their depth to the depth buffer.
+	bool depth_write = true;
+	/// Whether fragments write to the color buffers.
+	bool color_write = true;
+	/// Comparison used when depth testing is enabled.
+	depth_compare_t depth_compare = depth_compare_t::LESS_EQUAL;
 };
 
 /**

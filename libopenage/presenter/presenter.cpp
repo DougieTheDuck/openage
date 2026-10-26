@@ -787,11 +787,19 @@ void Presenter::refresh_fvd_guest_visuals() {
 			continue;
 		}
 		const bool walking = entity.animation_action == gamestate::AnimationAction::MOVE;
+		const bool attacking = entity.animation_action == gamestate::AnimationAction::ATTACK;
 		if (walking and entity.definition != "fvd.data.entities.Builder"
 		    and entity.definition != "fvd.data.entities.Horse") {
 			throw Error{MSG(err) << "FVD replica has an invalid moving entity"};
 		}
-		const std::string cache_key = entity.definition + (walking ? ".Move" : ".Idle");
+		if (attacking and entity.definition != "fvd.data.entities.Horse") {
+			throw Error{MSG(err) << "FVD replica has an invalid attacking entity"};
+		}
+		const bool movable = entity.definition == "fvd.data.entities.Builder"
+		                     or entity.definition == "fvd.data.entities.Horse";
+		const std::string cache_key = entity.definition
+		                              + (attacking ? ".Attack"
+		                                           : walking ? ".Move" : ".Idle");
 		auto path = this->fvd_guest_sprite_paths.find(cache_key);
 		if (path == this->fvd_guest_sprite_paths.end()) {
 			// The host resolves Animation.sprite relative to the nyan
@@ -828,6 +836,10 @@ void Presenter::refresh_fvd_guest_visuals() {
 			// health-bar registration path.
 			if (this->hud_renderer) this->hud_renderer->add_health_entity(visual);
 		}
+		visual->set_occlusion_mode(
+			movable ? renderer::world::occlusion_mode::OUTLINED
+			        : renderer::world::occlusion_mode::OCCLUDER,
+			entity.owner_id);
 		std::vector<std::pair<time::time_t, coord::phys3>> future_motion{};
 		future_motion.reserve(entity.motion_keys.size());
 		for (const auto &key : entity.motion_keys) {
@@ -1014,7 +1026,7 @@ void Presenter::init_input() {
 
 			// The global input context must forward placement keys to
 			// the FVD-specific game binding context.
-			for (auto key : {Qt::Key_B, Qt::Key_A, Qt::Key_Escape}) {
+			for (auto key : {Qt::Key_B, Qt::Key_A, Qt::Key_Escape, Qt::Key_F9}) {
 				input_ctx->bind(
 					input::Event{input::event_class::KEYBOARD, key,
 					             Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
@@ -1053,7 +1065,10 @@ void Presenter::init_input() {
 				auto tracker = this->fvd_lobby_client->get_replication();
 				return tracker ? tracker->get_world_state() : std::nullopt;
 			},
-			this->fvd_lobby_enabled);
+			this->fvd_lobby_enabled,
+			[this]() {
+				return not this->fvd_lobby_enabled or this->fvd_lobby_hosting;
+			});
 		this->input_manager->set_game_controller(game_controller);
 		this->game_controller = game_controller;
 		input_ctx->set_game_bindings(engine_context);

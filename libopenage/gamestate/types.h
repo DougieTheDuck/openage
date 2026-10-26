@@ -20,6 +20,7 @@ using player_id_t = uint64_t;
 enum class AnimationAction : uint16_t {
 	IDLE = 0,
 	MOVE = 1,
+	ATTACK = 2,
 };
 
 } // namespace openage::gamestate

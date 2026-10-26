@@ -316,6 +316,17 @@ Renderable obj {
 obj.depth_test = true;
 ```
 
+Depth writes, color writes, and the depth comparison are configured independently on the renderable.
+For example, a translucent overlay can test against existing depth without replacing it:
+
+```c++
+obj.depth_test = true;
+obj.depth_write = false;
+obj.depth_compare = depth_compare_t::GREATER;
+```
+
+Setting `color_write` to `false` creates a depth-only draw.
+
 
 ### Defining Layers in a Render Pass
 

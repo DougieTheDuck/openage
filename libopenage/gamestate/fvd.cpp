@@ -15,8 +15,12 @@
 
 #include "curve/discrete.h"
 #include "error/error.h"
+#include "event/event.h"
 #include "event/event_loop.h"
 #include "event/eventhandler.h"
+#include "gamestate/api/ability.h"
+#include "gamestate/api/animation.h"
+#include "gamestate/api/property.h"
 #include "gamestate/event/spawn_entity.h"
 #include "gamestate/component/api/live.h"
 #include "gamestate/component/api/move.h"
@@ -106,9 +110,10 @@ public:
 	            const std::shared_ptr<openage::event::EventEntity> &,
 	            const std::shared_ptr<openage::event::State> &state,
 	            const time::time_t &time,
-	            const param_map &) override {
+	            const param_map &params) override {
 		auto game_state = std::dynamic_pointer_cast<GameState>(state);
-		game_state->get_fvd()->spawn_hunter_horse(game_state, time);
+		game_state->get_fvd()->spawn_hunter_horse(
+			game_state, time, params.get<bool>("skip_initial_delay", false));
 	}
 
 	time::time_t predict_invoke_time(
@@ -155,6 +160,30 @@ public:
 		                           params.get<player_id_t>("owner"),
 		                           params.get<entity_id_t>("firing_tower"),
 		                           params.get<int64_t>("damage"), time);
+	}
+	time::time_t predict_invoke_time(
+		const std::shared_ptr<openage::event::EventEntity> &,
+		const std::shared_ptr<openage::event::State> &,
+		const time::time_t &at) override {
+		return at;
+	}
+};
+
+/** A Hunter horse deals damage when its attack animation reaches the hit frame. */
+class FVDHorseHitHandler : public openage::event::OnceEventHandler {
+public:
+	FVDHorseHitHandler() : OnceEventHandler{"game.fvd_horse_hit"} {}
+	void setup_event(const std::shared_ptr<openage::event::Event> &,
+	                 const std::shared_ptr<openage::event::State> &) override {}
+	void invoke(openage::event::EventLoop &,
+	            const std::shared_ptr<openage::event::EventEntity> &,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time, const param_map &params) override {
+		auto gstate = std::dynamic_pointer_cast<GameState>(state);
+		gstate->get_fvd()->horse_hit(gstate,
+		                             params.get<entity_id_t>("horse"),
+		                             params.get<entity_id_t>("target"),
+		                             params.get<int64_t>("damage"), time);
 	}
 	time::time_t predict_invoke_time(
 		const std::shared_ptr<openage::event::EventEntity> &,
@@ -245,6 +274,8 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->arrow_travel = time::time_t::from_double(arrow_duration);
 	this->tower_cooldown = time::time_t::from_double(0.8);
 	this->horse_cooldown = time::time_t::from_double(0.6);
+	this->horse_hit_delay = time::time_t::from_double(
+		this->horse_cooldown.to_double() * 0.75);
 	for (auto &kills : this->player_kills) {
 		kills.store(0);
 	}
@@ -255,6 +286,15 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->foundation = settings.get_object("foundation").get_name();
 	this->tower = settings.get_object("tower").get_name();
 	this->plains = settings.get_object("terrain").get_name();
+	auto horse_attack = state->get_db_view()->get_object(this->horse + ".Attack");
+	auto attack_property = api::APIAbility::get_property(
+		horse_attack, api::ability_property_t::ANIMATED);
+	auto attack_animations = api::APIAbilityProperty::get_animations(attack_property);
+	auto attack_paths = api::APIAnimation::get_animation_paths(attack_animations);
+	if (attack_paths.size() != 1) [[unlikely]] {
+		throw Error{ERR << "FVD Hunter horse requires exactly one attack animation"};
+	}
+	this->horse_attack_animation = attack_paths.front();
 
 	auto tower_object = state->get_db_view()->get_object(this->tower);
 	bool found_pathable = false;
@@ -295,6 +335,7 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 	loop->add_event_handler(std::make_shared<SpawnHorseHandler>());
 	loop->add_event_handler(std::make_shared<FVDCombatHandler>());
 	loop->add_event_handler(std::make_shared<FVDArrowHitHandler>());
+	loop->add_event_handler(std::make_shared<FVDHorseHitHandler>());
 	loop->add_event_handler(std::make_shared<BuildProgressHandler>());
 	loop->add_event_handler(std::make_shared<RefreshPathsHandler>());
 
@@ -1223,8 +1264,8 @@ void FVD::start_hunter_wave(const std::shared_ptr<GameState> &state,
 		this->first_hunter_spawn_time = spawn_time;
 	}
 	this->hunter_wave_started = true;
-	loop->create_event("game.fvd_spawn_horse", this->horse_spawn_target, state,
-	                   spawn_time);
+	this->next_hunter_spawn_event = loop->create_event(
+		"game.fvd_spawn_horse", this->horse_spawn_target, state, spawn_time);
 	loop->create_event("game.fvd_combat_tick", this->horse_spawn_target, state, match_start);
 }
 
@@ -1240,10 +1281,43 @@ std::optional<int> FVD::get_hunter_spawn_countdown(const time::time_t &now) cons
 	                        + (remaining > time::time_t::from_int(whole_seconds) ? 1 : 0));
 }
 
+void FVD::request_immediate_hunter_spawn(const std::shared_ptr<GameState> &state,
+                                         const time::time_t &time) {
+	auto loop = this->event_loop.lock();
+	if (not loop or not this->horse_spawn_target) {
+		throw Error{ERR << "Cannot request a Hunter horse without FVD services"};
+	}
+	loop->submit_event(
+		"game.fvd_spawn_horse", this->horse_spawn_target, state, time,
+		{{"skip_initial_delay", true}});
+}
+
 void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
-                            const time::time_t &time) {
+	                            const time::time_t &time,
+	                            bool skip_initial_delay) {
 	if (not this->hunter_wave_started) {
 		return;
+	}
+	if (skip_initial_delay) {
+		bool first_spawn_pending = false;
+		{
+			std::lock_guard lock{this->hunter_spawn_time_mutex};
+			first_spawn_pending = this->first_hunter_spawn_time
+			                      and time < *this->first_hunter_spawn_time;
+			if (first_spawn_pending) {
+				this->first_hunter_spawn_time.reset();
+			}
+		}
+		if (not first_spawn_pending) {
+			return;
+		}
+		if (this->next_hunter_spawn_event) {
+			this->next_hunter_spawn_event->cancel(time);
+		}
+	}
+	else {
+		std::lock_guard lock{this->hunter_spawn_time_mutex};
+		this->first_hunter_spawn_time.reset();
 	}
 	auto loop = this->event_loop.lock();
 	auto factory = this->entity_factory.lock();
@@ -1252,8 +1326,9 @@ void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	}
 	auto spawned = factory->spawn_game_entity(loop, state, 1, this->horse, this->get_centre(), time);
 	this->relax_horse_crowd(state, spawned->get_id(), time);
-	loop->create_event("game.fvd_spawn_horse", this->horse_spawn_target, state,
-	                   time + this->horse_spawn_interval);
+	this->next_hunter_spawn_event = loop->create_event(
+		"game.fvd_spawn_horse", this->horse_spawn_target, state,
+		time + this->horse_spawn_interval);
 }
 
 std::optional<std::vector<entity_id_t>> FVD::resolve_command_units(

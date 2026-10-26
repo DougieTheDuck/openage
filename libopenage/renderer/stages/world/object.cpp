@@ -43,6 +43,8 @@ WorldObject::WorldObject(const std::shared_ptr<renderer::resources::AssetManager
 	position{nullptr, 0, "", nullptr, SCENE_ORIGIN},
 	angle{nullptr, 0, "", nullptr, 0},
 	animation_variants{nullptr, 0},
+	occlusion{occlusion_mode::NONE},
+	player_id{0},
 	variant_cycle_initialized{false},
 	variant_state_start{time::TIME_ZERO},
 	variant_cycle_start{time::TIME_ZERO},
@@ -51,6 +53,7 @@ WorldObject::WorldObject(const std::shared_ptr<renderer::resources::AssetManager
 	active_variant{0},
 	variant_sources{},
 	layer_uniforms{},
+	occlusion_uniforms{},
 	rendered_position{SCENE_ORIGIN},
 	rendered_layers{},
 	last_update{0.0} {
@@ -79,6 +82,13 @@ void WorldObject::fetch_updates(const time::time_t &time) {
 
 	// Thread-safe access to curves needs a lock on the render entity's mutex
 	auto read_lock = this->render_entity->get_read_lock();
+	const auto next_occlusion = this->render_entity->get_occlusion_mode();
+	const auto next_player_id = this->render_entity->get_player_id();
+	if (this->occlusion != next_occlusion or this->player_id != next_player_id) {
+		this->occlusion = next_occlusion;
+		this->player_id = next_player_id;
+		this->require_renderable = true;
+	}
 	this->position.sync(this->render_entity->get_position());
 	this->animation_variants.sync(
 		this->render_entity->get_animation_paths(),
@@ -140,8 +150,11 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 		return;
 	}
 	if (not this->render_entity->is_active()) {
-		for (auto &layer_unifs : this->layer_uniforms) {
-			layer_unifs->update(this->scale, 0.0f);
+		for (size_t i = 0; i < this->layer_uniforms.size(); ++i) {
+			this->layer_uniforms[i]->update(this->scale, 0.0f);
+			if (i < this->occlusion_uniforms.size()) {
+				this->occlusion_uniforms[i]->update("scale", 0.0f);
+			}
 		}
 		this->rendered_layers.clear();
 		return;
@@ -228,6 +241,19 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 			static_cast<float>(anchor[1])};
 		layer_unifs->update(this->anchor_offset, anchor_offset);
 
+		if (layer_idx < this->occlusion_uniforms.size()) {
+			auto &occlusion_unifs = this->occlusion_uniforms[layer_idx];
+			occlusion_unifs->update(
+				"obj_world_position", current_pos.to_world_space(),
+				"flip_x", flip_x,
+				"flip_y", false,
+				"tex", texture,
+				"tile_params", coords,
+				"scale", scale,
+				"subtex_size", subtex_size_vec,
+				"anchor_offset", anchor_offset);
+		}
+
 		this->rendered_layers.push_back(RenderedLayer{
 			alpha_mask,
 			tex_info->get_subtex_info(subtex_idx).get_pos(),
@@ -251,6 +277,14 @@ bool WorldObject::is_active() const {
 
 bool WorldObject::is_pickable() const {
 	return this->render_entity->is_pickable();
+}
+
+occlusion_mode WorldObject::get_occlusion_mode() const {
+	return this->occlusion;
+}
+
+uint64_t WorldObject::get_player_id() const {
+	return this->player_id;
 }
 
 const renderer::resources::MeshData WorldObject::get_mesh() {
@@ -301,8 +335,11 @@ void WorldObject::clear_changed_flag() {
 	this->changed = false;
 }
 
-void WorldObject::set_uniforms(std::vector<std::shared_ptr<renderer::UniformInput>> &&uniforms) {
+void WorldObject::set_uniforms(
+	std::vector<std::shared_ptr<renderer::UniformInput>> &&uniforms,
+	std::vector<std::shared_ptr<renderer::UniformInput>> &&occlusion_uniforms) {
 	this->layer_uniforms = std::move(uniforms);
+	this->occlusion_uniforms = std::move(occlusion_uniforms);
 }
 
 bool WorldObject::is_visible(const camera::Frustum2d &frustum,

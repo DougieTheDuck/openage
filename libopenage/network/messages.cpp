@@ -594,7 +594,8 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 			previous_time = key.time;
 		}
 		if (entity.animation_action != gamestate::AnimationAction::IDLE
-		    and entity.animation_action != gamestate::AnimationAction::MOVE) {
+		    and entity.animation_action != gamestate::AnimationAction::MOVE
+		    and entity.animation_action != gamestate::AnimationAction::ATTACK) {
 			throw Error{MSG(err) << "FVD entity has invalid animation action"};
 		}
 		if (entity.animation_started_at > state.simulation_time) {
@@ -782,7 +783,7 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 			previous_time = at;
 		}
 		const auto animation_action = reader.u16();
-		if (animation_action > static_cast<uint16_t>(gamestate::AnimationAction::MOVE)) {
+		if (animation_action > static_cast<uint16_t>(gamestate::AnimationAction::ATTACK)) {
 			throw Error{MSG(err) << "Unknown FVD entity animation action"};
 		}
 		entity.animation_action = static_cast<gamestate::AnimationAction>(animation_action);

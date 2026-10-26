@@ -12,6 +12,7 @@
 #include "gamestate/component/api/live.h"
 #include "gamestate/component/api/move.h"
 #include "gamestate/component/base_component.h"
+#include "gamestate/component/internal/ownership.h"
 #include "gamestate/component/internal/position.h"
 #include "log/message.h"
 #include "renderer/stages/world/render_entity.h"
@@ -95,6 +96,14 @@ void GameEntity::render_update(const time::time_t &time,
 		this->animation_initialized = true;
 	}
 	if (this->render_entity != nullptr) {
+		if (this->has_component(component::component_t::OWNERSHIP)) {
+			auto ownership = dynamic_pointer_cast<component::Ownership>(
+				this->components.at(component::component_t::OWNERSHIP));
+			const auto mode = this->has_component(component::component_t::MOVE)
+			                    ? renderer::world::occlusion_mode::OUTLINED
+			                    : renderer::world::occlusion_mode::OCCLUDER;
+			this->render_entity->set_occlusion_mode(mode, ownership->get_owners().get(time));
+		}
 		const auto &pos = dynamic_pointer_cast<component::Position>(
 							  this->components.at(component::component_t::POSITION))
 		                      ->get_positions();

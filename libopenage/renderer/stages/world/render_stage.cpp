@@ -2,8 +2,13 @@
 
 #include "render_stage.h"
 
+#include <array>
+
+#include <eigen3/Eigen/Dense>
+
 #include "renderer/camera/camera.h"
 #include "renderer/camera/frustum_3d.h"
+#include "renderer/definitions.h"
 #include "renderer/opengl/context.h"
 #include "renderer/render_pass.h"
 #include "renderer/render_target.h"
@@ -12,6 +17,7 @@
 #include "renderer/resources/texture_info.h"
 #include "renderer/shader_program.h"
 #include "renderer/stages/world/object.h"
+#include "renderer/stages/world/render_entity.h"
 #include "renderer/texture.h"
 #include "renderer/window.h"
 #include "time/clock.h"
@@ -19,6 +25,30 @@
 
 
 namespace openage::renderer::world {
+
+namespace {
+
+constexpr int64_t OCCLUDER_LAYER_PRIORITY = renderer::LAYER_PRIORITY_MAX - 2;
+constexpr int64_t OUTLINE_LAYER_PRIORITY = renderer::LAYER_PRIORITY_MAX - 1;
+
+Eigen::Vector4f get_player_outline_color(uint64_t player_id) {
+	static const std::array<Eigen::Vector4f, 8> colors{
+		Eigen::Vector4f{0.18f, 0.48f, 1.00f, 0.82f},
+		Eigen::Vector4f{0.94f, 0.20f, 0.18f, 0.82f},
+		Eigen::Vector4f{0.20f, 0.78f, 0.30f, 0.82f},
+		Eigen::Vector4f{0.96f, 0.82f, 0.18f, 0.82f},
+		Eigen::Vector4f{0.18f, 0.82f, 0.92f, 0.82f},
+		Eigen::Vector4f{0.68f, 0.30f, 0.90f, 0.82f},
+		Eigen::Vector4f{0.78f, 0.78f, 0.78f, 0.82f},
+		Eigen::Vector4f{0.96f, 0.50f, 0.14f, 0.82f},
+	};
+	if (player_id == 0) {
+		return colors[6];
+	}
+	return colors[(player_id - 1) % colors.size()];
+}
+
+} // namespace
 
 bool WorldRenderStage::ENABLE_FRUSTUM_CULLING = false;
 
@@ -120,6 +150,7 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 				static const Eigen::Matrix4f model_matrix = obj->get_model_matrix();
 
 				std::vector<std::shared_ptr<renderer::UniformInput>> transform_unifs;
+				std::vector<std::shared_ptr<renderer::UniformInput>> occlusion_unifs;
 				for (auto layer_pos : layer_positions) {
 					// Set uniforms that don't change or are not changed often
 					auto layer_unifs = this->display_shader->new_uniform_input(
@@ -138,12 +169,56 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 					};
 					this->render_pass->add_renderables(std::move(display_obj), layer_pos);
 					transform_unifs.push_back(layer_unifs);
+
+					const auto mode = obj->get_occlusion_mode();
+					if (mode == occlusion_mode::NONE) {
+						continue;
+					}
+					auto shader = mode == occlusion_mode::OUTLINED
+					                ? this->outline_shader
+					                : this->occluder_shader;
+					auto occlusion_layer_unifs = shader->new_uniform_input(
+						"model",
+						model_matrix,
+						"flip_x",
+						false,
+						"flip_y",
+						false);
+					if (mode == occlusion_mode::OUTLINED) {
+						occlusion_layer_unifs->update(
+							"outline_color", get_player_outline_color(obj->get_player_id()));
+						Renderable outline_obj{
+							occlusion_layer_unifs,
+							this->default_geometry,
+							true,
+							true,
+							false,
+							true,
+							depth_compare_t::GREATER,
+						};
+						this->render_pass->add_renderables(
+							std::move(outline_obj), OUTLINE_LAYER_PRIORITY);
+					}
+					else {
+						Renderable occluder_obj{
+							occlusion_layer_unifs,
+							this->default_geometry,
+							false,
+							true,
+							true,
+							false,
+							depth_compare_t::LESS_EQUAL,
+						};
+						this->render_pass->add_renderables(
+							std::move(occluder_obj), OCCLUDER_LAYER_PRIORITY);
+					}
+					occlusion_unifs.push_back(occlusion_layer_unifs);
 				}
 
 				obj->clear_requires_renderable();
 
 				// update remaining uniforms for the object
-				obj->set_uniforms(std::move(transform_unifs));
+				obj->set_uniforms(std::move(transform_unifs), std::move(occlusion_unifs));
 			}
 		}
 		obj->update_uniforms(current_time);
@@ -175,14 +250,34 @@ void WorldRenderStage::initialize_render_pass(size_t width,
 		frag_shader_file.read());
 	frag_shader_file.close();
 
+	auto occluder_frag_shader_file = (shaderdir / "world2d_occluder.frag.glsl").open();
+	auto occluder_frag_shader_src = renderer::resources::ShaderSource(
+		resources::shader_lang_t::glsl,
+		resources::shader_stage_t::fragment,
+		occluder_frag_shader_file.read());
+	occluder_frag_shader_file.close();
+
+	auto outline_frag_shader_file = (shaderdir / "world2d_outline.frag.glsl").open();
+	auto outline_frag_shader_src = renderer::resources::ShaderSource(
+		resources::shader_lang_t::glsl,
+		resources::shader_stage_t::fragment,
+		outline_frag_shader_file.read());
+	outline_frag_shader_file.close();
+
 	this->output_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::rgba8));
 	this->depth_texture = renderer->add_texture(resources::Texture2dInfo(width, height, resources::pixel_format::depth24));
 
 	this->display_shader = this->renderer->add_shader({vert_shader_src, frag_shader_src});
 	this->display_shader->bind_uniform_buffer("camera", this->camera->get_uniform_buffer());
+	this->occluder_shader = this->renderer->add_shader({vert_shader_src, occluder_frag_shader_src});
+	this->occluder_shader->bind_uniform_buffer("camera", this->camera->get_uniform_buffer());
+	this->outline_shader = this->renderer->add_shader({vert_shader_src, outline_frag_shader_src});
+	this->outline_shader->bind_uniform_buffer("camera", this->camera->get_uniform_buffer());
 
 	auto fbo = this->renderer->create_texture_target({this->output_texture, this->depth_texture});
 	this->render_pass = this->renderer->add_render_pass({}, fbo);
+	this->render_pass->add_layer(OCCLUDER_LAYER_PRIORITY, true);
+	this->render_pass->add_layer(OUTLINE_LAYER_PRIORITY, false);
 }
 
 void WorldRenderStage::init_uniform_ids() {

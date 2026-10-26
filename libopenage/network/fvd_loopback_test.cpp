@@ -167,6 +167,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		MessageType::WORLD_SNAPSHOT,
 		encode_world_state(initial_state));
 	connection.send_frame(snapshot_frame);
+	auto retained_time = time::time_t::from_int(40);
 
 	auto command_frame = connection.receive_frame();
 	command_frame.has_value() or TESTFAIL;
@@ -451,6 +452,9 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		auto killed = capture_fvd_state(
 			state, connections,
 			next_launch - time::time_t::from_double(0.6), 7, 8, 2);
+		if (killed.simulation_time > retained_time) {
+			retained_time = killed.simulation_time;
+		}
 		TESTEQUALS(std::none_of(
 			killed.entities.begin(), killed.entities.end(),
 			[&](const auto &entity) { return entity.entity_id == victim->get_id(); }),
@@ -470,7 +474,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	}
 
 	auto retained_before = capture_fvd_state(
-		state, connections, time::time_t::from_int(40), 0, 8, 1);
+		state, connections, retained_time, 0, 8, 1);
 	auto retained_builder_entities = count_owned_entities(retained_before, 2);
 	auto retained_tower = find_defined_entity(
 		retained_before, "fvd.data.entities.Tower");
@@ -484,7 +488,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		or TESTFAIL;
 	uint64_t disconnect_revision = 8;
 	TESTEQUALS(lifecycle_coordinator.process_closures(
-		lifecycle, state, time::time_t::from_int(40), disconnect_revision, 1),
+		lifecycle, state, retained_time, disconnect_revision, 1),
 		size_t{1});
 	TESTEQUALS(disconnect_revision, uint64_t{9});
 	auto disconnected = ParticipantDisconnected{
@@ -502,12 +506,12 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	bool buffered_accepted = true;
 	submit_authenticated_command(
 		buffered, connections, loop, commander, state,
-		time::time_t::from_int(40),
+		retained_time,
 		[&](bool result) { buffered_accepted = result; });
 	TESTEQUALS(buffered_accepted, false);
 	TESTTHROWS(connections.bind_remote(session.get_identity()));
 	auto retained_after = capture_fvd_state(
-		state, connections, time::time_t::from_int(40), 8, 9, 1);
+		state, connections, retained_time, 8, 9, 1);
 	TESTEQUALS(find_player(retained_after, 2).connected, false);
 	TESTEQUALS(count_owned_entities(retained_after, 2), retained_builder_entities);
 	TESTEQUALS(find_entity(retained_after, retained_tower.entity_id).owner_id,
@@ -527,7 +531,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	OutboundMailbox hunter_outbound{4};
 	lifecycle_coordinator.register_remote(
 		hunter_session.get_identity(), hunter_outbound);
-	auto hunter_time = time::time_t::from_int(40);
+	auto hunter_time = retained_time;
 	auto hunter_snapshot_state = capture_fvd_state(
 		state, connections, hunter_time, 0, 9, 1);
 	WorldDeltaBaseline hunter_baseline{};
@@ -574,7 +578,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 		encode_command_result(attack_result));
 	hunter_connection.send_frame(attack_result_frame);
 
-	auto attack_sample_time = time::time_t::from_int(41);
+	auto attack_sample_time = hunter_time + time::time_t::from_int(1);
 	loop->reach_time(attack_sample_time, state);
 	auto attack_delta_frame = hunter_session.make_frame(
 		MessageType::WORLD_DELTA,
@@ -1021,8 +1025,18 @@ void fvd_loopback() {
 		}
 	}};
 
-	run_guest(listener.get_port());
-	run_hunter_guest(listener.get_port());
+	try {
+		run_guest(listener.get_port());
+		run_hunter_guest(listener.get_port());
+	}
+	catch (...) {
+		auto client_error = std::current_exception();
+		server.join();
+		if (server_error) {
+			std::rethrow_exception(server_error);
+		}
+		std::rethrow_exception(client_error);
+	}
 	server.join();
 	if (server_error) {
 		std::rethrow_exception(server_error);

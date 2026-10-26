@@ -10,6 +10,7 @@
 #include <limits>
 #include <vector>
 
+#include "error/error.h"
 #include "event/event_loop.h"
 #include "gamestate/component/api/live.h"
 #include "gamestate/component/api/move.h"
@@ -309,6 +310,37 @@ void FVD::arrow_hit(const std::shared_ptr<GameState> &state,
 	}
 }
 
+void FVD::horse_hit(const std::shared_ptr<GameState> &state,
+                    entity_id_t horse_id, entity_id_t target,
+                    int64_t damage, const time::time_t &time) {
+	auto order_it = this->attack_orders.find(horse_id);
+	if (order_it == this->attack_orders.end()) {
+		return;
+	}
+	auto &order = order_it->second;
+	if (not order.pending_hit or *order.pending_hit != time
+	    or order.target != target) {
+		return;
+	}
+	order.pending_hit.reset();
+	auto horse = state->get_game_entities().find(horse_id);
+	if (horse == state->get_game_entities().end()
+	    or not alive(horse->second, time)
+	    or horse->second->get_animation_action() != AnimationAction::ATTACK) {
+		return;
+	}
+
+	this->apply_damage(state, target, damage, 1, false, time);
+	if (state->get_game_entities().contains(target)) {
+		return;
+	}
+	order.target.reset();
+	if (order.focus_target) {
+		halt_for_engagement(horse->second, time);
+		this->attack_orders.erase(order_it);
+	}
+}
+
 bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
                              player_id_t owner, const std::vector<entity_id_t> &ids,
                              entity_id_t enemy_id, const time::time_t &time) {
@@ -534,18 +566,27 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				halt_for_engagement(horse, time);
 			}
 			if (time >= order.next_attack) {
-				this->apply_damage(state, target, this->horse_damage, 1, false, time);
-				order.next_attack = time + this->horse_cooldown;
-				if (not state->get_game_entities().contains(target)) {
-					order.target.reset();
-					if (order.focus_target) {
-						halt_for_engagement(horse, time);
-						this->attack_orders.erase(order_it);
-						continue;
-					}
+				auto enemy_position = std::dynamic_pointer_cast<component::Position>(
+					enemy->second->get_component(component::component_t::POSITION));
+				auto direction = enemy_position->get_positions().get(time) - current;
+				position->set_angle(time, direction.to_angle());
+				horse->render_update(
+					time, this->horse_attack_animation, AnimationAction::ATTACK);
+				auto loop = this->event_loop.lock();
+				if (not loop) [[unlikely]] {
+					throw Error{ERR << "Cannot schedule an FVD Hunter melee hit without an event loop"};
 				}
+				const auto hit_time = time + this->horse_hit_delay;
+				order.pending_hit = hit_time;
+				loop->create_event(
+					"game.fvd_horse_hit", this->horse_spawn_target, state, hit_time,
+					{{"horse", id}, {"target", target}, {"damage", this->horse_damage}});
+				order.next_attack = time + this->horse_cooldown;
 			}
 			continue;
+		}
+		if (horse->get_animation_action() == AnimationAction::ATTACK) {
+			system::Idle::idle(horse, time);
 		}
 
 		// After reaching the destination, remain alert to enemies within

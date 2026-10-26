@@ -201,16 +201,20 @@ void fvd_scenario() {
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-idle2.sprite");
 	auto horse_gallop = renderer::resources::parser::parse_sprite_file(
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-gallop.sprite");
+	auto horse_attack = renderer::resources::parser::parse_sprite_file(
+		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-attack.sprite");
 	TESTEQUALS(animated_idle.get_texture_count(), size_t{16});
 	TESTEQUALS(animated_walk.get_texture_count(), size_t{16});
 	TESTEQUALS(horse_idle1.get_texture_count(), size_t{2});
 	TESTEQUALS(horse_idle2.get_texture_count(), size_t{1});
 	TESTEQUALS(horse_gallop.get_texture_count(), size_t{1});
+	TESTEQUALS(horse_attack.get_texture_count(), size_t{1});
 	const auto &idle_layer = animated_idle.get_layer(0);
 	const auto &walk_layer = animated_walk.get_layer(0);
 	const auto &horse_idle1_layer = horse_idle1.get_layer(0);
 	const auto &horse_idle2_layer = horse_idle2.get_layer(0);
 	const auto &horse_gallop_layer = horse_gallop.get_layer(0);
+	const auto &horse_attack_layer = horse_attack.get_layer(0);
 	TESTEQUALS(idle_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(walk_layer.get_display_mode(),
@@ -221,15 +225,19 @@ void fvd_scenario() {
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_gallop_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(horse_attack_layer.get_display_mode(),
+	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_idle1_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_idle2_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_gallop_layer.get_angle_count(), size_t{16});
+	TESTEQUALS(horse_attack_layer.get_angle_count(), size_t{16});
 	// A frame duration is measured in seconds, not milliseconds.
 	TESTEQUALS(idle_layer.get_time_per_frame(), 0.125f);
 	TESTEQUALS(walk_layer.get_time_per_frame(), 0.07f);
 	TESTEQUALS(horse_gallop_layer.get_time_per_frame(), 0.08f);
 	TESTEQUALS(horse_idle1_layer.get_time_per_frame(), 0.15f);
 	TESTEQUALS(horse_idle2_layer.get_time_per_frame(), 0.4f);
+	TESTEQUALS(horse_attack_layer.get_time_per_frame(), 0.0375f);
 	const auto idle_frames = idle_layer.get_frame_timing();
 	const auto walk_frames = walk_layer.get_frame_timing();
 	TESTEQUALS(idle_frames->size(), size_t{16});
@@ -237,6 +245,7 @@ void fvd_scenario() {
 	TESTEQUALS(horse_gallop_layer.get_frame_timing()->size(), size_t{12});
 	TESTEQUALS(horse_idle1_layer.get_frame_timing()->size(), size_t{24});
 	TESTEQUALS(horse_idle2_layer.get_frame_timing()->size(), size_t{12});
+	TESTEQUALS(horse_attack_layer.get_frame_timing()->size(), size_t{16});
 	const std::array<std::pair<float, size_t>, 16> horse_direction_rows{{
 		{0.0f, 15},
 		{22.0f, 14},
@@ -259,6 +268,7 @@ void fvd_scenario() {
 		const auto &idle1_angle = horse_idle1_layer.get_direction_angle(angle);
 		const auto &idle2_angle = horse_idle2_layer.get_direction_angle(angle);
 		const auto &gallop_angle = horse_gallop_layer.get_direction_angle(angle);
+		const auto &attack_angle = horse_attack_layer.get_direction_angle(angle);
 		TESTEQUALS(idle1_angle->get_frame_count(), size_t{24});
 		TESTEQUALS(idle2_angle->get_frame_count(), size_t{12});
 		const auto idle1_texture = row < 8 ? size_t{0} : size_t{1};
@@ -274,6 +284,9 @@ void fvd_scenario() {
 		TESTEQUALS(gallop_angle->get_frame_count(), size_t{12});
 		TESTEQUALS(gallop_angle->get_frame(0)->get_subtexture_idx(), row * 12);
 		TESTEQUALS(gallop_angle->get_frame(11)->get_subtexture_idx(), row * 12 + 11);
+		TESTEQUALS(attack_angle->get_frame_count(), size_t{16});
+		TESTEQUALS(attack_angle->get_frame(0)->get_subtexture_idx(), row * 16);
+		TESTEQUALS(attack_angle->get_frame(15)->get_subtexture_idx(), row * 16 + 15);
 	}
 	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(0.26),
 	                                  time::TIME_ZERO), size_t{2});
@@ -314,6 +327,10 @@ void fvd_scenario() {
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-gallop.texture");
 	TESTEQUALS(horse_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
 	TESTEQUALS(horse_sheet.get_subtex_count(), size_t{192});
+	auto horse_attack_sheet = renderer::resources::parser::parse_texture_file(
+		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-attack.texture");
+	TESTEQUALS(horse_attack_sheet.get_size(), (std::pair<int32_t, int32_t>{4096, 4096}));
+	TESTEQUALS(horse_attack_sheet.get_subtex_count(), size_t{256});
 	for (const auto &idle_name : {"ethereal-hunter-horse-idle1_page_00.texture",
 	                              "ethereal-hunter-horse-idle1_page_01.texture",
 	                              "ethereal-hunter-horse-idle2.texture"}) {
@@ -329,6 +346,7 @@ void fvd_scenario() {
 	                        horse_idle1.get_texture(0),
 	                        horse_idle1.get_texture(1),
 	                        horse_idle2.get_texture(0),
+	                        horse_attack.get_texture(0),
 	                        foundation_graphics.get_texture(0),
 	                        tower_graphics.get_texture(0)}) {
 		auto texture = renderer::resources::Texture2dData{info->get_image_path().value()};
@@ -406,6 +424,18 @@ void fvd_scenario() {
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_move_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_move_layer.get_frame_timing()->size(), size_t{12});
+	const auto horse_attack_ability = state->get_db_view()->get_object(
+		"fvd.data.entities.Horse.Attack");
+	const auto horse_attack_animated = api::APIAbility::get_property(
+		horse_attack_ability, api::ability_property_t::ANIMATED);
+	const auto horse_attack_animations = api::APIAbilityProperty::get_animations(
+		horse_attack_animated);
+	const auto horse_attack_paths = api::APIAnimation::get_animation_paths(
+		horse_attack_animations);
+	TESTEQUALS(horse_attack_paths.size(), size_t{1});
+	TESTEQUALS(horse_attack_paths.front().ends_with(
+		           "ethereal-hunter-horse-attack.sprite"),
+	           true);
 
 	auto fvd = state->get_fvd();
 	TESTEQUALS(fvd->get_player_count(), 8);
@@ -950,6 +980,37 @@ void fvd_hunter_spawning() {
 		}
 	}
 	TESTEQUALS(moving, wave.size());
+
+	// The debug shortcut replaces the pending first event, starts the regular
+	// interval from now, and cannot be used again after the wave has begun.
+	auto immediate_loop = std::make_shared<openage::event::EventLoop>();
+	immediate_loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	immediate_loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto immediate_entities = std::make_shared<EntityFactory>();
+	auto immediate_terrain = std::make_shared<TerrainFactory>();
+	Game immediate_game{immediate_loop, mods, immediate_entities, immediate_terrain};
+	auto immediate_state = immediate_game.get_state();
+	auto immediate_fvd = immediate_state->get_fvd();
+	auto count_immediate_horses = [&]() {
+		return static_cast<size_t>(std::count_if(
+			immediate_state->get_game_entities().begin(),
+			immediate_state->get_game_entities().end(),
+			[](const auto &entry) {
+				return entry.second->get_definition() == "fvd.data.entities.Horse";
+			}));
+	};
+	immediate_fvd->start_hunter_wave(immediate_state, at(0));
+	immediate_fvd->request_immediate_hunter_spawn(immediate_state, at(5));
+	immediate_fvd->request_immediate_hunter_spawn(immediate_state, at(5));
+	immediate_loop->reach_time(at(5), immediate_state);
+	TESTEQUALS(count_immediate_horses(), size_t{1});
+	TESTEQUALS(immediate_fvd->get_hunter_spawn_countdown(at(5)).has_value(), false);
+	immediate_loop->reach_time(at(5.999), immediate_state);
+	TESTEQUALS(count_immediate_horses(), size_t{1});
+	immediate_loop->reach_time(at(6), immediate_state);
+	TESTEQUALS(count_immediate_horses(), size_t{2});
+	immediate_loop->reach_time(at(20), immediate_state);
+	TESTEQUALS(count_immediate_horses(), size_t{16});
 }
 
 void fvd_horse_spawn_blocked() {
@@ -1090,13 +1151,24 @@ void fvd_hunter_combat() {
 	auto melee = entities->spawn_game_entity(loop, state, 1, "fvd.data.entities.Horse", {67.5, 69.5, 0}, at(33));
 	TESTEQUALS(fvd->issue_attack_move(state, 1, {melee->get_id()},
 	                                  {67, 70, 0}, at(33)), true);
+	const auto tower_hp_before_melee = tower_health->get_attribute(
+		at(33), "fvd.data.entities.Health")->get(at(33));
 	fvd->combat_tick(state, at(33));
-	TESTEQUALS(tower_health->get_attribute(at(33), "fvd.data.entities.Health")->get(at(33)) < 100, true);
+	TESTEQUALS(melee->get_animation_action(), AnimationAction::ATTACK);
+	TESTEQUALS(melee->get_animation_started_at(), at(33));
+	loop->reach_time(at(33.449), state);
+	TESTEQUALS(tower_health->get_attribute(
+		at(33.449), "fvd.data.entities.Health")->get(at(33.449)),
+	           tower_hp_before_melee);
+	loop->reach_time(at(33.45), state);
+	TESTEQUALS(tower_health->get_attribute(
+		at(33.45), "fvd.data.entities.Health")->get(at(33.45)) < tower_hp_before_melee,
+	           true);
 
 	// A normal Move command interrupts an active melee engagement.
 	event::SendCommandHandler commander;
 	bool accepted = false;
-	commander.invoke(*loop, nullptr, state, at(33.1),
+	commander.invoke(*loop, nullptr, state, at(33.5),
 	                 {{"type", component::command::command_t::MOVE},
 	                  {"owner", player_id_t{1}},
 	                  {"entity_ids", std::vector<entity_id_t>{melee->get_id()}},
@@ -1105,6 +1177,7 @@ void fvd_hunter_combat() {
 		                  accepted = result;
 	                  }}}});
 	TESTEQUALS(accepted, true);
+	TESTEQUALS(melee->get_animation_action(), AnimationAction::MOVE);
 	auto melee_move = std::dynamic_pointer_cast<component::Move>(
 		melee->get_component(component::component_t::MOVE));
 	TESTEQUALS(melee_move->get_active_target().has_value(), true);
@@ -1166,7 +1239,7 @@ void fvd_combat_balance() {
 	const int64_t horse_hit = std::max<int64_t>(1, melee_damage - fvd->get_tower_armor());
 	const int64_t melee_volleys = (100 + 3 * horse_hit - 1) / (3 * horse_hit);
 	TESTEQUALS(melee_volleys, int64_t{17});
-	TESTEQUALS_FLOAT((melee_volleys - 1) * 0.6, 9.6, 0.001);
+	TESTEQUALS_FLOAT((melee_volleys - 1) * 0.6 + 0.45, 10.05, 0.001);
 
 	// Create a fully built tower via the same construction pipeline as
 	// gameplay, then focus three real, immediately adjacent Hunter horses.
@@ -1291,7 +1364,11 @@ void fvd_hunter_attack_move_regressions() {
 	auto after = approach_position->get_positions().get(at(15.2)) - tower_at;
 	TESTEQUALS(after.length() < before.length(), true);
 	fvd->combat_tick(state, at(16));
-	TESTEQUALS(health->get_attribute(at(16), "fvd.data.entities.Health")->get(at(16)) < 100, true);
+	TESTEQUALS(health->get_attribute(
+		at(16), "fvd.data.entities.Health")->get(at(16)), int64_t{100});
+	loop->reach_time(at(16.45), state);
+	TESTEQUALS(health->get_attribute(
+		at(16.45), "fvd.data.entities.Health")->get(at(16.45)) < 100, true);
 
 	// Reaching the destination doesn't remove tower awareness.
 	// Remove the Builder used for the priority assertion so its new
@@ -1390,7 +1467,10 @@ void fvd_hunter_builder_aggro() {
 	TESTEQUALS(after.length() < before.length(), true);
 	fvd->combat_tick(state, at(1.2));
 	TESTEQUALS(builder_health->get_attribute(
-		at(1.2), "fvd.data.entities.Health")->get(at(1.2)) < hp, true);
+		at(1.2), "fvd.data.entities.Health")->get(at(1.2)), hp);
+	loop->reach_time(at(1.65), state);
+	TESTEQUALS(builder_health->get_attribute(
+		at(1.65), "fvd.data.entities.Health")->get(at(1.65)) < hp, true);
 
 	// Detection continues after arrival when a Builder enters the
 	// three-tile radius; it is not limited to passing enemies en route.
@@ -1418,7 +1498,10 @@ void fvd_hunter_builder_aggro() {
 		at(4.1), "fvd.data.entities.Health")->get(at(4.1));
 	fvd->combat_tick(state, at(5.1));
 	TESTEQUALS(late_health->get_attribute(
-		at(5.1), "fvd.data.entities.Health")->get(at(5.1)) < late_hp, true);
+		at(5.1), "fvd.data.entities.Health")->get(at(5.1)), late_hp);
+	loop->reach_time(at(5.55), state);
+	TESTEQUALS(late_health->get_attribute(
+		at(5.55), "fvd.data.entities.Health")->get(at(5.55)) < late_hp, true);
 }
 
 
@@ -1504,12 +1587,16 @@ void fvd_hunter_focus_attack() {
 	fvd->combat_tick(state, at(15));
 	fvd->combat_tick(state, at(16));
 	TESTEQUALS(builder_live->get_attribute(
-		at(16), "fvd.data.entities.Health")->get(at(16)) < hp_builder, true);
+		at(16), "fvd.data.entities.Health")->get(at(16)), hp_builder);
+	loop->reach_time(at(16.45), state);
+	TESTEQUALS(builder_live->get_attribute(
+		at(16.45), "fvd.data.entities.Health")->get(at(16.45)) < hp_builder, true);
 	TESTEQUALS(tower_live->get_attribute(
 		at(16), "fvd.data.entities.Health")->get(at(16)), hp_tower);
 
 	// An explicit target remains the priority for its entire lifetime.
 	for (int i = 17; i <= 25 and state->get_game_entities().contains(builder->get_id()); ++i) {
+		loop->reach_time(at(i), state);
 		fvd->combat_tick(state, at(i));
 	}
 	TESTEQUALS(state->get_game_entities().contains(builder->get_id()), false);
@@ -1757,6 +1844,9 @@ void fvd_animation_phase() {
 	spawned.render_update(time::time_t::from_int(22),
 	                     "fvd/orc_walk.sprite", AnimationAction::MOVE);
 	TESTEQUALS(spawned.get_animation_started_at(), time::time_t::from_int(22));
+	spawned.render_update(time::time_t::from_double(22.5),
+	                     "fvd/horse_attack.sprite", AnimationAction::ATTACK);
+	TESTEQUALS(spawned.get_animation_started_at(), time::time_t::from_double(22.5));
 
 	// The renderer must retain absolute host animation start times even
 	// when it receives the first snapshot partway through the cycle.

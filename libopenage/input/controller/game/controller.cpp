@@ -9,6 +9,7 @@
 #include <QGuiApplication>
 #include <QStyleHints>
 
+#include "error/error.h"
 #include "log/log.h"
 
 #include "event/event_loop.h"
@@ -370,7 +371,8 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		                const std::function<void(std::optional<gamestate::entity_id_t>)> &)> &pick_entity,
                     const std::function<bool(network::CommandIntent)> &send_guest_command,
                     const std::function<std::optional<network::WorldState>()> &guest_world,
-                    bool online_lobby) {
+                    bool online_lobby,
+                    const std::function<bool()> &can_spawn_hunter) {
 	binding_func_t create_entity_event{[simulation, time_loop, camera, send_guest_command, guest_world](const event_arguments &args,
 	                                       const std::shared_ptr<Controller> controller) {
 		auto mouse_pos = args.mouse.to_phys3(camera);
@@ -450,6 +452,20 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 
 	auto fvd = simulation->get_game()->get_state()->get_fvd();
 	if (fvd) {
+		binding_func_t spawn_hunter{[simulation, time_loop, can_spawn_hunter](
+		                                const event_arguments &,
+		                                const std::shared_ptr<Controller>) {
+			if (can_spawn_hunter and not can_spawn_hunter()) {
+				return;
+			}
+			auto state = simulation->get_game()->get_state();
+			auto current_fvd = state->get_fvd();
+			if (not current_fvd) {
+				throw Error{MSG(err) << "F9 Hunter spawn requested outside an FVD game"};
+			}
+			current_fvd->request_immediate_hunter_spawn(
+				state, time_loop->get_clock()->get_time());
+		}};
 		binding_func_t start_placement{[](const event_arguments &,
 		                                 const std::shared_ptr<Controller> controller) {
 			controller->begin_tower_placement();
@@ -472,6 +488,9 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_Escape,
 		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
 		          binding_action{forward_action_t::CLEAR, cancel_placement});
+		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_F9,
+		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+		          binding_action{forward_action_t::CLEAR, spawn_hunter});
 
 		if (not online_lobby) for (size_t id = 1; id <= fvd->get_player_count(); ++id) {
 			binding_func_t switch_player{[id, camera, fvd](const event_arguments &,

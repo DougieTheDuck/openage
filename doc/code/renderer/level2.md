@@ -25,6 +25,9 @@ There are currently 6 stages in the level 2 rendering pipeline:
 
 With the exception of the `ScreenRenderer`, all stages are independent from each other, i.e. the order in which they are rendered each frame does not matter. To render the current frame for a stage, call its `update()` method. The `ScreenRenderer` must be rendered last as it combines the output of all other stages into the result shown on screen.
 
+The `WorldRenderer` uses ordered layers for structure occlusion.
+After drawing the scene normally, it writes opaque structure pixels to depth without changing color, then draws player-colored unit contours only where that depth is closer than the unit.
+
 ### Updating Render Stages from the Gamestate
 
 Gamestate (game simulation) and level 2 rendering are largely decoupled, i.e. communication between these components only happens via a few dedicated connection interfaces in the codebase. Furthermore, the information flow between gamestate and renderer is strictly one-way (always gamestate -> renderer). In practice, this means that the gamestate constantly updates the level 2 renderer on what it should display. The renderer only acts on what it receives from the gamestate and does not actively request or send information to the gamestate. We mainly do this for thread-safety reasons as gamestate and renderer live in two different threads at runtime.
