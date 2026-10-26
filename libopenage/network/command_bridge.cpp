@@ -170,6 +170,12 @@ WorldState capture_fvd_presentation_state(
 			entity->get_definition(),
 			position->get_positions().get(time),
 		});
+		// Host-only presentation uses the same confirmed HP deltas as
+		// remote recipients, without predicting damage client-side.
+		if (auto hp = entity_health(entity, time)) {
+			result.entities.back().health = hp->first;
+			result.entities.back().maximum_health = hp->second;
+		}
 	}
 	for (const auto &reservation : fvd->get_reserved_tiles()) {
 		result.reservations.push_back({reservation.tile, reservation.builder_id});

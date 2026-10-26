@@ -22,6 +22,7 @@ Item {
 	readonly property bool attacking: hud !== null && hud.attacking
 	readonly property int hunterCountdown: hud === null ? 0 : hud.hunterCountdown
 	readonly property var arrowStreaks: hud === null ? [] : hud.arrowStreaks
+	readonly property var combatEffects: hud === null ? [] : hud.combatEffects
 
 	Text {
 		anchors.top: parent.top
@@ -171,11 +172,15 @@ Item {
 		id: arrows
 		anchors.fill: parent
 		z: -1
-		visible: root.arrowStreaks.length > 0
+		visible: root.arrowStreaks.length > 0 || root.combatEffects.length > 0
 		onVisibleChanged: if (visible) requestPaint()
 		Connections {
 			target: root
 			function onArrowStreaksChanged() {
+				if (arrows.visible)
+					arrows.requestPaint()
+			}
+			function onCombatEffectsChanged() {
 				if (arrows.visible)
 					arrows.requestPaint()
 			}
@@ -216,6 +221,29 @@ Item {
 				ctx.lineTo(shot.x1, shot.y1)
 				ctx.lineTo(shot.x1 - nx * 5 + ny * 2, shot.y1 - ny * 5 - nx * 2)
 				ctx.stroke()
+			}
+			// Confirmed damage/death FX are generated only from the host's
+			// health/removal state, never from a predicted projectile impact.
+			var combat = root.combatEffects
+			for (var j = 0; j < combat.length; ++j) {
+				var fx = combat[j]
+				ctx.globalAlpha = fx.alpha
+				ctx.strokeStyle = fx.death ? "#f5b05e" : "#ffecb6"
+				ctx.lineWidth = fx.death ? 3 : 2
+				ctx.beginPath()
+				ctx.arc(fx.x, fx.y, fx.radius, 0, Math.PI * 2)
+				ctx.stroke()
+				if (fx.death) {
+					for (var k = 0; k < 6; ++k) {
+						var a = Math.PI * k / 3
+						var inner = fx.radius * 0.35
+						var outer = fx.radius * 1.25
+						ctx.beginPath()
+						ctx.moveTo(fx.x + Math.cos(a) * inner, fx.y + Math.sin(a) * inner)
+						ctx.lineTo(fx.x + Math.cos(a) * outer, fx.y + Math.sin(a) * outer)
+						ctx.stroke()
+					}
+				}
 			}
 			ctx.globalAlpha = 1
 		}

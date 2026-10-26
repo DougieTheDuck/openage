@@ -359,6 +359,8 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		this->fvd_guest_snapshot_generation = 0;
 		this->fvd_last_guest_arrow_id = 0;
 		this->fvd_guest_late_arrows.clear();
+		this->fvd_previous_combat_world.reset();
+		this->fvd_combat_visuals.clear();
 		for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
 		this->fvd_guest_entities.clear();
 		this->fvd_guest_sprite_paths.clear();
@@ -420,6 +422,8 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	this->fvd_guest_snapshot_generation = 0;
 	this->fvd_last_guest_arrow_id = 0;
 	this->fvd_guest_late_arrows.clear();
+	this->fvd_previous_combat_world.reset();
+	this->fvd_combat_visuals.clear();
 	for (auto &[id, visual] : this->fvd_guest_entities) visual->deactivate(0);
 	this->fvd_guest_entities.clear();
 	this->fvd_guest_sprite_paths.clear();
@@ -748,6 +752,26 @@ void Presenter::refresh_fvd_lobby_state() {
 	       and state.remote_player_id == 0 and state.phase == "playing");
 }
 
+void Presenter::record_confirmed_combat_effects(
+	const network::WorldState &world, bool reset) {
+	if (reset) {
+		this->fvd_previous_combat_world.reset();
+		this->fvd_combat_visuals.clear();
+	}
+	if (this->fvd_previous_combat_world
+	    and world.simulation_time != this->fvd_previous_combat_world->simulation_time) {
+		const auto confirmed = network::confirmed_combat_effects(
+			*this->fvd_previous_combat_world, world);
+		const auto now = std::chrono::steady_clock::now();
+		for (const auto &effect : confirmed) {
+			if (this->fvd_combat_visuals.size() >= 512) break;
+			this->fvd_combat_visuals.push_back({
+				effect.position, effect.death, now});
+		}
+	}
+	this->fvd_previous_combat_world = world;
+}
+
 void Presenter::refresh_fvd_guest_visuals() {
 	if (not this->fvd_lobby_enabled or this->fvd_lobby_hosting
 	    or not this->fvd_replication or not this->world_renderer) return;
@@ -760,6 +784,7 @@ void Presenter::refresh_fvd_guest_visuals() {
 	if (not reset and world->world_revision == this->fvd_guest_visual_revision) {
 		return;
 	}
+	this->record_confirmed_combat_effects(*world, reset);
 	const auto received_at = std::chrono::steady_clock::now();
 	const auto previous_time = this->fvd_guest_clock.update(
 		world->simulation_time, received_at, reset);
@@ -1104,6 +1129,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("killsAvailable", !this->fvd_replication);
 			this->fvd_hud_state->insert("killsLabel", QString{});
 			this->fvd_hud_state->insert("arrowStreaks", QVariantList{});
+			this->fvd_hud_state->insert("combatEffects", QVariantList{});
 			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
 			if (this->fvd_lobby_enabled) {
@@ -1282,6 +1308,9 @@ void Presenter::render() {
 				auto replica_for_hud = this->fvd_replication ? this->fvd_replication->get_world_state() : std::nullopt;
 				const auto local_hud = this->fvd_replication ? nullptr : this->simulation->get_fvd_presentation_state();
 				const network::WorldState *construction_world = replica_for_hud ? &*replica_for_hud : local_hud.get();
+				if (not this->fvd_replication and local_hud) {
+					this->record_confirmed_combat_effects(*local_hud, false);
+				}
 				std::vector<gamestate::FVD::ArrowTrail> arrows{};
 				if (this->fvd_replication) {
 					// Replicate each launch once. The guest animates the flight and
@@ -1393,6 +1422,44 @@ void Presenter::render() {
 				if (not arrow_streaks.empty()
 				    or not this->fvd_hud_state->value("arrowStreaks").toList().empty()) {
 					this->fvd_hud_state->insert("arrowStreaks", arrow_streaks);
+				}
+				// Use the same projection as projectiles, but emit flashes
+				// only after confirmed HP changes / authoritative removals.
+				const auto visual_now = std::chrono::steady_clock::now();
+				std::erase_if(this->fvd_combat_visuals, [&](const CombatVisual &fx) {
+					const auto elapsed = std::chrono::duration<double>(
+						visual_now - fx.started).count();
+					return elapsed >= (fx.death ? 0.72 : 0.36);
+				});
+				QVariantList combat_effects;
+				if (not this->fvd_combat_visuals.empty()) {
+					const auto fx_matrix = this->camera->get_projection_matrix()
+					                     * this->camera->get_view_matrix();
+					const auto fx_viewport = this->camera->get_viewport_size();
+					for (const auto &fx : this->fvd_combat_visuals) {
+						auto world_pos = fx.position;
+						world_pos.up += coord::phys_t::from_double(fx.death ? 0.5 : 0.8);
+						const auto world_point = world_pos.to_scene3().to_world_space();
+						const auto clip = fx_matrix * Eigen::Vector4f{
+							world_point.x(), world_point.y(), world_point.z(), 1.0f};
+						if (clip.w() <= 0) continue;
+						const float x = (clip.x() / clip.w() * 0.5f + 0.5f) * fx_viewport[0];
+						const float y = (0.5f - clip.y() / clip.w() * 0.5f) * fx_viewport[1];
+						if (x < -40 or y < -40 or x > fx_viewport[0] + 40
+						    or y > fx_viewport[1] + 40) continue;
+						const auto elapsed = std::chrono::duration<double>(
+							visual_now - fx.started).count();
+						const auto duration = fx.death ? 0.72 : 0.36;
+						const double progress = std::clamp(elapsed / duration, 0.0, 1.0);
+						combat_effects.push_back(QVariantMap{
+							{"x", x}, {"y", y}, {"death", fx.death},
+							{"alpha", 1.0 - progress},
+							{"radius", (fx.death ? 19.0 : 9.0) * (0.55 + progress)}});
+					}
+				}
+				if (not combat_effects.empty()
+				    or not this->fvd_hud_state->value("combatEffects").toList().empty()) {
+					this->fvd_hud_state->insert("combatEffects", combat_effects);
 				}
 				// World-space tile projection is shared by placement and
 				// authoritative construction/reservation overlays.

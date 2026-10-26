@@ -256,6 +256,31 @@ void check_room(const std::vector<uint8_t> &bytes, size_t offset, size_t length)
 
 } // namespace
 
+std::vector<ConfirmedCombatEffect> confirmed_combat_effects(
+	const WorldState &previous, const WorldState &current) {
+	std::unordered_map<gamestate::entity_id_t, const EntityState *> remaining;
+	remaining.reserve(current.entities.size());
+	for (const auto &entity : current.entities) {
+		remaining.emplace(entity.entity_id, &entity);
+	}
+	std::vector<ConfirmedCombatEffect> effects;
+	for (const auto &prior : previous.entities) {
+		if (not prior.health or *prior.health <= 0) continue;
+		auto next = remaining.find(prior.entity_id);
+		if (next == remaining.end()) {
+			// The host removed a previously living entity. The cue is
+			// cosmetic; only the host decides death and kill attribution.
+			effects.push_back({prior.entity_id, prior.position, true});
+		}
+		else if (next->second->health
+		         and *next->second->health < *prior.health) {
+			effects.push_back({
+				prior.entity_id, next->second->position, false});
+		}
+	}
+	return effects;
+}
+
 bool arrow_visible_at(const ArrowState &arrow, const time::time_t &now) {
 	return now >= arrow.launch_time and now < arrow.impact_time;
 }

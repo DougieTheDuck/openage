@@ -252,6 +252,16 @@ protected:
 	uint64_t fvd_guest_visual_revision{0};
 	uint64_t fvd_guest_snapshot_generation{0};
 	GuestClock fvd_guest_clock{};
+	/** Process only host-confirmed HP changes and entity deaths for visuals. */
+	void record_confirmed_combat_effects(const network::WorldState &world, bool reset);
+	std::optional<network::WorldState> fvd_previous_combat_world{};
+	struct CombatVisual {
+		coord::phys3 position;
+		bool death;
+		std::chrono::steady_clock::time_point started;
+	};
+	std::vector<CombatVisual> fvd_combat_visuals{};
+
 	/** Last processed authoritative projectile ID (avoid duplicate visuals). */
 	uint64_t fvd_last_guest_arrow_id{0};
 	struct LateGuestArrow {

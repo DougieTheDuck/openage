@@ -56,8 +56,23 @@
     cosmetic impact sparks on host and guest. Restart the attack animation
     phase on each volley. Client effects never apply damage.
     **Awaiting build/run and multi-process visual acceptance.**
-  - [ ] Add confirmed-damage/death feedback, event overflow recovery,
-    and multi-client tests (including canceled shots and packet jitter).
+  - [x] Retain unsent projectile IDs beyond the old 2048-event
+    presentation window, expose per-recipient sent cursors on the relay
+    worker, capture oldest outstanding 2048-event batches, and prune
+    expired history only after all active recipients have been sent each
+    launch. Preserve a late batch through one decoded delta for cosmetic
+    playback. Added a 4096-event sequential-batch regression.
+    **Awaiting live Windows/Linux compilation and stress verification.**
+  - [x] Render bounded hit flashes from authoritative health decreases and
+    removal/death bursts on host and guests. Match-local presentation now
+    captures HP for parity, and the diff has unit coverage. No client-side
+    projectile prediction modifies health.
+    **Awaiting graphical and 2/4/8-client acceptance.**
+  - [ ] Add application-level received-event acknowledgement / robust
+    recovery for extreme stalls, and real cross-client congestion,
+    cancellation, death/impact and latency verification. The 65,536
+    unsent-record memory guard fails explicitly rather than silently
+    dropping projectile effects.
 - [x] 1.6a Restore match-sized starting Builder pruning for both legacy
   two-peer Hunter-creator matches and multi-host matches. The lobby reports
   match_player_count=2 through the legacy assignment/bootstrap, the presenter

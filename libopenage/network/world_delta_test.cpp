@@ -132,6 +132,33 @@ void world_delta() {
 	TESTEQUALS(applied.arrows.front().arrow_id, uint64_t{55});
 	TESTEQUALS(applied.arrows.back().arrow_id, uint64_t{56});
 
+	// Damage effects are derived solely from authoritative health/removal
+	// updates; an unchanged HP snapshot or fresh recovery never creates
+	// a speculative hit.
+	WorldState hp_before{};
+	hp_before.world_revision = 1;
+	hp_before.simulation_time = time::time_t::from_int(2);
+	hp_before.entities = {
+		{100, 1, "fvd.data.entities.Horse", {30, 30, 0}, 90, 90},
+		{200, 2, "fvd.data.entities.Tower", {32, 32, 0}, 100, 100}};
+	auto hp_hit = hp_before;
+	hp_hit.world_revision = 2;
+	hp_hit.simulation_time = time::time_t::from_int(3);
+	hp_hit.entities.front().health = 79;
+	auto observed_hit = confirmed_combat_effects(hp_before, hp_hit);
+	TESTEQUALS(observed_hit.size(), size_t{1});
+	TESTEQUALS(observed_hit.front().target_id, gamestate::entity_id_t{100});
+	TESTEQUALS(observed_hit.front().death, false);
+	TESTEQUALS(confirmed_combat_effects(hp_hit, hp_hit).empty(), true);
+	auto hp_dead = hp_hit;
+	hp_dead.world_revision = 3;
+	hp_dead.simulation_time = time::time_t::from_int(4);
+	hp_dead.entities.erase(hp_dead.entities.begin());
+	auto observed_death = confirmed_combat_effects(hp_hit, hp_dead);
+	TESTEQUALS(observed_death.size(), size_t{1});
+	TESTEQUALS(observed_death.front().death, true);
+	TESTEQUALS(observed_death.front().position, (coord::phys3{30, 30, 0}));
+
 	// A 0.2-second projectile can launch and hit between successive
 	// recipient captures. Keep its unique launch event for the guest's
 	// short visual replay window, without ever reapplying combat damage.

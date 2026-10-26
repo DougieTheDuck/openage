@@ -30,6 +30,17 @@ bool arrow_visible_at(const ArrowState &arrow, const time::time_t &time);
 /** Compare two complete, recipient-specific states and produce a true patch. */
 WorldDelta make_world_delta(const WorldState &previous, const WorldState &current);
 
+/** Visual feedback from confirmed authoritative HP changes and removals.
+ * Never infer hit/death effects from projectile trajectories. */
+struct ConfirmedCombatEffect {
+	gamestate::entity_id_t target_id;
+	coord::phys3 position;
+	bool death;
+};
+
+std::vector<ConfirmedCombatEffect> confirmed_combat_effects(
+	const WorldState &previous, const WorldState &current);
+
 /** Apply a contiguous patch, validating identity and all removals atomically. */
 WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta);
 
