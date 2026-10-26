@@ -149,7 +149,13 @@ std::vector<FVD::ArrowTrail> FVD::get_visible_arrows(const time::time_t &now) co
 	std::lock_guard lock{this->arrow_visuals_mutex};
 	result.reserve(this->arrow_visuals.size());
 	for (const auto &arrow : this->arrow_visuals) {
-		if (now < arrow.launch_time or now >= arrow.impact_time) {
+		if (now < arrow.launch_time
+		    or now >= arrow.impact_time + time::time_t::from_double(0.12)) {
+			continue;
+		}
+		if (now >= arrow.impact_time) {
+			result.push_back(ArrowTrail{
+				arrow.destination, arrow.destination, 1.0, arrow.owner, true});
 			continue;
 		}
 		const double duration = (arrow.impact_time - arrow.launch_time).to_double();
@@ -174,7 +180,7 @@ std::vector<FVD::ArrowTrail> FVD::get_visible_arrows(const time::time_t &now) co
 				    + coord::phys_t::from_double(lift)};
 		};
 		result.push_back(ArrowTrail{
-			position_at(tail_progress), position_at(progress), progress});
+			position_at(tail_progress), position_at(progress), progress, arrow.owner});
 	}
 	return result;
 }
@@ -200,9 +206,8 @@ std::vector<FVDArrowState> FVD::get_arrow_state(const time::time_t &now) const {
 	std::lock_guard lock{this->arrow_visuals_mutex};
 	result.reserve(this->arrow_visuals.size());
 	for (const auto &arrow : this->arrow_visuals) {
-		// Retain expired events briefly for recipients whose snapshot
-		// interval exceeds the 0.2s flight. The guest can replay the
-		// visual once on receipt; impact damage is never simulated here.
+		// Keep immutable launch events after impact so late recipient
+		// captures can replay the cosmetic arc, never its damage.
 		if (now < arrow.launch_time
 		    or arrow.impact_time + time::time_t::from_int(3) <= now) {
 			continue;
@@ -576,6 +581,28 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				}
 				const auto hit_time = time + this->horse_hit_delay;
 				order.pending_hit = hit_time;
+				// The Hunter begins the attack animation now and schedules
+				// its impact at 75% of the 0.6-second attack cycle. Publish
+				// one immutable, timed launch to all recipients immediately.
+				// Its flight and spark are cosmetic: only horse_hit applies HP.
+				auto start = current;
+				start.up += coord::phys_t::from_double(0.90);
+				auto destination = enemy_position->get_positions().get(hit_time);
+				destination.up += coord::phys_t::from_double(
+					enemy->second->get_definition() == this->tower ? 1.0 : 0.55);
+				{
+					std::lock_guard lock{this->arrow_visuals_mutex};
+					std::erase_if(this->arrow_visuals, [&](const ArrowVisual &shot) {
+						return shot.impact_time + time::time_t::from_int(3) <= time;
+					});
+					constexpr size_t max_visual_shots = 2048;
+					if (this->arrow_visuals.size() >= max_visual_shots) {
+						this->arrow_visuals.erase(this->arrow_visuals.begin());
+					}
+					this->arrow_visuals.push_back(
+						ArrowVisual{this->next_arrow_id++, player_id_t{1}, target,
+						            start, destination, time, hit_time});
+				}
 				loop->create_event(
 					"game.fvd_horse_hit", this->horse_spawn_target, state, hit_time,
 					{{"horse", id}, {"target", target}, {"damage", this->horse_damage}});

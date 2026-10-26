@@ -76,7 +76,7 @@ struct FVDAttackOrderState {
 	bool focus_target;
 };
 
-/** Read-only description of one authoritative arrow in flight. */
+/** Read-only timed projectile launch (Tower or Hunter). */
 struct FVDArrowState {
 	uint64_t arrow_id;
 	player_id_t owner;
@@ -97,6 +97,8 @@ public:
 		coord::phys3 tail;
 		coord::phys3 head;
 		double progress;
+		player_id_t owner;
+		bool impact = false;
 	};
 	/** Read and validate the scenario's nyan settings. */
 	explicit FVD(const std::shared_ptr<GameState> &state);
@@ -268,7 +270,7 @@ public:
 	/** Capture active Hunter orders in horse-ID order. */
 	std::vector<FVDAttackOrderState> get_attack_order_state() const;
 
-	/** Capture arrows in flight in arrow-ID order. */
+	/** Capture Tower/Hunter projectiles, including bounded post-impact history. */
 	std::vector<FVDArrowState> get_arrow_state(const time::time_t &now) const;
 
 private:
@@ -392,7 +394,7 @@ private:
 	/** Protect the match-relative first-spawn deadline read by the presenter. */
 	mutable std::mutex hunter_spawn_time_mutex;
 	std::optional<time::time_t> first_hunter_spawn_time;
-	/** Visual history only; shot hit events remain authoritative. */
+	/** Visual event history only; all damage remains authoritative. */
 	struct ArrowVisual {
 		uint64_t arrow_id;
 		player_id_t owner;

@@ -189,12 +189,21 @@ Item {
 				var dx = shot.x1 - shot.x0
 				var dy = shot.y1 - shot.y0
 				var len = Math.sqrt(dx * dx + dy * dy)
+				if (shot.impact) {
+					ctx.globalAlpha = shot.alpha
+					ctx.strokeStyle = shot.hunter ? "#9ce6ed" : "#fff0ba"
+					ctx.lineWidth = 2
+					ctx.beginPath()
+					ctx.arc(shot.x1, shot.y1, shot.hunter ? 5 : 4, 0, Math.PI * 2)
+					ctx.stroke()
+					continue
+				}
 				if (len < 0.5) continue
 				var nx = dx / len
 				var ny = dy / len
 				ctx.globalAlpha = shot.alpha
-				ctx.strokeStyle = "#f9d7a1"
-				ctx.lineWidth = 2
+				ctx.strokeStyle = shot.hunter ? "#9ce6ed" : "#f9d7a1"
+				ctx.lineWidth = shot.hunter ? 2.5 : 2
 				ctx.lineCap = "round"
 				ctx.beginPath()
 				ctx.moveTo(shot.x0, shot.y0)

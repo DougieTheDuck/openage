@@ -49,6 +49,15 @@
   hit/death/impact FX and integration tests for latency, recovery and
   authoritative combat/render parity. Do not mark 1.5 complete until
   those and cross-client verification pass.
+  - [x] Schedule a Hunter projectile at attack start with the same
+    authoritative 0.45s impact instant as the existing 75%-cycle hit.
+    Reuse the unique, time-indexed arrow launch stream (owner 1 = Hunter)
+    and late-recipient replay; render distinct Hunter streaks and small
+    cosmetic impact sparks on host and guest. Restart the attack animation
+    phase on each volley. Client effects never apply damage.
+    **Awaiting build/run and multi-process visual acceptance.**
+  - [ ] Add confirmed-damage/death feedback, event overflow recovery,
+    and multi-client tests (including canceled shots and packet jitter).
 - [x] 1.6a Restore match-sized starting Builder pruning for both legacy
   two-peer Hunter-creator matches and multi-host matches. The lobby reports
   match_player_count=2 through the legacy assignment/bootstrap, the presenter

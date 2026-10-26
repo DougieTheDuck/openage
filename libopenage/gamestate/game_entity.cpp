@@ -89,7 +89,10 @@ void GameEntity::render_update(const time::time_t &time,
 	auto sorted_paths = animation_paths;
 	std::sort(sorted_paths.begin(), sorted_paths.end());
 	if (not this->animation_initialized or this->animation_action != action
-	    or this->animation_paths != sorted_paths) {
+	    or this->animation_paths != sorted_paths
+	    // Each attack volley must restart its pose phase at the same
+	    // authoritative time used for its 75%-cycle hit event.
+	    or (action == AnimationAction::ATTACK and time > this->animation_started_at)) {
 		this->animation_action = action;
 		this->animation_started_at = time;
 		this->animation_paths = sorted_paths;

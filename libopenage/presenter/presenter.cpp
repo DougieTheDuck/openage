@@ -1297,9 +1297,15 @@ void Presenter::render() {
 							};
 							arrows.push_back({
 								position_at(std::max(0.0, progress - 0.22)),
-								position_at(progress), progress});
+								position_at(progress), progress, arrow.owner_id});
 						};
 						for (const auto &arrow : replicated->arrows) {
+							if (now >= arrow.impact_time
+							    and now < arrow.impact_time + time::time_t::from_double(0.12)) {
+								arrows.push_back({arrow.destination, arrow.destination,
+								                  1.0, arrow.owner_id, true});
+								continue;
+							}
 							if (not network::arrow_visible_at(arrow, now)) continue;
 							const auto duration = (arrow.impact_time - arrow.launch_time).to_double();
 							if (duration > 0.0) {
@@ -1319,14 +1325,20 @@ void Presenter::render() {
 									(late.shot.impact_time - late.shot.launch_time).to_double();
 								const auto elapsed = std::chrono::duration<double>(
 									received_now - late.first_seen).count();
-								return duration <= 0.0 or elapsed >= duration;
+								return duration <= 0.0 or elapsed >= duration + 0.12;
 							});
 						for (const auto &late : this->fvd_guest_late_arrows) {
 							const auto duration =
 								(late.shot.impact_time - late.shot.launch_time).to_double();
 							const auto elapsed = std::chrono::duration<double>(
 								received_now - late.first_seen).count();
-							add_visual_arc(late.shot, std::clamp(elapsed / duration, 0.0, 1.0));
+							if (elapsed >= duration) {
+								arrows.push_back({late.shot.destination, late.shot.destination,
+								                  1.0, late.shot.owner_id, true});
+							}
+							else {
+								add_visual_arc(late.shot, std::clamp(elapsed / duration, 0.0, 1.0));
+							}
 						}
 					}
 				}
@@ -1363,7 +1375,9 @@ void Presenter::render() {
 						arrow_streaks.push_back(QVariantMap{
 							{"x0", tail.x()}, {"y0", tail.y()},
 							{"x1", head.x()}, {"y1", head.y()},
-							{"alpha", std::min(1.0, (1.0 - arrow.progress) * 4.0)}});
+							{"alpha", arrow.impact ? 0.9 : std::min(1.0, (1.0 - arrow.progress) * 4.0)},
+							{"hunter", arrow.owner == 1},
+							{"impact", arrow.impact}});
 					}
 				}
 				// No Canvas repaint when nothing is on screen.
