@@ -44,12 +44,16 @@
   Regression covers missed-between-captures, no duplicate event and
   expiry; the subsequent 1.5b batched-delivery work permits old launch
   records in recipient deltas for late replay. **Needs builds/runs.**
-- [ ] 1.5b Add guaranteed no-loss handling when more than the current
-  2048-event history cap fires before a recipient catches up (event
-  cursor/batched acknowledgements or overflow recovery), plus genuine
-  hit/death/impact FX and integration tests for latency, recovery and
-  authoritative combat/render parity. Do not mark 1.5 complete until
-  those and cross-client verification pass.
+- [ ] 1.5b Reliably deliver timed projectile events over the existing
+  ordered TCP stream when more than 2048 launches occur between recipient
+  captures, and verify host-authoritative damage, hit/death visuals,
+  recovery and multiplayer latency. Use per-recipient sent cursors and
+  bounded batches; **do not add application-level projectile ACKs**.
+  TCP handles retransmission and in-order delivery within a live
+  connection. On disconnection, recover authoritative world state via
+  snapshot rather than replaying expired cosmetic shots. Do not mark
+  1.5 complete until the stress tests and cross-client visual
+  verification pass.
   - [x] Schedule a Hunter projectile at attack start with the same
     authoritative 0.45s impact instant as the existing 75%-cycle hit.
     Reuse the unique, time-indexed arrow launch stream (owner 1 = Hunter)
@@ -69,13 +73,20 @@
     captures HP for parity, and the diff has unit coverage. No client-side
     projectile prediction modifies health.
     **Awaiting graphical and 2/4/8-client acceptance.**
-  - [ ] Add application-level received-event acknowledgement / robust
-    recovery for extreme stalls, and real cross-client congestion,
-    cancellation, death/impact and latency verification. The 65,536
-    unsent-record memory guard fails explicitly rather than silently
-    dropping projectile effects. When all Builders disconnect, the
-    Hunter prunes expired projectile history without waiting for a
-    nonexistent remote recipient.
+  - [ ] Test TCP backpressure and stalled recipients, including batches
+    larger than 2048 launches, skipped intermediate captures, packet
+    latency/jitter, abrupt disconnects and resynchronization from a full
+    authoritative snapshot. Verify no visual-event loss on an intact
+    stream, no duplicate presentation, no speculative HP changes, and
+    correct cancellation, impact and death behavior on 2/4/8 actual
+    clients (including Windows/Linux). Expired cosmetic projectiles need
+    not be replayed after reconnect; health, entities and orders must
+    recover correctly. The 65,536 unsent-record memory guard currently
+    fails explicitly on extreme stalls rather than silently discarding
+    events; validate that behavior and the all-Builders-disconnected
+    cleanup path. TCP write completion is a transport handoff, not proof
+    the remote application rendered a shot, and no extra ACK protocol
+    is required for this visual-only stream.
 - [x] 1.6a Restore match-sized starting Builder pruning for both legacy
   two-peer Hunter-creator matches and multi-host matches. The lobby reports
   match_player_count=2 through the legacy assignment/bootstrap, the presenter
