@@ -324,6 +324,18 @@ void messages() {
 	           gamestate::entity_id_t{100});
 	TESTEQUALS(decoded_state.arrows.front().impact_time,
 	           time::time_t::from_double(3.45));
+	// Hunter launches reuse the same immutable event wire, keyed by
+	// owner_id==1, without granting recipients any authority over HP.
+	auto hunter_launch = state;
+	hunter_launch.arrows.push_back({
+		10, 1, 201, {10.5, 20.25, 0.9}, {12.0, 20.0, 1.0},
+		time::time_t::from_double(3.25),
+		time::time_t::from_double(3.70)});
+	const auto roundtrip_hunter = decode_world_state(encode_world_state(hunter_launch));
+	TESTEQUALS(roundtrip_hunter.arrows.size(), size_t{2});
+	TESTEQUALS(roundtrip_hunter.arrows.back().owner_id, gamestate::player_id_t{1});
+	TESTEQUALS(roundtrip_hunter.arrows.back().impact_time,
+	           time::time_t::from_double(3.70));
 
 	// Curves cannot include past, simultaneous, unordered or unbounded
 	// keyframes; this is checked before transmission to every client.

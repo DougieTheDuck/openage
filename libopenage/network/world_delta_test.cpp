@@ -158,15 +158,31 @@ void world_delta() {
 		before_shot, decode_world_delta(encode_world_delta(late_event)));
 	TESTEQUALS(event_guest.arrows.size(), size_t{1});
 	TESTEQUALS(event_guest.arrows.front().arrow_id, uint64_t{100});
-	auto next_shot_frame = after_shot;
-	next_shot_frame.world_revision = 3;
+	// Simulate a Hunter's 0.45s animation-timed shot arriving after it
+	// already hit. This event is visual-only; the client keeps its own
+	// current authoritative health record untouched until an HP delta.
+	auto hunter_event = after_shot;
+	hunter_event.world_revision = 3;
+	hunter_event.simulation_time = time::time_t::from_double(10.85);
+	hunter_event.arrows.push_back({
+		101, 1, 20, {61, 61, 0.9}, {62, 62, 1.0},
+		time::time_t::from_double(10.2),
+		time::time_t::from_double(10.65)});
+	auto hunter_delta = event_host.advance(hunter_event);
+	TESTEQUALS(hunter_delta.changed.arrows.size(), size_t{1});
+	TESTEQUALS(hunter_delta.changed.arrows.front().owner_id, gamestate::player_id_t{1});
+	event_guest = apply_world_delta(event_guest,
+		decode_world_delta(encode_world_delta(hunter_delta)));
+	TESTEQUALS(event_guest.arrows.size(), size_t{2});
+	auto next_shot_frame = hunter_event;
+	next_shot_frame.world_revision = 4;
 	next_shot_frame.simulation_time = time::time_t::from_int(11);
 	auto deduplicated = event_host.advance(next_shot_frame);
 	TESTEQUALS(deduplicated.changed.arrows.empty(), true);
 	event_guest = apply_world_delta(event_guest, deduplicated);
-	TESTEQUALS(event_guest.arrows.size(), size_t{1});
+	TESTEQUALS(event_guest.arrows.size(), size_t{2});
 	auto after_history = next_shot_frame;
-	after_history.world_revision = 4;
+	after_history.world_revision = 5;
 	after_history.simulation_time = time::time_t::from_int(14);
 	after_history.arrows.clear();
 	auto expired = event_host.advance(after_history);

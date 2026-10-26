@@ -1124,11 +1124,20 @@ void fvd_hunter_combat() {
 	fvd->combat_tick(state, at(15));
 	TESTEQUALS(fvd->get_visible_arrows(at(14.9)).empty(), true);
 	auto trails = fvd->get_visible_arrows(at(15.1));
-	TESTEQUALS(trails.size(), size_t{1});
-	TESTEQUALS(trails.front().progress > 0.0, true);
-	TESTEQUALS(trails.front().progress < 1.0, true);
-	TESTEQUALS(trails.front().head != trails.front().tail, true);
-	TESTEQUALS(fvd->get_visible_arrows(at(15.2)).empty(), true);
+	auto tower_trail = std::find_if(trails.begin(), trails.end(),
+	                              [](const auto &trail) { return trail.owner == 5; });
+	tower_trail != trails.end() or TESTFAIL;
+	TESTEQUALS(tower_trail->progress > 0.0, true);
+	TESTEQUALS(tower_trail->progress < 1.0, true);
+	TESTEQUALS(tower_trail->head != tower_trail->tail, true);
+	TESTEQUALS(tower_trail->impact, false);
+	TESTEQUALS(std::any_of(trails.begin(), trails.end(),
+	                       [](const auto &trail) { return trail.owner == 1; }), true);
+	// Both Tower and Hunter arcs retain a brief cosmetic impact flash.
+	auto at_tower_impact = fvd->get_visible_arrows(at(15.2));
+	TESTEQUALS(std::any_of(at_tower_impact.begin(), at_tower_impact.end(),
+	                       [](const auto &trail) { return trail.owner == 5 and trail.impact; }),
+	           true);
 	loop->reach_time(at(15.2), state);
 	auto horse_live = std::dynamic_pointer_cast<component::Live>(
 		one->get_component(component::component_t::LIVE));
@@ -1156,6 +1165,19 @@ void fvd_hunter_combat() {
 	fvd->combat_tick(state, at(33));
 	TESTEQUALS(melee->get_animation_action(), AnimationAction::ATTACK);
 	TESTEQUALS(melee->get_animation_started_at(), at(33));
+	// One immutable Hunter projectile is published at animation start.
+	// The host still schedules the sole authoritative HP mutation at
+	// precisely three quarters of the 0.6s attack period.
+	const auto projectiles = fvd->get_arrow_state(at(33));
+	auto horse_shot = std::find_if(projectiles.begin(), projectiles.end(),
+	                               [](const auto &shot) { return shot.owner == 1; });
+	horse_shot != projectiles.end() or TESTFAIL;
+	TESTEQUALS(horse_shot->target_id, tower);
+	TESTEQUALS(horse_shot->launch_time, at(33));
+	TESTEQUALS(horse_shot->impact_time, at(33.45));
+	TESTEQUALS(std::any_of(projectiles.begin(), projectiles.end(),
+	                       [&](const auto &shot) { return shot.arrow_id == horse_shot->arrow_id
+	                              and shot.destination.up > coord::phys_t::from_int(0); }), true);
 	loop->reach_time(at(33.449), state);
 	TESTEQUALS(tower_health->get_attribute(
 		at(33.449), "fvd.data.entities.Health")->get(at(33.449)),
@@ -1502,6 +1524,7 @@ void fvd_hunter_builder_aggro() {
 	TESTEQUALS(after == before, true);
 	TESTEQUALS(horse->get_animation_action(), AnimationAction::ATTACK);
 	fvd->combat_tick(state, at(1.2));
+	TESTEQUALS(horse->get_animation_started_at(), at(1.2));
 	TESTEQUALS(builder_health->get_attribute(
 		at(1.2), "fvd.data.entities.Health")->get(at(1.2)), hp);
 	loop->reach_time(at(1.65), state);
@@ -1552,7 +1575,7 @@ void fvd_hunter_builder_aggro() {
 	fvd->combat_tick(state, at(7));
 	TESTEQUALS(ranged_horse->get_animation_action(), AnimationAction::ATTACK);
 	TESTEQUALS(ranged_position->get_positions().get(at(7.2)),
-	           coord::phys3(120, 130, 0));
+	           (coord::phys3{110, 120, 0}));
 	auto ranged_health = std::dynamic_pointer_cast<component::Live>(
 		ranged_builder->get_component(component::component_t::LIVE));
 	const auto ranged_hp = ranged_health->get_attribute(
