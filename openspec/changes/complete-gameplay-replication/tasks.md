@@ -41,8 +41,9 @@
   3-second post-impact history; deliver them in normal recipient deltas
   even when the 0.2-second flight ends between captures. Guests dedupe
   IDs and replay a late-received visual locally without applying damage.
-  Regression covers missed-between-captures, no duplicate event, event
-  expiry and over-age rejection. **Needs builds/runs.**
+  Regression covers missed-between-captures, no duplicate event and
+  expiry; the subsequent 1.5b batched-delivery work permits old launch
+  records in recipient deltas for late replay. **Needs builds/runs.**
 - [ ] 1.5b Add guaranteed no-loss handling when more than the current
   2048-event history cap fires before a recipient catches up (event
   cursor/batched acknowledgements or overflow recovery), plus genuine

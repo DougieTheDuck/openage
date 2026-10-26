@@ -149,6 +149,9 @@ std::vector<FVD::ArrowTrail> FVD::get_visible_arrows(const time::time_t &now) co
 	std::lock_guard lock{this->arrow_visuals_mutex};
 	result.reserve(this->arrow_visuals.size());
 	for (const auto &arrow : this->arrow_visuals) {
+		// Retain large pending histories for delivery but never submit
+		// unbounded overlapping projectile visuals to Qt every frame.
+		if (result.size() >= 2048) break;
 		if (now < arrow.launch_time
 		    or now >= arrow.impact_time + time::time_t::from_double(0.12)) {
 			continue;
