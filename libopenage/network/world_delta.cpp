@@ -341,19 +341,22 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	patch(next.reservations, changed.reservations, delta.removed_reservations, reservation_key);
 	patch(next.constructions, changed.constructions, delta.removed_constructions, construction_key);
 	patch(next.attack_orders, changed.attack_orders, delta.removed_attack_orders, attack_key);
-	// A projectile can fly entirely between two recipient captures.
-	// Retain launch records for a short replay window after impact, using
-	// arrow_id for duplicate suppression. Local presentation may replay a
-	// late visual; it MUST NOT apply any damage from the event.
+	// The host can deliver older projectile batches after congestion.
+	// Preserve newly received IDs for at least this delta so the guest
+	// presenter can replay their cosmetic flight once on receipt. Existing
+	// stale IDs expire on the next delta. Neither path applies damage.
 	const auto event_grace = time::time_t::from_int(3);
+	std::unordered_set<uint64_t> newly_received_arrows;
 	for (const auto &arrow : changed.arrows) {
-		if (arrow.impact_time + event_grace <= changed.simulation_time) {
-			throw Error{MSG(err) << "FVD delta includes an excessively stale arrow event"};
+		if (arrow.launch_time > changed.simulation_time
+		    or not newly_received_arrows.insert(arrow.arrow_id).second) {
+			throw Error{MSG(err) << "FVD delta includes a future or duplicate projectile"};
 		}
 	}
 	patch(next.arrows, changed.arrows, std::vector<uint64_t>{}, arrow_key);
 	std::erase_if(next.arrows, [&](const ArrowState &arrow) {
-		return arrow.impact_time + event_grace <= changed.simulation_time;
+		return arrow.impact_time + event_grace <= changed.simulation_time
+		    and not newly_received_arrows.contains(arrow.arrow_id);
 	});
 	if (std::none_of(next.players.begin(), next.players.end(), [&](const auto &player) {
 		return player.player_id == next.local_player_id;

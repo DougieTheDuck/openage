@@ -189,9 +189,54 @@ void world_delta() {
 	TESTEQUALS(expired.changed.arrows.empty(), true);
 	event_guest = apply_world_delta(event_guest, expired);
 	TESTEQUALS(event_guest.arrows.empty(), true);
-	auto invalid_old_event = late_event;
-	invalid_old_event.changed.simulation_time = time::time_t::from_int(14);
-	TESTTHROWS(apply_world_delta(before_shot, invalid_old_event));
+	// A very late projectile is allowed once for cosmetic replay;
+	// it expires on the next contiguous delta instead of vanishing
+	// before the presenter has had one chance to see the event.
+	auto old_event = late_event;
+	old_event.changed.simulation_time = time::time_t::from_int(14);
+	auto old_guest = apply_world_delta(before_shot, old_event);
+	TESTEQUALS(old_guest.arrows.size(), size_t{1});
+	auto old_heartbeat = old_event;
+	old_heartbeat.changed.world_revision = 3;
+	old_heartbeat.changed.base_revision = 2;
+	old_heartbeat.changed.simulation_time = time::time_t::from_double(14.25);
+	old_heartbeat.changed.arrows.clear();
+	old_guest = apply_world_delta(old_guest, old_heartbeat);
+	TESTEQUALS(old_guest.arrows.empty(), true);
+
+	// 4,096 launch records exceed the per-snapshot cap, but two
+	// contiguous 2,048-event batches preserve every identity even if
+	// all impacts predate the recipient's current simulation time.
+	WorldState flood_base{};
+	flood_base.world_revision = 1;
+	flood_base.simulation_time = time::time_t::from_int(50);
+	flood_base.map_size = 128;
+	flood_base.local_player_id = 2;
+	flood_base.players = {{1, PlayerRole::HUNTER}, {2, PlayerRole::BUILDER}};
+	auto bulk_host = WorldDeltaBaseline{};
+	bulk_host.accept_snapshot(flood_base);
+	auto bulk_guest = flood_base;
+	uint64_t cursor = 0;
+	for (int batch = 0; batch < 2; ++batch) {
+		auto batch_world = flood_base;
+		batch_world.world_revision = static_cast<uint64_t>(batch + 2);
+		batch_world.simulation_time = time::time_t::from_int(51 + batch);
+		for (uint64_t event = cursor + 1; event <= cursor + 2048; ++event) {
+			batch_world.arrows.push_back({
+				event, 1, 12, {40, 40, 0.9}, {42, 42, 1},
+				time::time_t::from_int(40),
+				time::time_t::from_double(40.45)});
+		}
+		auto bulk_delta = bulk_host.advance(batch_world);
+		TESTEQUALS(bulk_delta.changed.arrows.size(), size_t{2048});
+		bulk_guest = apply_world_delta(
+			bulk_guest, decode_world_delta(encode_world_delta(bulk_delta)));
+		TESTEQUALS(bulk_guest.arrows.size(), size_t{2048});
+		TESTEQUALS(bulk_guest.arrows.front().arrow_id, cursor + 1);
+		TESTEQUALS(bulk_guest.arrows.back().arrow_id, cursor + 2048);
+		cursor += 2048;
+	}
+	TESTEQUALS(cursor, uint64_t{4096});
 
 	// Corruption, duplicate removals, wrong players and gaps cannot
 	// change a client's last accepted state.
