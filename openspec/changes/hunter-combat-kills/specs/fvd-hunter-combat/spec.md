@@ -113,16 +113,16 @@ selected living horses owned by that Hunter SHALL receive the orders.
 An attack-moving horse SHALL attack eligible enemy Builder-owned entities
 encountered en route, then resume travel toward its original destination
 after the engagement. The horse SHALL detect a completed enemy tower
-within three tiles during the journey or at the destination, pause its
-original route and move to an accessible melee position before attacking.
-It SHALL likewise acquire eligible enemy Builders within three tiles and
-approach them to melee range when no completed tower has priority.
+within four tiles during the journey or at the destination, pause its
+original route and move to an accessible firing position within four tiles before attacking.
+It SHALL likewise acquire eligible enemy Builders within four tiles and
+attack them from up to four tiles away when no completed tower has priority.
 When both a Builder and a completed tower are within the alert radius,
 automatic targeting SHALL always prioritize the tower, even when the
 Builder is closer; targeting the Builder instead requires a separate
 explicit player-directed attack action.
 Reaching the destination SHALL leave it stationary but alert for both
-Builders and towers within three tiles until another Hunter order replaces
+Builders and towers within four tiles until another Hunter order replaces
 the AttackMove.
 
 #### Scenario: Horse encounters an opponent
@@ -134,23 +134,23 @@ the AttackMove.
 - **THEN** a surviving horse resumes travel toward its original destination
 
 #### Scenario: Horse encounters a tower while travelling
-- **WHEN** a horse on AttackMove passes within three tiles of a completed enemy tower
-- **THEN** it interrupts its original travel and approaches the tower to deal melee damage
+- **WHEN** a horse on AttackMove passes within four tiles of a completed enemy tower
+- **THEN** it interrupts its original travel and approaches the tower to deal damage from up to four tiles away
 
 #### Scenario: Horse reaches its destination near a tower
-- **WHEN** a horse arrives at the AttackMove destination with a completed enemy tower within three tiles
+- **WHEN** a horse arrives at the AttackMove destination with a completed enemy tower within four tiles
 - **THEN** it approaches and attacks the tower even though its original travel has ended
 
 #### Scenario: Horse encounters a Builder without nearby towers
-- **WHEN** a horse on AttackMove detects a Builder within three tiles, with no eligible completed tower in range
-- **THEN** it interrupts travel, approaches the Builder and attacks in melee range
+- **WHEN** a horse on AttackMove detects a Builder within four tiles, with no eligible completed tower in range
+- **THEN** it interrupts travel, approaches the Builder and attacks from up to four tiles away
 
 #### Scenario: Builder appears after arrival
-- **WHEN** a Builder enters the three-tile alert radius of a horse that reached its AttackMove destination
+- **WHEN** a Builder enters the four-tile alert radius of a horse that reached its AttackMove destination
 - **THEN** the horse approaches and attacks the Builder unless a completed tower takes priority
 
 #### Scenario: A Builder and tower are both nearby
-- **WHEN** a horse on AttackMove detects a Builder and a completed tower within three tiles
+- **WHEN** a horse on AttackMove detects a Builder and a completed tower within four tiles
 - **THEN** it targets the tower first, even if the Builder is closer
 
 ### Requirement: Human Hunter can explicitly focus an enemy
@@ -182,7 +182,7 @@ when the target dies or another Move or AttackMove order supersedes it.
 - **THEN** the simulation rejects the entire order without changing existing orders
 
 #### Scenario: Horse reaches its destination without an enemy
-- **WHEN** a horse finishes AttackMove with no eligible Builder or tower within three tiles
+- **WHEN** a horse finishes AttackMove with no eligible Builder or tower within four tiles
 - **THEN** it remains stationary, watches for nearby enemies, and awaits another Hunter command
 
 #### Scenario: Target tower is destroyed

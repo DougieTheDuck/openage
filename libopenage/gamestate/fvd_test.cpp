@@ -1146,7 +1146,7 @@ void fvd_hunter_combat() {
 	TESTEQUALS(fvd->get_kills(5), kills);
 	TESTEQUALS(fvd->get_kills(4), uint64_t{0});
 
-	// A separate horse in melee range damages a tower, with armour
+	// A horse inside firing range damages a tower, with armour
 	// reducing but not preventing all damage.
 	auto melee = entities->spawn_game_entity(loop, state, 1, "fvd.data.entities.Horse", {67.5, 69.5, 0}, at(33));
 	TESTEQUALS(fvd->issue_attack_move(state, 1, {melee->get_id()},
@@ -1165,7 +1165,7 @@ void fvd_hunter_combat() {
 		at(33.45), "fvd.data.entities.Health")->get(at(33.45)) < tower_hp_before_melee,
 	           true);
 
-	// A normal Move command interrupts an active melee engagement.
+	// A normal Move command interrupts an active ranged engagement.
 	event::SendCommandHandler commander;
 	bool accepted = false;
 	commander.invoke(*loop, nullptr, state, at(33.5),
@@ -1338,7 +1338,7 @@ void fvd_hunter_attack_move_regressions() {
 	auto health = std::dynamic_pointer_cast<component::Live>(
 		tower_entity->get_component(component::component_t::LIVE));
 
-	// Tower priority must beat even a closer Builder at melee range.
+	// Tower priority must beat even a closer Builder in firing range.
 	auto protected_builder = entities->spawn_game_entity(
 		loop, state, 2, "fvd.data.entities.Builder", {72, 69, 0}, at(15));
 	auto protected_health = std::dynamic_pointer_cast<component::Live>(
@@ -1346,7 +1346,7 @@ void fvd_hunter_attack_move_regressions() {
 	auto protected_hp = protected_health->get_attribute(
 		at(15), "fvd.data.entities.Health")->get(at(15));
 
-	// Notice a tower within three tiles and approach it instead of
+	// Notice a tower within four tiles and attack it instead of
 	// following an attack-move path that leads away from the tower.
 	auto approaching = entities->spawn_game_entity(
 		loop, state, 1, "fvd.data.entities.Horse", {71, 69, 0}, at(15));
@@ -1362,7 +1362,8 @@ void fvd_hunter_attack_move_regressions() {
 	TESTEQUALS(protected_health->get_attribute(
 		at(15), "fvd.data.entities.Health")->get(at(15)), protected_hp);
 	auto after = approach_position->get_positions().get(at(15.2)) - tower_at;
-	TESTEQUALS(after.length() < before.length(), true);
+	TESTEQUALS(after == before, true);
+	TESTEQUALS(approaching->get_animation_action(), AnimationAction::ATTACK);
 	fvd->combat_tick(state, at(16));
 	TESTEQUALS(health->get_attribute(
 		at(16), "fvd.data.entities.Health")->get(at(16)), int64_t{100});
@@ -1384,7 +1385,8 @@ void fvd_hunter_attack_move_regressions() {
 	auto at_destination = finished_position->get_positions().get(at(21.2)) - tower_at;
 	fvd->combat_tick(state, at(21.2));
 	auto after_destination = finished_position->get_positions().get(at(21.5)) - tower_at;
-	TESTEQUALS(after_destination.length() < at_destination.length(), true);
+	TESTEQUALS(after_destination == at_destination, true);
+	TESTEQUALS(finished->get_animation_action(), AnimationAction::ATTACK);
 
 	// A horse killed between selection and command is pruned, rather
 	// than invalidating all surviving Hunter horses in that selection.
@@ -1444,7 +1446,7 @@ void fvd_hunter_builder_aggro() {
 	auto fvd = state->get_fvd();
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 
-	// A Builder in the three-tile alert radius must be pursued even
+	// A Builder inside four-tile firing range must be attacked even
 	// when the Hunter clicked a destination in the opposite direction.
 	auto builder = entities->spawn_game_entity(
 		loop, state, 2, "fvd.data.entities.Builder", {105, 105, 0}, at(0));
@@ -1464,7 +1466,8 @@ void fvd_hunter_builder_aggro() {
 	auto before = horse_position->get_positions().get(at(0)) - builder_at;
 	fvd->combat_tick(state, at(0));
 	auto after = horse_position->get_positions().get(at(0.25)) - builder_at;
-	TESTEQUALS(after.length() < before.length(), true);
+	TESTEQUALS(after == before, true);
+	TESTEQUALS(horse->get_animation_action(), AnimationAction::ATTACK);
 	fvd->combat_tick(state, at(1.2));
 	TESTEQUALS(builder_health->get_attribute(
 		at(1.2), "fvd.data.entities.Health")->get(at(1.2)), hp);
@@ -1473,7 +1476,7 @@ void fvd_hunter_builder_aggro() {
 		at(1.65), "fvd.data.entities.Health")->get(at(1.65)) < hp, true);
 
 	// Detection continues after arrival when a Builder enters the
-	// three-tile radius; it is not limited to passing enemies en route.
+	// four-tile radius; it is not limited to passing enemies en route.
 	auto finished = entities->spawn_game_entity(
 		loop, state, 1, "fvd.data.entities.Horse", {110, 110, 0}, at(3));
 	TESTEQUALS(fvd->issue_attack_move(state, 1, {finished->get_id()},
@@ -1491,7 +1494,8 @@ void fvd_hunter_builder_aggro() {
 	fvd->combat_tick(state, at(4.1));
 	auto late_before = finished_position->get_positions().get(at(4.1)) - late_at;
 	auto late_after = finished_position->get_positions().get(at(4.35)) - late_at;
-	TESTEQUALS(late_after.length() < late_before.length(), true);
+	TESTEQUALS(late_after == late_before, true);
+	TESTEQUALS(finished->get_animation_action(), AnimationAction::ATTACK);
 	auto late_health = std::dynamic_pointer_cast<component::Live>(
 		late_builder->get_component(component::component_t::LIVE));
 	auto late_hp = late_health->get_attribute(
@@ -1502,6 +1506,44 @@ void fvd_hunter_builder_aggro() {
 	loop->reach_time(at(5.55), state);
 	TESTEQUALS(late_health->get_attribute(
 		at(5.55), "fvd.data.entities.Health")->get(at(5.55)) < late_hp, true);
+
+	// Exactly four tiles away: attack from the current position.
+	auto ranged_builder = entities->spawn_game_entity(
+		loop, state, 2, "fvd.data.entities.Builder", {124, 130, 0}, at(7));
+	auto ranged_horse = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {120, 130, 0}, at(7));
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {ranged_horse->get_id()},
+	                                  {116, 130, 0}, at(7)), true);
+	auto ranged_position = std::dynamic_pointer_cast<component::Position>(
+		ranged_horse->get_component(component::component_t::POSITION));
+	fvd->combat_tick(state, at(7));
+	TESTEQUALS(ranged_horse->get_animation_action(), AnimationAction::ATTACK);
+	TESTEQUALS(ranged_position->get_positions().get(at(7.2)),
+	           coord::phys3(120, 130, 0));
+	auto ranged_health = std::dynamic_pointer_cast<component::Live>(
+		ranged_builder->get_component(component::component_t::LIVE));
+	const auto ranged_hp = ranged_health->get_attribute(
+		at(7), "fvd.data.entities.Health")->get(at(7));
+	loop->reach_time(at(7.45), state);
+	TESTEQUALS(ranged_health->get_attribute(
+		at(7.45), "fvd.data.entities.Health")->get(at(7.45)) < ranged_hp, true);
+
+	// Five tiles away: focus order approaches a reachable ranged position.
+	auto distant_builder = entities->spawn_game_entity(
+		loop, state, 2, "fvd.data.entities.Builder", {126, 140, 0}, at(9));
+	auto distant_horse = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", {121, 140, 0}, at(9));
+	TESTEQUALS(fvd->issue_focus_attack(
+		state, 1, {distant_horse->get_id()}, distant_builder->get_id(), at(9)), true);
+	auto distant_move = std::dynamic_pointer_cast<component::Move>(
+		distant_horse->get_component(component::component_t::MOVE));
+	TESTEQUALS(distant_move->get_active_target().has_value(), true);
+	auto distant_position = std::dynamic_pointer_cast<component::Position>(
+		distant_horse->get_component(component::component_t::POSITION));
+	const auto before_approach = distant_position->get_positions().get(at(9));
+	fvd->combat_tick(state, at(9));
+	const auto after_approach = distant_position->get_positions().get(at(9.2));
+	TESTEQUALS(after_approach.ne > before_approach.ne, true);
 }
 
 
@@ -1583,7 +1625,7 @@ void fvd_hunter_focus_attack() {
 	TESTEQUALS(accepted, true);
 	auto horse_move = std::dynamic_pointer_cast<component::Move>(
 		horse->get_component(component::component_t::MOVE));
-	TESTEQUALS(horse_move->get_active_target().has_value(), true);
+	TESTEQUALS(horse_move->get_active_target().has_value(), false);
 	fvd->combat_tick(state, at(15));
 	fvd->combat_tick(state, at(16));
 	TESTEQUALS(builder_live->get_attribute(

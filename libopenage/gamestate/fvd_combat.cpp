@@ -3,12 +3,11 @@
 #include "fvd.h"
 
 #include <algorithm>
-#include <array>
 #include <optional>
 #include <mutex>
 #include <cmath>
-#include <limits>
 #include <vector>
+#include <utility>
 
 #include "error/error.h"
 #include "event/event_loop.h"
@@ -33,6 +32,8 @@ namespace openage::gamestate {
 namespace {
 
 constexpr const char *HEALTH = "fvd.data.entities.Health";
+constexpr double HORSE_ATTACK_RANGE = 4.0;
+constexpr double HORSE_ATTACK_RANGE_SQUARED = HORSE_ATTACK_RANGE * HORSE_ATTACK_RANGE;
 
 /** Use stable ordering for simultaneous combat and lethal-hit decisions. */
 std::vector<entity_id_t> entities_by_definition(
@@ -83,10 +84,10 @@ void halt_for_engagement(const std::shared_ptr<GameEntity> &horse,
 }
 
 /**
- * Find an accessible tile in melee range of a target unit or tower.
- * Destinations are ranked deterministically by travel proximity.
+ * Find the nearest reachable tile within firing range of a target.
+ * Choose by travel proximity to avoid moving ranged horses to melee.
  */
-std::optional<coord::phys3> melee_approach(
+std::optional<coord::phys3> ranged_approach(
 	const std::shared_ptr<GameState> &state,
 	const std::shared_ptr<GameEntity> &horse,
 	const std::shared_ptr<GameEntity> &target,
@@ -96,44 +97,49 @@ std::optional<coord::phys3> melee_approach(
 	const auto horse_position = std::dynamic_pointer_cast<component::Position>(
 		horse->get_component(component::component_t::POSITION))->get_positions().get(time);
 	const auto site = target_position.to_tile();
-	const std::array<coord::tile_delta, 8> offsets{{
-		{-1, 0}, {1, 0}, {0, -1}, {0, 1},
-		{-1, -1}, {-1, 1}, {1, -1}, {1, 1},
-	}};
 	const auto map = state->get_map();
 	const auto grid = map->get_grid_id("fvd.data.terrain.Land");
 	const auto pathfinder = map->get_pathfinder();
-	std::optional<coord::phys3> best;
-	double shortest = std::numeric_limits<double>::infinity();
-	for (const auto &offset : offsets) {
-		coord::tile tile{site.ne + offset.ne, site.se + offset.se};
-		if (tile.ne < 0 or tile.se < 0
-		    or tile.ne >= static_cast<coord::tile_t>(map_size)
-		    or tile.se >= static_cast<coord::tile_t>(map_size)) {
-			continue;
+
+	std::vector<std::pair<double, coord::tile>> candidates;
+	for (int ne = -4; ne <= 4; ++ne) {
+		for (int se = -4; se <= 4; ++se) {
+			if (ne == 0 and se == 0) {
+				continue;
+			}
+			coord::tile_delta offset{ne, se};
+			coord::tile tile{site.ne + offset.ne, site.se + offset.se};
+			if (tile.ne < 0 or tile.se < 0
+			    or tile.ne >= static_cast<coord::tile_t>(map_size)
+			    or tile.se >= static_cast<coord::tile_t>(map_size)) {
+				continue;
+			}
+			auto destination = tile.to_phys3_center();
+			auto delta = destination - target_position;
+			const double dx = delta.ne.to_double();
+			const double dy = delta.se.to_double();
+			if (dx * dx + dy * dy > HORSE_ATTACK_RANGE_SQUARED) {
+				continue;
+			}
+			candidates.emplace_back((destination - horse_position).length(), tile);
 		}
-		auto destination = tile.to_phys3_center();
-		auto to_target = destination - target_position;
-		if (to_target.length() > 1.45) {
-			continue;
-		}
-		auto to_horse = destination - horse_position;
-		auto proximity = to_horse.length();
-		if (proximity >= shortest) {
-			continue;
-		}
+	}
+	std::stable_sort(candidates.begin(), candidates.end(),
+	                 [](const auto &a, const auto &b) {
+		                 return a.first < b.first;
+	                 });
+	for (const auto &candidate : candidates) {
+		const auto &tile = candidate.second;
 		auto route = pathfinder->get_path(path::PathRequest{
 			grid,
 			horse_position.to_tile(),
 			tile,
 			time});
-		if (route.status != path::PathResult::FOUND) {
-			continue;
+		if (route.status == path::PathResult::FOUND) {
+			return tile.to_phys3_center();
 		}
-		best = destination;
-		shortest = proximity;
 	}
-	return best;
+	return std::nullopt;
 }
 
 } // namespace
@@ -381,11 +387,11 @@ bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
 	approaches.reserve(survivors->size());
 	for (auto horse_id : *survivors) {
 		auto horse = state->get_game_entity(horse_id);
-		if (distance_squared(horse, target, time) <= 1.45 * 1.45) {
+		if (distance_squared(horse, target, time) <= HORSE_ATTACK_RANGE_SQUARED) {
 			approaches.push_back(std::nullopt);
 			continue;
 		}
-		auto approach = melee_approach(state, horse, target, time, this->map_size);
+		auto approach = ranged_approach(state, horse, target, time, this->map_size);
 		if (not approach) {
 			return false;
 		}
@@ -421,8 +427,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 	const auto builders = entities_by_definition(state, this->builder);
 	const auto towers = entities_by_definition(state, this->tower);
 
-	// AttackMove searches three tiles for towers and Builders, even after
-	// arrival. Towers take priority; horses approach before striking.
+	// AttackMove searches within four tiles, including after arrival.
+	// Towers retain priority over Builders.
 	for (auto id : horses) {
 		auto order_it = this->attack_orders.find(id);
 		if (order_it == this->attack_orders.end()) {
@@ -458,7 +464,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			return other->second->get_definition() == this->builder;
 		};
 		// A manual target is never preempted by a tower.
-		// A tower entering the three-tile alert area otherwise takes
+		// A tower entering firing range otherwise takes
 		// precedence over a Builder already targeted by AttackMove.
 		if (not order.focus_target and order.target and eligible(*order.target)
 		    and state->get_game_entity(*order.target)->get_definition() == this->builder) {
@@ -468,10 +474,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				}
 				auto tower_entity = state->get_game_entity(tower_id);
 				auto distance = distance_squared(horse, tower_entity, time);
-				if (distance <= 3.0 * 3.0
-				    and (distance <= 1.45 * 1.45
-				         or melee_approach(state, horse, tower_entity,
-				                           time, this->map_size).has_value())) {
+				if (distance <= HORSE_ATTACK_RANGE_SQUARED) {
 					order.target.reset();
 					break;
 				}
@@ -492,10 +495,10 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			continue;
 		}
 		if (not order.target) {
-			// A tower within three tiles takes priority over a nearby
+			// A tower within firing range takes priority over a nearby
 			// Builder, even if the original move destination was reached.
 			entity_id_t nearest = 0;
-			double closest = 3.0 * 3.0;
+			double closest = HORSE_ATTACK_RANGE_SQUARED;
 			for (auto tower_id : towers) {
 				if (not eligible(tower_id)) {
 					continue;
@@ -503,28 +506,23 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				auto tower_entity = state->get_game_entity(tower_id);
 				auto distance = distance_squared(horse, tower_entity, time);
 				if (distance <= closest) {
-					if (distance <= 1.45 * 1.45
-					    or melee_approach(state, horse, tower_entity,
-					                      time, this->map_size).has_value()) {
+					if (distance <= HORSE_ATTACK_RANGE_SQUARED) {
 						nearest = tower_id;
 						closest = distance;
 					}
 				}
 			}
 			if (nearest == 0) {
-				// Builders have the same three-tile alert radius, but only
+				// Builders have the same four-tile alert radius, but only
 				// become automatic targets when no tower takes precedence.
-				closest = 3.0 * 3.0;
+				closest = HORSE_ATTACK_RANGE_SQUARED;
 				for (auto enemy : builders) {
 					if (not eligible(enemy)) {
 						continue;
 					}
 					auto builder_entity = state->get_game_entity(enemy);
 					auto distance = distance_squared(horse, builder_entity, time);
-					if (distance <= closest
-					    and (distance <= 1.45 * 1.45
-					         or melee_approach(state, horse, builder_entity,
-					                           time, this->map_size).has_value())) {
+					if (distance <= closest) {
 						closest = distance;
 						nearest = enemy;
 					}
@@ -543,13 +541,13 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				continue;
 			}
 			auto distance = distance_squared(horse, enemy->second, time);
-			if (distance > 1.45 * 1.45) {
-				// Both Builders and towers are pursued to melee range.
+			if (distance > HORSE_ATTACK_RANGE_SQUARED) {
+				// Pursue only until the target enters firing range.
 				// A moving Builder may require another approach after
 				// the current route reaches its last-known position.
 				if (not move->get_active_target()
 				    or move->get_active_arrival() <= time) {
-					auto approach = melee_approach(
+					auto approach = ranged_approach(
 						state, horse, enemy->second, time, this->map_size);
 					if (approach) {
 						system::Move::move_default(horse, state, *approach, time);
@@ -561,7 +559,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 				continue;
 			}
 
-			// A horse may enter melee range before its approach curve ends.
+			// A horse may enter firing range before its approach curve ends.
 			if (move->get_active_target() and move->get_active_arrival() > time) {
 				halt_for_engagement(horse, time);
 			}
@@ -574,7 +572,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 					time, this->horse_attack_animation, AnimationAction::ATTACK);
 				auto loop = this->event_loop.lock();
 				if (not loop) [[unlikely]] {
-					throw Error{ERR << "Cannot schedule an FVD Hunter melee hit without an event loop"};
+					throw Error{ERR << "Cannot schedule an FVD Hunter hit without an event loop"};
 				}
 				const auto hit_time = time + this->horse_hit_delay;
 				order.pending_hit = hit_time;
@@ -590,7 +588,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		}
 
 		// After reaching the destination, remain alert to enemies within
-		// three tiles until a human issues another command.
+		// four tiles until a human issues another command.
 		if (order.reached_destination) {
 			if (move->get_active_target()) {
 				system::Idle::idle(horse, time);
