@@ -73,7 +73,9 @@
     recovery for extreme stalls, and real cross-client congestion,
     cancellation, death/impact and latency verification. The 65,536
     unsent-record memory guard fails explicitly rather than silently
-    dropping projectile effects.
+    dropping projectile effects. When all Builders disconnect, the
+    Hunter prunes expired projectile history without waiting for a
+    nonexistent remote recipient.
 - [x] 1.6a Restore match-sized starting Builder pruning for both legacy
   two-peer Hunter-creator matches and multi-host matches. The lobby reports
   match_player_count=2 through the legacy assignment/bootstrap, the presenter

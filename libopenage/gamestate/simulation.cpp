@@ -3,6 +3,7 @@
 #include "simulation.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <utility>
 #include "error/error.h"
@@ -154,6 +155,30 @@ void GameSimulation::run() {
 			              << " participants=" << prune_above
 			              << " expected_builders=" << prune_above - 1
 			              << " removed=" << removed);
+		}
+		// A Hunter may remain in the match after every Builder disconnects.
+		// There is then no live recipient whose projectile receipt must
+		// be preserved. Continue bounded local visual retention instead of
+		// accumulating an indefinite unacknowledged network history.
+		bool no_live_builders = false;
+		{
+			std::lock_guard lock{this->bootstrap_mutex};
+			if (this->network_admitted_players > 1) {
+				no_live_builders = true;
+				for (player_id_t player = 2;
+				     player <= this->network_admitted_players; ++player) {
+					if (std::find(this->network_disconnected_players.begin(),
+					              this->network_disconnected_players.end(), player)
+					    == this->network_disconnected_players.end()) {
+						no_live_builders = false;
+						break;
+					}
+				}
+			}
+		}
+		if (no_live_builders) {
+			this->game->get_state()->get_fvd()->prune_delivered_projectiles(
+				current_time, std::numeric_limits<uint64_t>::max());
 		}
 		// Only the simulation owner thread may submit authenticated network
 		// commands into the mutable game event loop.
