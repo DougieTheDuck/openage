@@ -58,6 +58,8 @@ enum class CommandKind : uint16_t {
 	BUILD_TOWER = 3,
 	FOCUS_ATTACK = 4,
 	PRIORITIZE_FOUNDATION = 5,
+	SET_STANCE = 6,
+	PATROL = 7,
 };
 
 /** Host decision for one client command. */
@@ -111,6 +113,8 @@ struct CommandIntent {
 	bool queue{false};
 	/** Site positions in drag order; empty for ordinary one-site placement. */
 	std::vector<coord::phys3> build_line{};
+	/** Requested Hunter stance; present exactly for SET_STANCE. */
+	std::optional<gamestate::HunterStance> stance{};
 };
 
 /** Authoritative result for one submitted command. */
@@ -152,6 +156,8 @@ struct EntityState {
 	/** Host-selected animation and absolute start time of its active loop. */
 	gamestate::AnimationAction animation_action{gamestate::AnimationAction::IDLE};
 	time::time_t animation_started_at{time::TIME_ZERO};
+	/** Stance of the receiving Hunter's own horses; omitted for other entities. */
+	std::optional<gamestate::HunterStance> hunter_stance{};
 };
 
 /** FVD role assigned to one playable player. */

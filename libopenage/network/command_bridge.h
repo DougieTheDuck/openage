@@ -59,11 +59,13 @@ void submit_authenticated_command(
 	command_result_callback_t result_callback);
 
 /**
- * Capture entity positions, construction orders and reservations together.
+ * Capture entity positions, Hunter stances, construction orders and
+ * reservations together.
  *
  * Call only on the simulation owner thread, after processing events.
  * This local presentation snapshot omits network identity, private scores,
- * health, future motion and projectiles; it must not be sent over the wire.
+ * health, future motion and projectiles, and includes every horse's stance;
+ * it must not be sent over the wire.
  */
 WorldState capture_fvd_presentation_state(
 	const std::shared_ptr<gamestate::GameState> &state,

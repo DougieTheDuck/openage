@@ -27,7 +27,7 @@ Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
 `bin/run test openage::gamestate::tests::fvd_animation_phase`,
 `bin/run test openage::network::tests::messages` and
 `bin/run test openage::network::tests::world_delta`.
-Multiplayer protocol v12 requires both clients to be rebuilt.
+Multiplayer protocol v14 requires both clients and the relay to be rebuilt.
 
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
@@ -98,6 +98,13 @@ Right-click empty terrain remains ordinary Move. The FOCUS_ATTACK command is sup
 They resume their original destination after an engagement, or stay there alert for nearby towers after arriving.
 If a selected horse dies before a group command is issued, its surviving teammates still carry out the order.
 Right-click issues an ordinary Move without seeking enemies; Escape cancels attack-move targeting.
+Each horse also has a stance for when it has no order, shown in the HUD for the selected horses.
+**C** sets Observe, the default for spawned horses: the horse never starts a fight on its own.
+**Z** sets Aggressive: the horse engages the nearest completed tower within eight tiles, otherwise the nearest Builder, and pursues it.
+**X** sets Defensive: the horse engages enemies within its four-tile firing range, gives up once the fight moves more than six tiles from where it began, and walks back there.
+Orders always take precedence, so a Move travels past enemies; an arrived Attack-move hands over to an Aggressive or Defensive stance.
+Press **P** and left-click a point to Patrol: the horses loop between their starting positions and that point, fighting enemies within four tiles like Attack-move and then continuing.
+Run `bin/run test openage::gamestate::tests::fvd_hunter_stances` for the stance and Patrol rules.
 The gather point remains unimplemented.
 Completed towers automatically target nearby horses and fire scheduled arrows.
 Only authoritative impacts damage health; killing blows credit the tower's Builder.

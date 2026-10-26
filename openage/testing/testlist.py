@@ -88,6 +88,7 @@ def tests_cpp():
     yield "openage::datastructure::tests::pairing_heap"
     yield "openage::job::tests::test_job_manager"
     yield "openage::network::tests::messages"
+    yield "openage::network::tests::stance_messages", "FVD Hunter stance and patrol wire format"
     yield "openage::network::tests::protocol"
     yield "openage::network::tests::handshake"
     yield "openage::network::tests::lobby"
@@ -248,6 +249,11 @@ def tests_cpp():
     yield (
         "openage::gamestate::tests::fvd_hunter_focus_attack",
         "FVD Hunter focus attacks and explicit target override",
+        lambda env: env["has_assets"],
+    )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_stances",
+        "FVD Hunter Observe/Aggressive/Defensive stances and Patrol",
         lambda env: env["has_assets"],
     )
 

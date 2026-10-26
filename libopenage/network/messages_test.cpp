@@ -448,4 +448,67 @@ void messages() {
 	TESTTHROWS(decode_participant_disconnected(trailing_disconnected));
 }
 
+void stance_messages() {
+	CommandIntent stance{7, CommandKind::SET_STANCE, {100, 101}};
+	stance.stance = gamestate::HunterStance::DEFENSIVE;
+	auto encoded_stance = encode_command_intent(stance);
+	auto decoded_stance = decode_command_intent(encoded_stance);
+	decoded_stance.kind == CommandKind::SET_STANCE or TESTFAIL;
+	TESTEQUALS(decoded_stance.entity_ids.size(), size_t{2});
+	(decoded_stance.stance == gamestate::HunterStance::DEFENSIVE) or TESTFAIL;
+
+	// A stance belongs to exactly the SET_STANCE command.
+	CommandIntent missing_stance{8, CommandKind::SET_STANCE, {100}};
+	TESTTHROWS(encode_command_intent(missing_stance));
+	CommandIntent misplaced_stance{9, CommandKind::MOVE, {100}};
+	misplaced_stance.stance = gamestate::HunterStance::AGGRESSIVE;
+	TESTTHROWS(encode_command_intent(misplaced_stance));
+	CommandIntent unknown_stance{10, CommandKind::SET_STANCE, {100}};
+	unknown_stance.stance = static_cast<gamestate::HunterStance>(3);
+	TESTTHROWS(encode_command_intent(unknown_stance));
+	auto forged_stance = encoded_stance;
+	forged_stance[forged_stance.size() - 1] = 3;
+	TESTTHROWS(decode_command_intent(forged_stance));
+	auto truncated_stance = encoded_stance;
+	truncated_stance.pop_back();
+	TESTTHROWS(decode_command_intent(truncated_stance));
+
+	CommandIntent patrol{11, CommandKind::PATROL, {100}, {20.0, 30.0, 0}};
+	auto decoded_patrol = decode_command_intent(encode_command_intent(patrol));
+	decoded_patrol.kind == CommandKind::PATROL or TESTFAIL;
+	TESTEQUALS(decoded_patrol.target == patrol.target, true);
+	TESTEQUALS(decoded_patrol.stance.has_value(), false);
+
+	// Stances travel only to the Hunter that owns the horses.
+	WorldState hunter{};
+	hunter.base_revision = 1;
+	hunter.world_revision = 2;
+	hunter.map_size = 128;
+	hunter.local_player_id = 1;
+	hunter.players = {{1, PlayerRole::HUNTER}, {2, PlayerRole::BUILDER}};
+	hunter.entities = {
+		{100, 1, "fvd.data.entities.Horse", {10.0, 20.0, 0}},
+		{101, 1, "fvd.data.entities.Horse", {11.0, 20.0, 0}},
+	};
+	hunter.entities[0].hunter_stance = gamestate::HunterStance::AGGRESSIVE;
+	hunter.entities[1].hunter_stance = gamestate::HunterStance::OBSERVE;
+	auto decoded_hunter = decode_world_state(encode_world_state(hunter));
+	TESTEQUALS(decoded_hunter.entities.size(), size_t{2});
+	(decoded_hunter.entities[0].hunter_stance == gamestate::HunterStance::AGGRESSIVE) or TESTFAIL;
+	(decoded_hunter.entities[1].hunter_stance == gamestate::HunterStance::OBSERVE) or TESTFAIL;
+
+	auto builder = hunter;
+	builder.local_player_id = 2;
+	TESTTHROWS(encode_world_state(builder));
+	builder.entities[0].hunter_stance.reset();
+	builder.entities[1].hunter_stance.reset();
+	auto decoded_builder = decode_world_state(encode_world_state(builder));
+	TESTEQUALS(decoded_builder.entities[0].hunter_stance.has_value(), false);
+	TESTEQUALS(decoded_builder.entities[1].hunter_stance.has_value(), false);
+
+	auto tower_stance = hunter;
+	tower_stance.entities[1].definition = "fvd.data.entities.Tower";
+	TESTTHROWS(encode_world_state(tower_stance));
+}
+
 } // namespace openage::network::tests

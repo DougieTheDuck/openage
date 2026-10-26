@@ -20,6 +20,9 @@ Item {
 	readonly property bool isTower: hud !== null && hud.isTower
 	readonly property bool canAttack: hud !== null && hud.canAttack
 	readonly property bool attacking: hud !== null && hud.attacking
+	readonly property bool patrolling: hud !== null && hud.patrolling
+	readonly property bool targeting: attacking || patrolling
+	readonly property string stance: hud === null ? "" : hud.stance
 	readonly property int hunterCountdown: hud === null ? 0 : hud.hunterCountdown
 	readonly property var arrowStreaks: hud === null ? [] : hud.arrowStreaks
 	readonly property var combatEffects: hud === null ? [] : hud.combatEffects
@@ -300,8 +303,10 @@ Item {
 			text: root.placing
 			    ? "Build: click to place | Shift+click to queue | Shift+drag: tower line | Esc cancels"
 			    : root.attacking ? "Attack-move: click destination | Right-click or Esc cancels"
+			    : root.patrolling ? "Patrol: click the far end of the route | Right-click or Esc cancels"
 			    : root.canAttack
-			    ? "Hunter: right-click enemy to focus attack | Right-click ground to move | A: Attack-move"
+			    ? "Hunter: right-click enemy to focus attack | Right-click ground to move | A: Attack-move | P: Patrol\n"
+			      + "Stance: Z Aggressive | X Defensive | C Observe"
 			    : root.canBuild
 			    ? "Builder: right-click foundation to resume | B: Build Tower | Shift+drag: line"
 			    : "Drag to select your units | Right-click to move"
@@ -347,6 +352,12 @@ Item {
 				color: "#d6e6db"
 				font.pixelSize: 13
 				text: "HP: " + (root.hud === null ? "—" : root.hud.health)
+			}
+			Text {
+				visible: root.canAttack && root.stance.length > 0
+				color: "#d6e6db"
+				font.pixelSize: 13
+				text: "Stance: " + root.stance
 			}
 			Text {
 				visible: root.isTower
@@ -409,7 +420,7 @@ Item {
 				width: 252
 				height: 32
 				radius: 4
-				color: root.placing || root.attacking ? "#ae6e30" : "#3e7862"
+				color: root.placing || root.targeting ? "#ae6e30" : "#3e7862"
 				border.width: 1
 				border.color: "#b5d9c4"
 
@@ -418,7 +429,7 @@ Item {
 					color: "#ffffff"
 					font.bold: true
 					font.pixelSize: 14
-					text: root.placing || root.attacking ? "Cancel (Esc)" : root.canAttack ? "Attack-move (A)" : "Build Tower (B)"
+					text: root.placing || root.targeting ? "Cancel (Esc)" : root.canAttack ? "Attack-move (A)" : "Build Tower (B)"
 				}
 
 				MouseArea {

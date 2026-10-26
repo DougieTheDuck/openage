@@ -135,8 +135,17 @@ public:
 
 	/** Prepare a human Hunter attack-move destination from the next map click. */
 	bool begin_attack_move();
-	void cancel_attack_move();
 	bool is_attack_move_active() const;
+
+	/** Prepare a human Hunter patrol destination from the next map click. */
+	bool begin_patrol();
+	bool is_patrol_active() const;
+
+	/** Leave attack-move or patrol targeting without issuing an order. */
+	void cancel_hunter_targeting();
+
+	/** Whether the active Hunter has selected horses it may command. */
+	bool is_hunter_selection() const;
 
 	/** Whether the next normal map click should place a tower. */
 	bool is_tower_placement_active() const;
@@ -196,9 +205,19 @@ private:
 	bool selection_pending = false;
 	std::function<void()> deferred_selection_action{};
 
+	/** Which order the next Hunter map click issues. */
+	enum class HunterTargeting {
+		NONE,
+		ATTACK_MOVE,
+		PATROL,
+	};
+
+	/** Enter a Hunter targeting mode when horses are selected. */
+	bool begin_hunter_targeting(HunterTargeting mode);
+
 	/** Controller-local input mode, not authoritative simulation state. */
 	bool placing_tower = false;
-	bool attacking = false;
+	HunterTargeting hunter_targeting = HunterTargeting::NONE;
 
 	/**
 	 * Start position of a drag selection.

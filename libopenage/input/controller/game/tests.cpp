@@ -73,13 +73,24 @@ void tower_placement_mode() {
 	controller.set_selected({101}, SelectionKind::HORSE);
 	TESTEQUALS(controller.begin_attack_move(), true);
 	TESTEQUALS(controller.is_attack_move_active(), true);
-	controller.cancel_attack_move();
+	controller.cancel_hunter_targeting();
 	TESTEQUALS(controller.is_attack_move_active(), false);
+	// Patrol and AttackMove share one targeting mode, so either replaces the other.
+	TESTEQUALS(controller.begin_patrol(), true);
+	TESTEQUALS(controller.is_patrol_active(), true);
+	TESTEQUALS(controller.is_attack_move_active(), false);
+	TESTEQUALS(controller.begin_attack_move(), true);
+	TESTEQUALS(controller.is_patrol_active(), false);
+	TESTEQUALS(controller.begin_patrol(), true);
+	controller.cancel_hunter_targeting();
+	TESTEQUALS(controller.is_patrol_active(), false);
 	controller.set_selected({101, 102, 103}, SelectionKind::GROUP_HORSES);
 	TESTEQUALS(controller.begin_attack_move(), true);
 	controller.set_control(2);
 	TESTEQUALS(controller.is_attack_move_active(), false);
 	TESTEQUALS(controller.begin_attack_move(), false);
+	TESTEQUALS(controller.begin_patrol(), false);
+	TESTEQUALS(controller.is_hunter_selection(), false);
 
 	controller.set_selected({42}, SelectionKind::BUILDER);
 	bool deferred_ran = false;

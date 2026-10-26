@@ -38,6 +38,10 @@ gamestate::component::command::command_t simulation_command(CommandKind kind) {
 		// Existing simulation handler prioritizes a foundation via MOVE
 		// with target_entity, preserving the same ownership checks.
 		return gamestate::component::command::command_t::MOVE;
+	case CommandKind::SET_STANCE:
+		return gamestate::component::command::command_t::SET_STANCE;
+	case CommandKind::PATROL:
+		return gamestate::component::command::command_t::PATROL;
 	default:
 		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
 		                     << static_cast<uint16_t>(kind)};
@@ -98,6 +102,9 @@ void submit_authenticated_command(
 	}
 	if (not command.intent.build_line.empty()) {
 		params.emplace("build_line", command.intent.build_line);
+	}
+	if (command.intent.stance) {
+		params.emplace("stance", *command.intent.stance);
 	}
 	event_loop->submit_event(
 		"game.send_command",
@@ -176,6 +183,9 @@ WorldState capture_fvd_presentation_state(
 			result.entities.back().health = hp->first;
 			result.entities.back().maximum_health = hp->second;
 		}
+		if (entity->get_definition() == "fvd.data.entities.Horse") {
+			result.entities.back().hunter_stance = fvd->get_hunter_stance(entity_id);
+		}
 	}
 	for (const auto &reservation : fvd->get_reserved_tiles()) {
 		result.reservations.push_back({reservation.tile, reservation.builder_id});
@@ -227,6 +237,10 @@ WorldState capture_fvd_state(
 		});
 	}
 	for (auto &entity_state : result.entities) {
+		// Only the Hunter learns how its horses will react.
+		if (entity_state.owner_id != recipient) {
+			entity_state.hunter_stance.reset();
+		}
 		auto entity = state->get_game_entity(entity_state.entity_id);
 		auto position = std::dynamic_pointer_cast<gamestate::component::Position>(
 			entity->get_component(gamestate::component::component_t::POSITION));

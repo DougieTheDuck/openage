@@ -34,6 +34,11 @@ namespace {
 constexpr const char *HEALTH = "fvd.data.entities.Health";
 constexpr double HORSE_ATTACK_RANGE = 4.0;
 constexpr double HORSE_ATTACK_RANGE_SQUARED = HORSE_ATTACK_RANGE * HORSE_ATTACK_RANGE;
+/** Aggressive stance acquisition radius. */
+constexpr double HORSE_SIGHT_RANGE = 8.0;
+/** Furthest a Defensive engagement may stray from its engagement point. */
+constexpr double HORSE_LEASH_RANGE = 6.0;
+constexpr double HORSE_LEASH_RANGE_SQUARED = HORSE_LEASH_RANGE * HORSE_LEASH_RANGE;
 
 /** Use stable ordering for simultaneous combat and lethal-hit decisions. */
 std::vector<entity_id_t> entities_by_definition(
@@ -57,17 +62,30 @@ bool alive(const std::shared_ptr<GameEntity> &entity, const time::time_t &time) 
 	return live->get_attribute(time, HEALTH)->get(time) > 0;
 }
 
-double distance_squared(const std::shared_ptr<GameEntity> &first,
-                        const std::shared_ptr<GameEntity> &second,
-                        const time::time_t &time) {
-	auto first_position = std::dynamic_pointer_cast<component::Position>(
-		first->get_component(component::component_t::POSITION))->get_positions().get(time);
-	auto second_position = std::dynamic_pointer_cast<component::Position>(
-		second->get_component(component::component_t::POSITION))->get_positions().get(time);
-	auto delta = first_position - second_position;
+double distance_squared(const coord::phys3 &first, const coord::phys3 &second) {
+	auto delta = first - second;
 	double x = delta.ne.to_double();
 	double y = delta.se.to_double();
 	return x * x + y * y;
+}
+
+coord::phys3 position_at(const std::shared_ptr<GameEntity> &entity,
+                         const time::time_t &time) {
+	return std::dynamic_pointer_cast<component::Position>(
+		entity->get_component(component::component_t::POSITION))->get_positions().get(time);
+}
+
+double distance_squared(const std::shared_ptr<GameEntity> &first,
+                        const std::shared_ptr<GameEntity> &second,
+                        const time::time_t &time) {
+	return distance_squared(position_at(first, time), position_at(second, time));
+}
+
+/** Whether a horse is still following a movement route at this time. */
+bool travelling(const std::shared_ptr<GameEntity> &horse, const time::time_t &time) {
+	auto move = std::dynamic_pointer_cast<component::Move>(
+		horse->get_component(component::component_t::MOVE));
+	return move->get_active_target() and move->get_active_arrival() > time;
 }
 
 
@@ -318,6 +336,7 @@ bool FVD::apply_damage(const std::shared_ptr<GameState> &state,
 	else {
 		this->attack_orders.erase(target);
 		if (definition == this->horse) {
+			this->hunter_stances.erase(target);
 			this->dead_horses.insert(target);
 		}
 		if (definition == this->builder) {
@@ -456,6 +475,116 @@ bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
 	return true;
 }
 
+bool FVD::set_hunter_stance(const std::shared_ptr<GameState> &state,
+                            player_id_t owner, const std::vector<entity_id_t> &ids,
+                            HunterStance stance, const time::time_t &time) {
+	if (owner != 1) {
+		return false;
+	}
+	auto survivors = this->resolve_command_units(state, owner, ids, time);
+	if (not survivors) {
+		return false;
+	}
+	for (auto id : *survivors) {
+		if (this->get_hunter_stance(id) == stance) {
+			continue;
+		}
+		if (stance == HunterStance::OBSERVE) {
+			this->hunter_stances.erase(id);
+		}
+		else {
+			this->hunter_stances.insert_or_assign(id, stance);
+		}
+		// The previous stance's engagement would otherwise outlive it,
+		// e.g. an Observe horse still chasing an Aggressive target.
+		auto order = this->attack_orders.find(id);
+		if (order != this->attack_orders.end() and order->second.stance_engagement) {
+			halt_for_engagement(state->get_game_entity(id), time);
+			this->attack_orders.erase(order);
+		}
+	}
+	return true;
+}
+
+HunterStance FVD::get_hunter_stance(entity_id_t horse) const {
+	auto found = this->hunter_stances.find(horse);
+	return found == this->hunter_stances.end() ? HunterStance::OBSERVE : found->second;
+}
+
+bool FVD::hunter_target_eligible(const std::shared_ptr<GameState> &state,
+                                 entity_id_t candidate, const time::time_t &time) const {
+	auto other = state->get_game_entities().find(candidate);
+	if (other == state->get_game_entities().end() or not alive(other->second, time)) {
+		return false;
+	}
+	if (other->second->get_definition() == this->tower) {
+		auto footprint = this->tower_footprints.find(candidate);
+		return footprint != this->tower_footprints.end()
+		    and not footprint->second.under_construction;
+	}
+	return other->second->get_definition() == this->builder;
+}
+
+std::optional<entity_id_t> FVD::nearest_hunter_target(
+	const std::shared_ptr<GameState> &state,
+	const std::shared_ptr<GameEntity> &horse,
+	const std::vector<entity_id_t> &towers,
+	const std::vector<entity_id_t> &builders,
+	double radius,
+	const std::optional<coord::phys3> &anchor,
+	double anchor_radius,
+	const time::time_t &time) const {
+	const double anchor_squared = anchor_radius * anchor_radius;
+	// A tower within range takes priority over any Builder, even a closer one.
+	for (const auto *candidates : {&towers, &builders}) {
+		std::optional<entity_id_t> nearest;
+		double closest = radius * radius;
+		for (auto candidate : *candidates) {
+			if (not this->hunter_target_eligible(state, candidate, time)) {
+				continue;
+			}
+			auto entity = state->get_game_entity(candidate);
+			auto distance = distance_squared(horse, entity, time);
+			if (distance <= closest
+			    and (not anchor
+			         or distance_squared(position_at(entity, time), *anchor) <= anchor_squared)) {
+				closest = distance;
+				nearest = candidate;
+			}
+		}
+		if (nearest) {
+			return nearest;
+		}
+	}
+	return std::nullopt;
+}
+
+bool FVD::begin_stance_engagement(const std::shared_ptr<GameState> &state,
+                                  const std::shared_ptr<GameEntity> &horse,
+                                  const std::vector<entity_id_t> &towers,
+                                  const std::vector<entity_id_t> &builders,
+                                  const time::time_t &time) {
+	const auto stance = this->get_hunter_stance(horse->get_id());
+	// Travelling horses are following a human Move; they do not stop to fight.
+	if (stance == HunterStance::OBSERVE or travelling(horse, time)) {
+		return false;
+	}
+	const auto here = position_at(horse, time);
+	const auto target = stance == HunterStance::AGGRESSIVE
+		? this->nearest_hunter_target(state, horse, towers, builders,
+		                              HORSE_SIGHT_RANGE, std::nullopt, 0.0, time)
+		: this->nearest_hunter_target(state, horse, towers, builders,
+		                              HORSE_ATTACK_RANGE, here, HORSE_LEASH_RANGE, time);
+	if (not target) {
+		return false;
+	}
+	AttackOrder order{here, target, time};
+	order.stance_engagement = true;
+	this->attack_orders.insert_or_assign(horse->get_id(), order);
+	halt_for_engagement(horse, time);
+	return true;
+}
+
 void FVD::combat_tick(const std::shared_ptr<GameState> &state,
                       const time::time_t &time) {
 	const auto horses = entities_by_definition(state, this->horse);
@@ -463,11 +592,17 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 	const auto towers = entities_by_definition(state, this->tower);
 
 	// AttackMove searches within four tiles, including after arrival.
-	// Towers retain priority over Builders.
+	// Towers retain priority over Builders. Idle horses without an order
+	// may instead start an engagement through their stance.
 	for (auto id : horses) {
 		auto order_it = this->attack_orders.find(id);
 		if (order_it == this->attack_orders.end()) {
-			continue;
+			auto idle = state->get_game_entities().find(id);
+			if (idle == state->get_game_entities().end() or not alive(idle->second, time)
+			    or not this->begin_stance_engagement(state, idle->second, towers, builders, time)) {
+				continue;
+			}
+			order_it = this->attack_orders.find(id);
 		}
 		auto found = state->get_game_entities().find(id);
 		if (found == state->get_game_entities().end() or not alive(found->second, time)) {
@@ -482,21 +617,15 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			horse->get_component(component::component_t::POSITION));
 		auto current = position->get_positions().get(time);
 		auto remaining = current - order.destination;
-		if (remaining.length() < 0.15 and not order.target) {
+		if (remaining.length() < 0.15 and not order.target and not order.patrol_return) {
 			order.reached_destination = true;
 		}
+		const auto stance = this->get_hunter_stance(id);
+		// A Defensive engagement guards its engagement point, the order's destination.
+		const bool defending = order.stance_engagement and stance == HunterStance::DEFENSIVE;
 
 		auto eligible = [&](entity_id_t candidate) {
-			auto other = state->get_game_entities().find(candidate);
-			if (other == state->get_game_entities().end() or not alive(other->second, time)) {
-				return false;
-			}
-			if (other->second->get_definition() == this->tower) {
-				auto footprint = this->tower_footprints.find(candidate);
-				return footprint != this->tower_footprints.end()
-				    and not footprint->second.under_construction;
-			}
-			return other->second->get_definition() == this->builder;
+			return this->hunter_target_eligible(state, candidate, time);
 		};
 		// A manual target is never preempted by a tower.
 		// A tower entering firing range otherwise takes
@@ -532,40 +661,28 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		if (not order.target) {
 			// A tower within firing range takes priority over a nearby
 			// Builder, even if the original move destination was reached.
-			entity_id_t nearest = 0;
-			double closest = HORSE_ATTACK_RANGE_SQUARED;
-			for (auto tower_id : towers) {
-				if (not eligible(tower_id)) {
-					continue;
-				}
-				auto tower_entity = state->get_game_entity(tower_id);
-				auto distance = distance_squared(horse, tower_entity, time);
-				if (distance <= closest) {
-					if (distance <= HORSE_ATTACK_RANGE_SQUARED) {
-						nearest = tower_id;
-						closest = distance;
-					}
-				}
-			}
-			if (nearest == 0) {
-				// Builders have the same four-tile alert radius, but only
-				// become automatic targets when no tower takes precedence.
-				closest = HORSE_ATTACK_RANGE_SQUARED;
-				for (auto enemy : builders) {
-					if (not eligible(enemy)) {
-						continue;
-					}
-					auto builder_entity = state->get_game_entity(enemy);
-					auto distance = distance_squared(horse, builder_entity, time);
-					if (distance <= closest) {
-						closest = distance;
-						nearest = enemy;
-					}
-				}
-			}
-			if (nearest != 0) {
+			// An Aggressive engagement keeps looking as far as it can see;
+			// a Defensive one only accepts enemies near its engagement point.
+			const bool aggressive = order.stance_engagement
+			                        and stance == HunterStance::AGGRESSIVE;
+			const auto nearest = this->nearest_hunter_target(
+				state, horse, towers, builders,
+				aggressive ? HORSE_SIGHT_RANGE : HORSE_ATTACK_RANGE,
+				defending ? std::make_optional(order.destination) : std::nullopt,
+				HORSE_LEASH_RANGE, time);
+			if (nearest) {
 				order.target = nearest;
 				halt_for_engagement(horse, time);
+			}
+		}
+		if (defending and order.target) {
+			// Give up once the fight drifts too far from the guarded point;
+			// the horse then walks back, still defending on the way.
+			const auto enemy_at = position_at(state->get_game_entity(*order.target), time);
+			if (distance_squared(current, order.destination) > HORSE_LEASH_RANGE_SQUARED
+			    or distance_squared(enemy_at, order.destination) > HORSE_LEASH_RANGE_SQUARED) {
+				halt_for_engagement(horse, time);
+				order.target.reset();
 			}
 		}
 		if (order.target) {
@@ -648,17 +765,43 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			system::Idle::idle(horse, time);
 		}
 
+		// With nothing left to fight, an Aggressive horse searches again
+		// from where it stands, and a Defensive horse returns to its post.
+		if (order.stance_engagement) {
+			if (defending and remaining.length() >= 0.15) {
+				if (not travelling(horse, time)) {
+					system::Move::move_default(horse, state, order.destination, time);
+				}
+				continue;
+			}
+			if (move->get_active_target()) {
+				system::Idle::idle(horse, time);
+			}
+			this->attack_orders.erase(order_it);
+			continue;
+		}
+
 		// After reaching the destination, remain alert to enemies within
-		// four tiles until a human issues another command.
+		// four tiles until a human issues another command, unless a
+		// non-Observe stance takes over from here.
 		if (order.reached_destination) {
 			if (move->get_active_target()) {
 				system::Idle::idle(horse, time);
 			}
+			if (stance != HunterStance::OBSERVE) {
+				this->attack_orders.erase(order_it);
+			}
 			continue;
 		}
 		if (remaining.length() < 0.15) {
-			order.reached_destination = true;
-			system::Idle::idle(horse, time);
+			if (order.patrol_return) {
+				std::swap(order.destination, *order.patrol_return);
+				system::Move::move_default(horse, state, order.destination, time);
+			}
+			else {
+				order.reached_destination = true;
+				system::Idle::idle(horse, time);
+			}
 		}
 		else if (not move->get_active_target()
 		         or move->get_active_arrival() <= time) {

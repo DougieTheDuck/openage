@@ -965,9 +965,10 @@ void Presenter::init_input() {
 		}
 		if (hud_input.activated_button and this->game_controller) {
 			if (this->game_controller->is_tower_placement_active()
-			    or this->game_controller->is_attack_move_active()) {
+			    or this->game_controller->is_attack_move_active()
+			    or this->game_controller->is_patrol_active()) {
 				this->game_controller->cancel_tower_placement();
-				this->game_controller->cancel_attack_move();
+				this->game_controller->cancel_hunter_targeting();
 			}
 			else if (this->game_controller->get_controlled() == 1) {
 				this->game_controller->begin_attack_move();
@@ -1060,7 +1061,8 @@ void Presenter::init_input() {
 
 			// The global input context must forward placement keys to
 			// the FVD-specific game binding context.
-			for (auto key : {Qt::Key_B, Qt::Key_A, Qt::Key_Escape, Qt::Key_F9}) {
+			for (auto key : {Qt::Key_B, Qt::Key_A, Qt::Key_P, Qt::Key_Z, Qt::Key_X, Qt::Key_C,
+			                 Qt::Key_Escape, Qt::Key_F9}) {
 				input_ctx->bind(
 					input::Event{input::event_class::KEYBOARD, key,
 					             Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
@@ -1124,6 +1126,8 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("constructionPercent", -1);
 			this->fvd_hud_state->insert("canAttack", false);
 			this->fvd_hud_state->insert("attacking", false);
+			this->fvd_hud_state->insert("patrolling", false);
+			this->fvd_hud_state->insert("stance", QString{});
 			this->fvd_hud_state->insert("placing", false);
 			this->fvd_hud_state->insert("kills", 0);
 			this->fvd_hud_state->insert("killsAvailable", !this->fvd_replication);
@@ -1298,6 +1302,7 @@ void Presenter::render() {
 			this->fvd_hud_state->insert("canBuild", controlled >= 2 and builder);
 			this->fvd_hud_state->insert("canAttack", controlled == 1 and hunter_horse);
 			this->fvd_hud_state->insert("attacking", this->game_controller->is_attack_move_active());
+			this->fvd_hud_state->insert("patrolling", this->game_controller->is_patrol_active());
 			const auto drag_start = this->game_controller->get_drag_select_start_optional();
 			const bool preview_line = controlled >= 2 and builder and drag_start.has_value()
 				// Shift-drag can begin without pressing B first.
@@ -1311,6 +1316,42 @@ void Presenter::render() {
 				if (not this->fvd_replication and local_hud) {
 					this->record_confirmed_combat_effects(*local_hud, false);
 				}
+				// The Hunter's own horse stances arrive in the same snapshot locally
+				// and on guests; a group with different stances reads as Mixed.
+				QString stance_label{};
+				if (controlled == 1 and hunter_horse and construction_world) {
+					std::optional<gamestate::HunterStance> common{};
+					bool mixed = false;
+					for (auto id : selected.ids) {
+						auto entity = std::find_if(
+							construction_world->entities.begin(), construction_world->entities.end(),
+							[id](const network::EntityState &entry) {
+								return entry.entity_id == id;
+							});
+						if (entity == construction_world->entities.end() or not entity->hunter_stance) {
+							continue;
+						}
+						mixed = mixed or (common and *common != *entity->hunter_stance);
+						common = entity->hunter_stance;
+					}
+					if (mixed) {
+						stance_label = QString{"Mixed"};
+					}
+					else if (common) {
+						switch (*common) {
+						case gamestate::HunterStance::OBSERVE:
+							stance_label = QString{"Observe"};
+							break;
+						case gamestate::HunterStance::AGGRESSIVE:
+							stance_label = QString{"Aggressive"};
+							break;
+						case gamestate::HunterStance::DEFENSIVE:
+							stance_label = QString{"Defensive"};
+							break;
+						}
+					}
+				}
+				this->fvd_hud_state->insert("stance", stance_label);
 				std::vector<gamestate::FVD::ArrowTrail> arrows{};
 				if (this->fvd_replication) {
 					// Replicate each launch once. The guest animates the flight and

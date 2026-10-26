@@ -222,6 +222,25 @@ public:
 	                        player_id_t owner, const std::vector<entity_id_t> &ids,
 	                        entity_id_t enemy_id, const time::time_t &time);
 
+	/**
+	 * Loop every selected horse between its position and a destination,
+	 * engaging enemies en route like AttackMove, or reject all.
+	 */
+	bool issue_patrol(const std::shared_ptr<GameState> &state,
+	                  player_id_t owner, const std::vector<entity_id_t> &ids,
+	                  const coord::phys3 &destination, const time::time_t &time);
+
+	/**
+	 * Set the standing behaviour of every selected Hunter horse, or reject all.
+	 * Ends engagements started by the previous stance; human orders continue.
+	 */
+	bool set_hunter_stance(const std::shared_ptr<GameState> &state,
+	                       player_id_t owner, const std::vector<entity_id_t> &ids,
+	                       HunterStance stance, const time::time_t &time);
+
+	/** Current stance of a Hunter horse; Observe unless the Hunter changed it. */
+	HunterStance get_hunter_stance(entity_id_t horse) const;
+
 	/** Remove the autonomous engagement portion when superseded by another order. */
 	void cancel_attack_move(entity_id_t id);
 
@@ -307,12 +326,17 @@ private:
 	                        entity_id_t builder, const time::time_t &time);
 
 	struct AttackOrder {
+		/** Travel destination; the engagement point of a stance engagement. */
 		coord::phys3 destination;
 		std::optional<entity_id_t> target;
 		time::time_t next_attack;
 		bool reached_destination = false;
 		bool focus_target = false;
 		std::optional<time::time_t> pending_hit{};
+		/** Patrol's other endpoint, swapped with the destination on arrival. */
+		std::optional<coord::phys3> patrol_return{};
+		/** Started by an Aggressive or Defensive stance rather than a command. */
+		bool stance_engagement = false;
 	};
 
 	struct PendingBuild {
@@ -342,6 +366,39 @@ private:
 	std::optional<std::vector<entity_id_t>> resolve_command_units(
 		const std::shared_ptr<GameState> &state, player_id_t owner,
 		const std::vector<entity_id_t> &ids, const time::time_t &time) const;
+
+	/** Shared validation and order setup for AttackMove and Patrol. */
+	bool issue_hunter_route(const std::shared_ptr<GameState> &state,
+	                        player_id_t owner, const std::vector<entity_id_t> &ids,
+	                        const coord::phys3 &destination, bool patrol,
+	                        const time::time_t &time);
+
+	/**
+	 * Nearest eligible completed enemy tower within the radius, otherwise the
+	 * nearest eligible Builder, in deterministic ID order.
+	 *
+	 * @param anchor Only accept candidates within anchor_radius of this point.
+	 */
+	std::optional<entity_id_t> nearest_hunter_target(
+		const std::shared_ptr<GameState> &state,
+		const std::shared_ptr<GameEntity> &horse,
+		const std::vector<entity_id_t> &towers,
+		const std::vector<entity_id_t> &builders,
+		double radius,
+		const std::optional<coord::phys3> &anchor,
+		double anchor_radius,
+		const time::time_t &time) const;
+
+	/** Whether a tower or Builder may currently be targeted by a Hunter horse. */
+	bool hunter_target_eligible(const std::shared_ptr<GameState> &state,
+	                            entity_id_t candidate, const time::time_t &time) const;
+
+	/** Let an idle horse's stance start an engagement; return whether it did. */
+	bool begin_stance_engagement(const std::shared_ptr<GameState> &state,
+	                             const std::shared_ptr<GameEntity> &horse,
+	                             const std::vector<entity_id_t> &towers,
+	                             const std::vector<entity_id_t> &builders,
+	                             const time::time_t &time);
 
 	/** Apply damage once and remove dead units. */
 	bool apply_damage(const std::shared_ptr<GameState> &state, entity_id_t target,
@@ -420,6 +477,8 @@ private:
 	uint64_t next_arrow_id = 1;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
+	/** Hunter-chosen stances; absent horses are Observe. */
+	std::unordered_map<entity_id_t, HunterStance> hunter_stances;
 	std::unordered_set<entity_id_t> dead_horses;
 	std::unordered_map<entity_id_t, time::time_t> tower_next_shot;
 	std::array<std::atomic<uint64_t>, 9> player_kills{};
