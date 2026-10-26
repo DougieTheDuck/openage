@@ -201,25 +201,52 @@ std::vector<FVDAttackOrderState> FVD::get_attack_order_state() const {
 	return result;
 }
 
-std::vector<FVDArrowState> FVD::get_arrow_state(const time::time_t &now) const {
+void FVD::enable_projectile_replication() {
+	std::lock_guard lock{this->arrow_visuals_mutex};
+	this->projectile_replication_enabled = true;
+}
+
+void FVD::prune_delivered_projectiles(const time::time_t &now,
+                                      uint64_t delivered_to_all) {
+	std::lock_guard lock{this->arrow_visuals_mutex};
+	std::erase_if(this->arrow_visuals, [&](const ArrowVisual &shot) {
+		return shot.arrow_id <= delivered_to_all
+		    and shot.impact_time + time::time_t::from_int(3) <= now;
+	});
+}
+
+std::vector<FVDArrowState> FVD::get_arrow_state(
+	const time::time_t &now, std::optional<uint64_t> delivered_through) const {
 	std::vector<FVDArrowState> result;
 	std::lock_guard lock{this->arrow_visuals_mutex};
-	result.reserve(this->arrow_visuals.size());
-	for (const auto &arrow : this->arrow_visuals) {
-		// Keep immutable launch events after impact so late recipient
-		// captures can replay the cosmetic arc, never its damage.
-		if (now < arrow.launch_time
-		    or arrow.impact_time + time::time_t::from_int(3) <= now) {
-			continue;
+	constexpr size_t max_batch = 2048;
+	result.reserve(std::min(max_batch, this->arrow_visuals.size()));
+	auto add = [&](const ArrowVisual &shot) {
+		result.push_back({shot.arrow_id, shot.owner, shot.target_id,
+		                  shot.start, shot.destination,
+		                  shot.launch_time, shot.impact_time});
+	};
+	// Never skip an undelivered launch merely because it has already
+	// impacted or more than a snapshot interval elapsed. Those events
+	// remain in host history until every recipient has been sent them.
+	if (delivered_through) {
+		for (const auto &shot : this->arrow_visuals) {
+			if (shot.arrow_id <= *delivered_through or shot.launch_time > now) continue;
+			if (result.size() >= max_batch) return result;
+			add(shot);
 		}
-		result.push_back({arrow.arrow_id,
-		                  arrow.owner,
-		                  arrow.target_id,
-		                  arrow.start,
-		                  arrow.destination,
-		                  arrow.launch_time,
-		                  arrow.impact_time});
 	}
+	// Re-include recent, already-delivered launches when capacity permits
+	// so recovery snapshots and in-flight projectile rendering stay intact.
+	for (const auto &shot : this->arrow_visuals) {
+		if (shot.launch_time > now
+		    or shot.impact_time + time::time_t::from_int(3) <= now
+		    or (delivered_through and shot.arrow_id > *delivered_through)) continue;
+		if (result.size() >= max_batch) break;
+		add(shot);
+	}
+	std::sort(result.begin(), result.end(),
+	          [](const auto &a, const auto &b) { return a.arrow_id < b.arrow_id; });
 	return result;
 }
 
@@ -592,12 +619,16 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 					enemy->second->get_definition() == this->tower ? 1.0 : 0.55);
 				{
 					std::lock_guard lock{this->arrow_visuals_mutex};
-					std::erase_if(this->arrow_visuals, [&](const ArrowVisual &shot) {
-						return shot.impact_time + time::time_t::from_int(3) <= time;
-					});
-					constexpr size_t max_visual_shots = 2048;
-					if (this->arrow_visuals.size() >= max_visual_shots) {
-						this->arrow_visuals.erase(this->arrow_visuals.begin());
+					if (not this->projectile_replication_enabled) {
+						std::erase_if(this->arrow_visuals, [&](const ArrowVisual &shot) {
+							return shot.impact_time + time::time_t::from_int(3) <= time;
+						});
+					}
+					// An undelivered launch may no longer be silently evicted.
+					// If every recipient stalls for an extreme duration,
+					// fail explicitly rather than pretend that all effects arrived.
+					if (this->arrow_visuals.size() >= 65536) {
+						throw Error{ERR << "FVD projectile backlog exceeded 65536 unsent records"};
 					}
 					this->arrow_visuals.push_back(
 						ArrowVisual{this->next_arrow_id++, player_id_t{1}, target,
@@ -681,16 +712,13 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		destination.up += coord::phys_t::from_double(0.45);
 		{
 			std::lock_guard lock{this->arrow_visuals_mutex};
-			std::erase_if(this->arrow_visuals, [&](const ArrowVisual &shot) {
-				// Keep a short, bounded launch history for slower guests.
-				// See world_delta.cpp's matching event expiry window.
-				return shot.impact_time + time::time_t::from_int(3) <= time;
-			});
-			// Bound visual work in very large tower fights. Every shot
-			// still schedules its authoritative damage below.
-			constexpr size_t max_visual_shots = 2048;
-			if (this->arrow_visuals.size() >= max_visual_shots) {
-				this->arrow_visuals.erase(this->arrow_visuals.begin());
+			if (not this->projectile_replication_enabled) {
+				std::erase_if(this->arrow_visuals, [&](const ArrowVisual &shot) {
+					return shot.impact_time + time::time_t::from_int(3) <= time;
+				});
+			}
+			if (this->arrow_visuals.size() >= 65536) {
+				throw Error{ERR << "FVD projectile backlog exceeded 65536 unsent records"};
 			}
 			this->arrow_visuals.push_back(
 				ArrowVisual{this->next_arrow_id++, owner, nearest, start, destination,

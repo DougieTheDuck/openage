@@ -182,7 +182,9 @@ public:
 	 * The caller allocates increasing revisions (starting at 2 after bootstrap).
 	 * Only one request/result may be outstanding to bound memory use.
 	 */
-	void request_network_update(gamestate::player_id_t recipient, uint64_t revision);
+	void request_network_update(gamestate::player_id_t recipient, uint64_t revision,
+	                            uint64_t delivered_projectile_id = 0,
+	                            uint64_t delivered_to_all = 0);
 	std::optional<network::WorldState> take_network_update();
 
 	/**
@@ -297,6 +299,8 @@ private:
 		gamestate::player_id_t recipient;
 		uint64_t revision;
 		uint64_t generation;
+		uint64_t delivered_projectile_id;
+		uint64_t delivered_to_all;
 	};
 	std::optional<UpdateRequest> update_requested{};
 	std::optional<network::WorldState> update_ready{};

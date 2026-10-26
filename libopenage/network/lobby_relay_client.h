@@ -128,6 +128,11 @@ public:
 	 */
 	void provide_host_update(WorldState world);
 
+	/** Largest launch ID successfully transmitted to a particular guest.
+	 * The capture thread uses this as an event cursor, not the newest
+	 * offered snapshot, since pending samples may be overwritten. */
+	uint64_t delivered_projectile_id(gamestate::player_id_t recipient) const;
+
 	/** Queue one locally authored intent. Only guests send intents over TCP. */
 	bool send_guest_command(CommandIntent intent);
 
@@ -199,6 +204,7 @@ private:
 	bool guest_snapshot_requested{false};
 	/** Largest revision submitted, including an update in flight. */
 	uint64_t last_host_offered_revision{0};
+	std::map<gamestate::player_id_t, uint64_t> delivered_projectiles{};
 	std::shared_ptr<ReplicationTracker> guest_replication{};
 	std::shared_ptr<RelayMultiHostLobby> multi_host_lobby{};
 	std::shared_ptr<RelayMultiHostLobby> prepared_rehost_lobby{};

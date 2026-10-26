@@ -697,8 +697,17 @@ void Presenter::refresh_fvd_lobby_state() {
 						recipient = state.remote_player_ids[
 							this->fvd_capture_cursor++ % state.remote_player_ids.size()];
 					}
+					uint64_t min_sent = this->fvd_lobby_client->delivered_projectile_id(recipient);
+					if (state.multi_host) {
+						for (auto id : state.remote_player_ids) {
+							min_sent = std::min(
+								min_sent, this->fvd_lobby_client->delivered_projectile_id(id));
+						}
+					}
 					this->simulation->request_network_update(
-						recipient, this->fvd_next_world_revision++);
+						recipient, this->fvd_next_world_revision++,
+						this->fvd_lobby_client->delivered_projectile_id(recipient),
+						min_sent);
 					this->fvd_capture_recipient = recipient;
 					this->fvd_update_requested = true;
 					this->fvd_last_update_request = now;

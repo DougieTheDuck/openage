@@ -76,6 +76,7 @@ WorldState capture_fvd_state(
 	const time::time_t &time,
 	uint64_t base_revision,
 	uint64_t world_revision,
-	gamestate::player_id_t recipient);
+	gamestate::player_id_t recipient,
+	uint64_t delivered_projectile_id = 0);
 
 } // namespace openage::network

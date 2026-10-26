@@ -195,9 +195,11 @@ WorldState capture_fvd_state(
 	const time::time_t &time,
 	uint64_t base_revision,
 	uint64_t world_revision,
-	gamestate::player_id_t recipient) {
+	gamestate::player_id_t recipient,
+	uint64_t delivered_projectile_id) {
 	auto result = capture_fvd_presentation_state(state, time);
 	auto fvd = state->get_fvd();
+	fvd->enable_projectile_replication();
 	if (recipient == 0 or recipient > fvd->get_player_count()) {
 		throw Error{MSG(err) << "FVD world replication requires a playable recipient"};
 	}
@@ -273,7 +275,7 @@ WorldState capture_fvd_state(
 			order.focus_target,
 		});
 	}
-	for (const auto &arrow : fvd->get_arrow_state(time)) {
+	for (const auto &arrow : fvd->get_arrow_state(time, delivered_projectile_id)) {
 		result.arrows.push_back({
 			arrow.arrow_id,
 			arrow.owner,

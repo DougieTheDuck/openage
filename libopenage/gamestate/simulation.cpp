@@ -235,9 +235,11 @@ void GameSimulation::run() {
 				throw Error{MSG(err) << "Network update requires an FVD scenario"};
 			}
 			network::MatchConnectionState connections{fvd->get_player_count()};
+			fvd->prune_delivered_projectiles(current_time, update->delivered_to_all);
 			auto world = network::capture_fvd_state(
 				this->game->get_state(), connections, current_time,
-				0, update->revision, update->recipient);
+				0, update->revision, update->recipient,
+				update->delivered_projectile_id);
 			std::lock_guard lock{this->bootstrap_mutex};
 			if (this->network_admitted_players > 0) {
 				for (auto &player : world.players) {
@@ -381,7 +383,9 @@ std::optional<network::WorldState> GameSimulation::take_network_bootstrap() {
 	return std::exchange(this->bootstrap_ready, std::nullopt);
 }
 
-void GameSimulation::request_network_update(player_id_t recipient, uint64_t revision) {
+void GameSimulation::request_network_update(
+	player_id_t recipient, uint64_t revision,
+	uint64_t delivered_projectile_id, uint64_t delivered_to_all) {
 	if (recipient == 0 or recipient > network::MAX_STATE_PLAYERS or revision < 2) {
 		throw Error{MSG(err) << "Invalid FVD recipient or world revision"};
 	}
@@ -390,7 +394,8 @@ void GameSimulation::request_network_update(player_id_t recipient, uint64_t revi
 		throw Error{MSG(err) << "FVD world update capture already pending"};
 	}
 	this->update_requested = UpdateRequest{
-		recipient, revision, this->bootstrap_generation};
+		recipient, revision, this->bootstrap_generation,
+		delivered_projectile_id, delivered_to_all};
 }
 
 std::optional<network::WorldState> GameSimulation::take_network_update() {

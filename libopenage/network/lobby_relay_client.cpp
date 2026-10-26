@@ -168,6 +168,7 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		this->next_guest_command_id = 1;
 		this->guest_snapshot_requested = false;
 		this->last_host_offered_revision = 0;
+		this->delivered_projectiles.clear();
 		this->guest_replication.reset();
 		this->multi_host_lobby.reset();
 		this->prepared_rehost_lobby.reset();
@@ -252,6 +253,14 @@ void RelayLobbyClient::provide_host_snapshot(WorldState snapshot) {
 		this->pending_multi_snapshots.emplace(recipient, std::move(snapshot));
 	}
 	else this->pending_host_snapshot = std::move(snapshot);
+}
+
+uint64_t RelayLobbyClient::delivered_projectile_id(
+	gamestate::player_id_t recipient) const {
+	if (auto next = this->replacement()) return next->delivered_projectile_id(recipient);
+	std::lock_guard lock{this->mutex};
+	auto found = this->delivered_projectiles.find(recipient);
+	return found == this->delivered_projectiles.end() ? 0 : found->second;
 }
 
 void RelayLobbyClient::provide_host_update(WorldState world) {
@@ -645,6 +654,12 @@ void RelayLobbyClient::run(RelayLobbyConfig settings) {
 							auto delta = baseline.advance(std::move(*next));
 							socket->send_frame(accepted->make_frame(
 								MessageType::WORLD_DELTA, encode_world_delta(delta)));
+							if (not delta.changed.arrows.empty()) {
+								const auto last_id = delta.changed.arrows.back().arrow_id;
+								std::lock_guard lock{this->mutex};
+								this->delivered_projectiles[next->local_player_id] =
+									std::max(this->delivered_projectiles[next->local_player_id], last_id);
+							}
 							this->publish_stream_revision(revision, true);
 						}
 						// Host owns session sequence numbers. Poll guest intents
@@ -1416,6 +1431,12 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 						auto delta = baselines.at(id).advance(std::move(update->second));
 						socket.send_frame(session.make_frame(
 							MessageType::WORLD_DELTA, encode_world_delta(delta)));
+						if (not delta.changed.arrows.empty()) {
+							const auto last_id = delta.changed.arrows.back().arrow_id;
+							std::lock_guard lock{this->mutex};
+							this->delivered_projectiles[id] =
+								std::max(this->delivered_projectiles[id], last_id);
+						}
 						this->publish_stream_revision(
 							baselines.at(id).current_snapshot().world_revision, true);
 					}

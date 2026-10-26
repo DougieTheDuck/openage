@@ -270,8 +270,18 @@ public:
 	/** Capture active Hunter orders in horse-ID order. */
 	std::vector<FVDAttackOrderState> get_attack_order_state() const;
 
-	/** Capture Tower/Hunter projectiles, including bounded post-impact history. */
-	std::vector<FVDArrowState> get_arrow_state(const time::time_t &now) const;
+	/** Capture at most 2048 immutable launches, oldest undelivered first.
+	 * Passing no cursor retains only the recent presentation window. */
+	std::vector<FVDArrowState> get_arrow_state(
+		const time::time_t &now,
+		std::optional<uint64_t> delivered_through = std::nullopt) const;
+
+	/** Enable backlog retention during a live network match. */
+	void enable_projectile_replication();
+
+	/** Only discard old launches once every live recipient has been sent them. */
+	void prune_delivered_projectiles(const time::time_t &now,
+	                                 uint64_t delivered_to_all);
 
 private:
 	/** A queued tower retains a concrete, pickable foundation entity. */
@@ -406,6 +416,7 @@ private:
 	};
 	mutable std::mutex arrow_visuals_mutex;
 	std::vector<ArrowVisual> arrow_visuals;
+	bool projectile_replication_enabled = false;
 	uint64_t next_arrow_id = 1;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
