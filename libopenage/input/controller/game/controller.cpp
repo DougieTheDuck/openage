@@ -216,6 +216,24 @@ bool Controller::is_hunter_selection() const {
 	        or this->selected_kind == SelectionKind::GROUP_HORSES);
 }
 
+void Controller::set_hunter_stance_action(std::function<void(gamestate::HunterStance)> action) {
+	std::unique_lock lock{this->mutex};
+	this->hunter_stance_action = std::move(action);
+}
+
+bool Controller::issue_hunter_stance(gamestate::HunterStance stance) {
+	std::function<void(gamestate::HunterStance)> action;
+	{
+		std::unique_lock lock{this->mutex};
+		if (not this->is_hunter_selection() or not this->hunter_stance_action) {
+			return false;
+		}
+		action = this->hunter_stance_action;
+	}
+	action(stance);
+	return true;
+}
+
 void Controller::cancel_hunter_targeting() {
 	std::unique_lock lock{this->mutex};
 	this->hunter_targeting = HunterTargeting::NONE;
@@ -381,6 +399,7 @@ void apply_guest_selection(
 } // namespace
 
 void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
+                    const std::shared_ptr<Controller> &controller,
                     const std::shared_ptr<time::TimeLoop> &time_loop,
                     const std::shared_ptr<openage::gamestate::GameSimulation> &simulation,
                     const std::shared_ptr<renderer::camera::Camera> &camera,
@@ -498,6 +517,12 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 
 	auto fvd = simulation->get_game()->get_state()->get_fvd();
 	if (fvd) {
+		std::weak_ptr<Controller> weak_controller = controller;
+		controller->set_hunter_stance_action([weak_controller, set_stance](gamestate::HunterStance stance) {
+			if (auto active = weak_controller.lock()) {
+				set_stance(active, stance);
+			}
+		});
 		binding_func_t spawn_hunter{[simulation, time_loop, can_spawn_hunter](
 		                                const event_arguments &,
 		                                const std::shared_ptr<Controller>) {
@@ -538,9 +563,9 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		for (auto [key, stance] : {std::pair{Qt::Key_Z, gamestate::HunterStance::AGGRESSIVE},
 		                           std::pair{Qt::Key_X, gamestate::HunterStance::DEFENSIVE},
 		                           std::pair{Qt::Key_C, gamestate::HunterStance::OBSERVE}}) {
-			binding_func_t choose_stance{[set_stance, stance](const event_arguments &,
-			                                                  const std::shared_ptr<Controller> controller) {
-				set_stance(controller, stance);
+			binding_func_t choose_stance{[stance](const event_arguments &,
+			                                     const std::shared_ptr<Controller> controller) {
+				controller->issue_hunter_stance(stance);
 			}};
 			ctx->bind(Event{event_class::KEYBOARD, key,
 			                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
