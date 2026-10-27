@@ -309,6 +309,8 @@ Item {
 			      + "Stance: Z Aggressive | X Defensive | C Observe"
 			    : root.canBuild
 			    ? "Builder: right-click foundation to resume | B: Build Tower | Shift+drag: line"
+			    : root.isTower && !root.hunter
+			    ? "Builder: select your tower and press Delete to demolish it immediately"
 			    : "Drag to select your units | Right-click to move"
 			horizontalAlignment: Text.AlignHCenter
 		}
