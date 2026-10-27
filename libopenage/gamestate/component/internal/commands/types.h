@@ -19,6 +19,7 @@ enum class command_t {
 	FOCUS_ATTACK,
 	SET_STANCE,
 	PATROL,
+	DEMOLISH_TOWER,
 };
 
 } // namespace openage::gamestate::component::command
