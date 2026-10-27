@@ -114,6 +114,7 @@ void difference_entities(const WorldState &before, const WorldState &after,
 		    or previous.health != entry.health
 		    or previous.maximum_health != entry.maximum_health
 		    or previous.tower_kills != entry.tower_kills
+		    or previous.hunter_stance != entry.hunter_stance
 		    or previous.animation_action != entry.animation_action
 		    or previous.animation_started_at != entry.animation_started_at
 		    or not same_facing_at(previous, entry, after.simulation_time)
@@ -392,6 +393,10 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 		if (entity.tower_kills and (entity.owner_id != next.local_player_id
 		    or entity.definition != "fvd.data.entities.Tower")) {
 			throw Error{MSG(err) << "FVD delta disclosed an opponent's tower kills"};
+		}
+		if (entity.hunter_stance and (entity.owner_id != next.local_player_id
+		    or entity.definition != "fvd.data.entities.Horse")) {
+			throw Error{MSG(err) << "FVD delta disclosed an opponent's Hunter stance"};
 		}
 	}
 	return next;

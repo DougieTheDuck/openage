@@ -52,7 +52,7 @@ void Controller::set_control(size_t faction_id) {
 		this->selection_pending = false;
 		this->deferred_selection_action = {};
 		this->placing_tower = false;
-		this->attacking = false;
+		this->hunter_targeting = HunterTargeting::NONE;
 	}
 }
 
@@ -67,7 +67,7 @@ void Controller::lock_to_online_player(size_t faction_id) {
 	this->selection_pending = false;
 	this->deferred_selection_action = {};
 	this->placing_tower = false;
-	this->attacking = false;
+	this->hunter_targeting = HunterTargeting::NONE;
 }
 
 void Controller::reset_online_player_slots(size_t player_count) {
@@ -84,7 +84,7 @@ void Controller::reset_online_player_slots(size_t player_count) {
 	this->selection_pending = false;
 	this->deferred_selection_action = {};
 	this->placing_tower = false;
-	this->attacking = false;
+	this->hunter_targeting = HunterTargeting::NONE;
 }
 
 size_t Controller::get_controlled() const {
@@ -115,7 +115,7 @@ void Controller::set_selected(
 	this->selection_pending = false;
 	this->deferred_selection_action = {};
 	this->placing_tower = false;
-	this->attacking = false;
+	this->hunter_targeting = HunterTargeting::NONE;
 }
 
 uint64_t Controller::begin_selection_update() {
@@ -146,7 +146,7 @@ bool Controller::set_selected_if_current(
 		this->selected_render_entity = ids.size() == 1 ? render_entity : nullptr;
 		this->selection_pending = false;
 		this->placing_tower = false;
-		this->attacking = false;
+		this->hunter_targeting = HunterTargeting::NONE;
 		deferred = std::move(this->deferred_selection_action);
 	}
 
@@ -176,7 +176,7 @@ bool Controller::begin_tower_placement() {
 	    or this->selected_kind != SelectionKind::BUILDER) {
 		return false;
 	}
-	this->attacking = false;
+	this->hunter_targeting = HunterTargeting::NONE;
 	this->placing_tower = true;
 	return true;
 }
@@ -192,25 +192,43 @@ bool Controller::is_tower_placement_active() const {
 }
 
 bool Controller::begin_attack_move() {
+	return this->begin_hunter_targeting(HunterTargeting::ATTACK_MOVE);
+}
+
+bool Controller::begin_patrol() {
+	return this->begin_hunter_targeting(HunterTargeting::PATROL);
+}
+
+bool Controller::begin_hunter_targeting(HunterTargeting mode) {
 	std::unique_lock lock{this->mutex};
-	if (this->active_faction_id != 1 or this->selected.empty()
-	    or (this->selected_kind != SelectionKind::HORSE
-	        and this->selected_kind != SelectionKind::GROUP_HORSES)) {
+	if (not this->is_hunter_selection()) {
 		return false;
 	}
 	this->placing_tower = false;
-	this->attacking = true;
+	this->hunter_targeting = mode;
 	return true;
 }
 
-void Controller::cancel_attack_move() {
+bool Controller::is_hunter_selection() const {
 	std::unique_lock lock{this->mutex};
-	this->attacking = false;
+	return this->active_faction_id == 1 and not this->selected.empty()
+	   and (this->selected_kind == SelectionKind::HORSE
+	        or this->selected_kind == SelectionKind::GROUP_HORSES);
+}
+
+void Controller::cancel_hunter_targeting() {
+	std::unique_lock lock{this->mutex};
+	this->hunter_targeting = HunterTargeting::NONE;
 }
 
 bool Controller::is_attack_move_active() const {
 	std::unique_lock lock{this->mutex};
-	return this->attacking;
+	return this->hunter_targeting == HunterTargeting::ATTACK_MOVE;
+}
+
+bool Controller::is_patrol_active() const {
+	std::unique_lock lock{this->mutex};
+	return this->hunter_targeting == HunterTargeting::PATROL;
 }
 
 bool Controller::process(const event_arguments &ev_args, const std::shared_ptr<BindingContext> &ctx) {
@@ -424,22 +442,24 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			time_loop->get_clock()->get_time(), params);
 	}};
 
-	binding_func_t attack_move_event{[simulation, time_loop, camera, send_guest_command, guest_world](
+	binding_func_t hunter_route_event{[simulation, time_loop, camera, send_guest_command, guest_world](
 		const event_arguments &args, const std::shared_ptr<Controller> controller) {
-		if (not controller->is_attack_move_active()) {
+		const bool patrol = controller->is_patrol_active();
+		if (not patrol and not controller->is_attack_move_active()) {
 			return;
 		}
-		controller->cancel_attack_move();
+		controller->cancel_hunter_targeting();
 		if (guest_world and guest_world().has_value()) {
 			if (send_guest_command) {
 				send_guest_command(network::CommandIntent{
-					0, network::CommandKind::ATTACK_MOVE,
+					0, patrol ? network::CommandKind::PATROL : network::CommandKind::ATTACK_MOVE,
 					controller->get_selected(), args.mouse.to_phys3(camera)});
 			}
 			return;
 		}
 		event::EventHandler::param_map::map_t params{
-			{"type", gamestate::component::command::command_t::ATTACK_MOVE},
+			{"type", patrol ? gamestate::component::command::command_t::PATROL
+			                : gamestate::component::command::command_t::ATTACK_MOVE},
 			{"target", args.mouse.to_phys3(camera)},
 			{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
 			{"entity_ids", controller->get_selected()},
@@ -449,6 +469,32 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			simulation->get_game()->get_state(),
 			time_loop->get_clock()->get_time(), params);
 	}};
+
+	auto set_stance = [simulation, time_loop, send_guest_command, guest_world](
+		const std::shared_ptr<Controller> &controller, gamestate::HunterStance stance) {
+		if (not controller->is_hunter_selection()) {
+			return;
+		}
+		if (guest_world and guest_world().has_value()) {
+			if (send_guest_command) {
+				network::CommandIntent intent{
+					0, network::CommandKind::SET_STANCE, controller->get_selected()};
+				intent.stance = stance;
+				send_guest_command(std::move(intent));
+			}
+			return;
+		}
+		event::EventHandler::param_map::map_t params{
+			{"type", gamestate::component::command::command_t::SET_STANCE},
+			{"stance", stance},
+			{"owner", static_cast<gamestate::player_id_t>(controller->get_controlled())},
+			{"entity_ids", controller->get_selected()},
+		};
+		simulation->get_event_loop()->submit_event(
+			"game.send_command", simulation->get_commander(),
+			simulation->get_game()->get_state(),
+			time_loop->get_clock()->get_time(), params);
+	};
 
 	auto fvd = simulation->get_game()->get_state()->get_fvd();
 	if (fvd) {
@@ -473,15 +519,33 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		binding_func_t cancel_placement{[](const event_arguments &,
 		                                  const std::shared_ptr<Controller> controller) {
 			controller->cancel_tower_placement();
-			controller->cancel_attack_move();
+			controller->cancel_hunter_targeting();
 		}};
 		binding_func_t start_attack_move{[](const event_arguments &,
 		                                    const std::shared_ptr<Controller> controller) {
 			controller->begin_attack_move();
 		}};
+		binding_func_t start_patrol{[](const event_arguments &,
+		                               const std::shared_ptr<Controller> controller) {
+			controller->begin_patrol();
+		}};
 		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_A,
 		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
 		          binding_action{forward_action_t::CLEAR, start_attack_move});
+		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_P,
+		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+		          binding_action{forward_action_t::CLEAR, start_patrol});
+		for (auto [key, stance] : {std::pair{Qt::Key_Z, gamestate::HunterStance::AGGRESSIVE},
+		                           std::pair{Qt::Key_X, gamestate::HunterStance::DEFENSIVE},
+		                           std::pair{Qt::Key_C, gamestate::HunterStance::OBSERVE}}) {
+			binding_func_t choose_stance{[set_stance, stance](const event_arguments &,
+			                                                  const std::shared_ptr<Controller> controller) {
+				set_stance(controller, stance);
+			}};
+			ctx->bind(Event{event_class::KEYBOARD, key,
+			                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+			          binding_action{forward_action_t::CLEAR, choose_stance});
+		}
 		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_B,
 		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
 		          binding_action{forward_action_t::CLEAR, start_placement});
@@ -512,8 +576,8 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			controller->cancel_tower_placement();
 			return;
 		}
-		if (controller->is_attack_move_active()) {
-			controller->cancel_attack_move();
+		if (controller->is_attack_move_active() or controller->is_patrol_active()) {
+			controller->cancel_hunter_targeting();
 			return;
 		}
 		auto mouse_pos = args.mouse.to_phys3(camera);
@@ -633,7 +697,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 	          init_drag_selection_action);
 
 	binding_func_t drag_selection{
-		[simulation, time_loop, camera, pick_entity, create_entity_event, attack_move_event,
+		[simulation, time_loop, camera, pick_entity, create_entity_event, hunter_route_event,
 		 send_guest_command, guest_world](const event_arguments &args,
 	        const std::shared_ptr<Controller> controller) {
 			const bool shift = (args.e.mod_code & Qt::ShiftModifier) != 0;
@@ -693,9 +757,9 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				create_entity_event(args, controller);
 				return;
 			}
-			if (controller->is_attack_move_active()) {
+			if (controller->is_attack_move_active() or controller->is_patrol_active()) {
 				controller->reset_drag_select();
-				attack_move_event(args, controller);
+				hunter_route_event(args, controller);
 				return;
 			}
 			auto selection_generation = controller->begin_selection_update();

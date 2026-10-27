@@ -2177,4 +2177,165 @@ void fvd_retask_foundation() {
 	TESTEQUALS(foundations().contains(coord::tile{39, 66}), true);
 	TESTEQUALS(foundations().contains(coord::tile{36, 66}), true);
 }
+
+void fvd_hunter_stances() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto spawn = [&](player_id_t owner, const char *definition, coord::phys3 position) {
+		return entities->spawn_game_entity(
+			loop, state, owner, std::string{"fvd.data.entities."} + definition, position, at(0));
+	};
+	auto position_of = [&](const std::shared_ptr<GameEntity> &entity, double seconds) {
+		return std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION))->get_positions().get(at(seconds));
+	};
+	auto health_of = [&](const std::shared_ptr<GameEntity> &entity, double seconds) {
+		return std::dynamic_pointer_cast<component::Live>(
+			entity->get_component(component::component_t::LIVE))
+		    ->get_attribute(at(seconds), "fvd.data.entities.Health")->get(at(seconds));
+	};
+	auto has_order = [&](const std::shared_ptr<GameEntity> &horse) {
+		const auto orders = fvd->get_attack_order_state();
+		return std::any_of(orders.begin(), orders.end(), [&](const auto &order) {
+			return order.horse_id == horse->get_id();
+		});
+	};
+
+	// Separate the scenarios so that no sight radius or chase overlaps another.
+	auto observer = spawn(1, "Horse", {12, 12, 0});
+	auto observed = spawn(2, "Builder", {14, 12, 0});
+	auto aggressor = spawn(1, "Horse", {30, 12, 0});
+	auto prey = spawn(2, "Builder", {37, 12, 0});
+	auto far_sighted = spawn(1, "Horse", {30, 30, 0});
+	auto distant = spawn(2, "Builder", {39, 30, 0});
+	auto guard = spawn(1, "Horse", {12, 40, 0});
+	auto outside = spawn(2, "Builder", {17, 40, 0});
+	auto leashed = spawn(1, "Horse", {12, 90, 0});
+	auto runner = spawn(2, "Builder", {15, 90, 0});
+	auto arriving = spawn(1, "Horse", {80, 12, 0});
+	auto awaited = spawn(2, "Builder", {90, 12, 0});
+	auto arriving_observer = spawn(1, "Horse", {80, 40, 0});
+	auto unnoticed = spawn(2, "Builder", {90, 40, 0});
+	auto patroller = spawn(1, "Horse", {100, 100, 0});
+	auto ambusher = spawn(1, "Horse", {100, 120, 0});
+	auto ambushed = spawn(2, "Builder", {103, 122, 0});
+
+	// Every horse starts in Observe, and only the Hunter may change a
+	// stance for a complete, valid selection of its own horses.
+	fvd->get_hunter_stance(aggressor->get_id()) == HunterStance::OBSERVE or TESTFAIL;
+	TESTEQUALS(fvd->set_hunter_stance(
+		state, 2, {aggressor->get_id()}, HunterStance::AGGRESSIVE, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_stance(
+		state, 1, {aggressor->get_id(), prey->get_id()}, HunterStance::AGGRESSIVE, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_stance(
+		state, 1, {aggressor->get_id(), aggressor->get_id()}, HunterStance::AGGRESSIVE, at(0)), false);
+	fvd->get_hunter_stance(aggressor->get_id()) == HunterStance::OBSERVE or TESTFAIL;
+	TESTEQUALS(fvd->set_hunter_stance(
+		state, 1, {aggressor->get_id(), far_sighted->get_id(), arriving->get_id()},
+		HunterStance::AGGRESSIVE, at(0)), true);
+	fvd->get_hunter_stance(far_sighted->get_id()) == HunterStance::AGGRESSIVE or TESTFAIL;
+	TESTEQUALS(fvd->set_hunter_stance(
+		state, 1, {guard->get_id(), leashed->get_id()}, HunterStance::DEFENSIVE, at(0)), true);
+
+	// An arrived AttackMove continues under a non-Observe stance, but keeps
+	// its short alert radius under Observe.
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {arriving->get_id()}, {83, 12, 0}, at(0)), true);
+	TESTEQUALS(fvd->issue_attack_move(
+		state, 1, {arriving_observer->get_id()}, {83, 40, 0}, at(0)), true);
+
+	// Patrol accepts only a valid Hunter order for reachable map positions.
+	TESTEQUALS(fvd->issue_patrol(state, 2, {patroller->get_id()}, {106, 100, 0}, at(0)), false);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {patroller->get_id()}, {200, 100, 0}, at(0)), false);
+	TESTEQUALS(fvd->issue_patrol(
+		state, 1, {patroller->get_id(), observed->get_id()}, {106, 100, 0}, at(0)), false);
+	TESTEQUALS(has_order(patroller), false);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {patroller->get_id()}, {106, 100, 0}, at(0)), true);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {ambusher->get_id()}, {106, 120, 0}, at(0)), true);
+
+	// Drive the authoritative 0.2-second combat tick and track each loop.
+	double now = 0;
+	double leashed_furthest = 0;
+	bool patrol_out = false;
+	bool patrol_back = false;
+	bool patrol_out_again = false;
+	bool ambush_resumed = false;
+	auto run_until = [&](double until) {
+		while (now + 0.1 < until) {
+			now += 0.2;
+			loop->reach_time(at(now), state);
+			fvd->combat_tick(state, at(now));
+			leashed_furthest = std::max(
+				leashed_furthest, (position_of(leashed, now) - coord::phys3{12, 90, 0}).length());
+			const auto patrol_ne = position_of(patroller, now).ne.to_double();
+			patrol_out = patrol_out or patrol_ne >= 105.8;
+			patrol_back = patrol_back or (patrol_out and patrol_ne <= 100.2);
+			patrol_out_again = patrol_out_again or (patrol_back and patrol_ne >= 102.0);
+			ambush_resumed = ambush_resumed
+			              or (not state->get_game_entities().contains(ambushed->get_id())
+			                  and position_of(ambusher, now).ne.to_double() >= 105.8);
+		}
+	};
+
+	run_until(1.0);
+	// Observe never starts a fight, even with an enemy two tiles away.
+	TESTEQUALS(has_order(observer), false);
+	TESTEQUALS(health_of(observed, now), int64_t{25});
+	// Aggressive sees seven tiles away and closes in; nine is out of sight.
+	TESTEQUALS(has_order(aggressor), true);
+	TESTEQUALS(position_of(aggressor, now).ne.to_double() > 30.0, true);
+	TESTEQUALS(has_order(far_sighted), false);
+	TESTEQUALS(position_of(far_sighted, now) == (coord::phys3{30, 30, 0}), true);
+	// Defensive ignores an enemy just beyond its firing range.
+	TESTEQUALS(has_order(guard), false);
+	TESTEQUALS(position_of(guard, now) == (coord::phys3{12, 40, 0}), true);
+	TESTEQUALS(has_order(leashed), true);
+
+	// Once struck, the Defensive horse's target flees beyond its leash.
+	TESTEQUALS(health_of(runner, now) < 25, true);
+	system::Move::move_default(runner, state, {32, 90, 0}, at(now));
+
+	run_until(4.0);
+	const auto prey_hp = health_of(prey, now);
+	TESTEQUALS(prey_hp < 25, true);
+	// Switching to Observe ends the stance's engagement before its next hit.
+	TESTEQUALS(fvd->set_hunter_stance(
+		state, 1, {aggressor->get_id()}, HunterStance::OBSERVE, at(now)), true);
+	TESTEQUALS(has_order(aggressor), false);
+
+	run_until(10.0);
+	TESTEQUALS(health_of(prey, now), prey_hp);
+	TESTEQUALS(has_order(aggressor), false);
+	// The leashed horse chased, gave up and returned to its post, idle.
+	TESTEQUALS(leashed_furthest > 0.25, true);
+	TESTEQUALS((position_of(leashed, now) - coord::phys3{12, 90, 0}).length() < 0.2, true);
+	TESTEQUALS(has_order(leashed), false);
+	TESTEQUALS(state->get_game_entities().contains(runner->get_id()), true);
+	// The arrived Aggressive horse found an enemy seven tiles from its
+	// destination; the Observe horse kept waiting at its own.
+	TESTEQUALS(health_of(awaited, now) < 25, true);
+	TESTEQUALS(health_of(unnoticed, now), int64_t{25});
+	TESTEQUALS(has_order(arriving_observer), true);
+	TESTEQUALS((position_of(arriving_observer, now) - coord::phys3{83, 40, 0}).length() < 0.2, true);
+	// Patrol loops between its start and the clicked point.
+	TESTEQUALS(patrol_out and patrol_back and patrol_out_again, true);
+	TESTEQUALS(has_order(patroller), true);
+
+	// A patrolling horse fights an enemy beside its route, then resumes.
+	run_until(16.0);
+	TESTEQUALS(state->get_game_entities().contains(ambushed->get_id()), false);
+	TESTEQUALS(ambush_resumed, true);
+	TESTEQUALS(has_order(ambusher), true);
+}
 }

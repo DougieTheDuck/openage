@@ -1409,6 +1409,19 @@ std::optional<entity_id_t> FVD::completed_tower_at(
 bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
                             player_id_t owner, const std::vector<entity_id_t> &ids,
                             const coord::phys3 &destination, const time::time_t &time) {
+	return this->issue_hunter_route(state, owner, ids, destination, false, time);
+}
+
+bool FVD::issue_patrol(const std::shared_ptr<GameState> &state,
+                       player_id_t owner, const std::vector<entity_id_t> &ids,
+                       const coord::phys3 &destination, const time::time_t &time) {
+	return this->issue_hunter_route(state, owner, ids, destination, true, time);
+}
+
+bool FVD::issue_hunter_route(const std::shared_ptr<GameState> &state,
+                             player_id_t owner, const std::vector<entity_id_t> &ids,
+                             const coord::phys3 &destination, bool patrol,
+                             const time::time_t &time) {
 	if (owner != 1 or destination.ne < 0 or destination.se < 0
 	    or destination.ne >= this->map_size or destination.se >= this->map_size
 	    or destination.up != 0) {
@@ -1419,9 +1432,10 @@ bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
 		return false;
 	}
 	// Clicking a blocked tower footprint is an attack, not an
-	// unreachable movement destination.
+	// unreachable movement destination. A patrol could never reach it.
 	if (auto tower = this->completed_tower_at(state, destination.to_tile())) {
-		return this->issue_focus_attack(state, owner, *survivors, *tower, time);
+		return not patrol
+		   and this->issue_focus_attack(state, owner, *survivors, *tower, time);
 	}
 	auto pathfinder = state->get_map()->get_pathfinder();
 	auto grid = state->get_map()->get_grid_id("fvd.data.terrain.Land");
@@ -1452,8 +1466,12 @@ bool FVD::issue_attack_move(const std::shared_ptr<GameState> &state,
 		}
 		activity->init(time);
 		entity->get_manager()->run_activity_system(time);
-		this->attack_orders.insert_or_assign(
-			id, AttackOrder{destination, std::nullopt, time});
+		AttackOrder order{destination, std::nullopt, time};
+		if (patrol) {
+			order.patrol_return = std::dynamic_pointer_cast<component::Position>(
+				entity->get_component(component::component_t::POSITION))->get_positions().get(time);
+		}
+		this->attack_orders.insert_or_assign(id, order);
 		system::Move::move_default(entity, state, destination, time);
 	}
 	return true;

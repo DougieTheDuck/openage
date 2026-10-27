@@ -17,9 +17,12 @@ constexpr size_t COMMAND_PREFIX_SIZE = 16;
 constexpr uint16_t COMMAND_HAS_TARGET_ENTITY = 1 << 0;
 constexpr uint16_t COMMAND_APPEND_BUILD = 1 << 1;
 constexpr uint16_t COMMAND_HAS_BUILD_LINE = 1 << 2;
+constexpr uint16_t COMMAND_HAS_STANCE = 1 << 3;
 constexpr uint16_t PLAYER_CONNECTED = 1 << 0;
 constexpr uint16_t ENTITY_HAS_HEALTH = 1 << 0;
 constexpr uint16_t ENTITY_HAS_TOWER_KILLS = 1 << 1;
+constexpr uint16_t ENTITY_HAS_HUNTER_STANCE = 1 << 2;
+constexpr const char *HORSE_DEFINITION = "fvd.data.entities.Horse";
 constexpr uint16_t ATTACK_HAS_TARGET = 1 << 0;
 constexpr uint16_t ATTACK_REACHED_DESTINATION = 1 << 1;
 constexpr uint16_t ATTACK_FOCUS_TARGET = 1 << 2;
@@ -97,7 +100,11 @@ private:
 
 bool is_known_command_kind(uint16_t value) {
 	return value >= static_cast<uint16_t>(CommandKind::MOVE)
-	    && value <= static_cast<uint16_t>(CommandKind::PRIORITIZE_FOUNDATION);
+	    && value <= static_cast<uint16_t>(CommandKind::PATROL);
+}
+
+bool is_known_hunter_stance(uint16_t value) {
+	return value <= static_cast<uint16_t>(gamestate::HunterStance::DEFENSIVE);
 }
 
 bool is_known_command_status(uint16_t value) {
@@ -385,13 +392,19 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 	         or intent.build_line.front() != intent.target)) {
 		throw Error{MSG(err) << "Invalid ordered FVD tower construction line"};
 	}
+	if ((intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()
+	    or (intent.stance
+	        and not is_known_hunter_stance(static_cast<uint16_t>(*intent.stance)))) {
+		throw Error{MSG(err) << "FVD stance command requires exactly one known stance"};
+	}
 	std::vector<uint8_t> output{};
 	output.reserve(COMMAND_PREFIX_SIZE + intent.entity_ids.size() * sizeof(uint64_t) + 32);
 	append_u64(output, intent.command_id);
 	append_u16(output, static_cast<uint16_t>(intent.kind));
 	const auto flags = (intent.target_entity ? COMMAND_HAS_TARGET_ENTITY : 0)
 	                 | (intent.queue ? COMMAND_APPEND_BUILD : 0)
-	                 | (intent.build_line.empty() ? 0 : COMMAND_HAS_BUILD_LINE);
+	                 | (intent.build_line.empty() ? 0 : COMMAND_HAS_BUILD_LINE)
+	                 | (intent.stance ? COMMAND_HAS_STANCE : 0);
 	append_u16(output, flags);
 	append_u32(output, static_cast<uint32_t>(intent.entity_ids.size()));
 	for (auto entity_id : intent.entity_ids) {
@@ -407,6 +420,9 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 			append_position(output, site);
 		}
 	}
+	if (intent.stance) {
+		append_u16(output, static_cast<uint16_t>(*intent.stance));
+	}
 	return output;
 }
 
@@ -420,7 +436,8 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 	}
 	intent.kind = static_cast<CommandKind>(kind);
 	const auto flags = reader.u16();
-	if (flags & ~(COMMAND_HAS_TARGET_ENTITY | COMMAND_APPEND_BUILD | COMMAND_HAS_BUILD_LINE)) {
+	if (flags & ~(COMMAND_HAS_TARGET_ENTITY | COMMAND_APPEND_BUILD | COMMAND_HAS_BUILD_LINE
+	              | COMMAND_HAS_STANCE)) {
 		throw Error{MSG(err) << "Unsupported FVD command payload flags"};
 	}
 	intent.queue = (flags & COMMAND_APPEND_BUILD) != 0;
@@ -447,12 +464,20 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 			intent.build_line.push_back(read_position(reader));
 		}
 	}
+	if (flags & COMMAND_HAS_STANCE) {
+		const auto stance = reader.u16();
+		if (not is_known_hunter_stance(stance)) {
+			throw Error{MSG(err) << "Unknown FVD Hunter stance " << stance};
+		}
+		intent.stance = static_cast<gamestate::HunterStance>(stance);
+	}
 	if ((intent.kind == CommandKind::FOCUS_ATTACK
 	     or intent.kind == CommandKind::PRIORITIZE_FOUNDATION) != intent.target_entity.has_value()
 	    or (intent.queue and intent.kind != CommandKind::BUILD_TOWER)
 	    or (not intent.build_line.empty()
 	        and (intent.kind != CommandKind::BUILD_TOWER or not intent.queue
-	             or intent.build_line.front() != intent.target))) {
+	             or intent.build_line.front() != intent.target))
+	    or (intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()) {
 		throw Error{MSG(err) << "Invalid FVD targeted/queued command payload"};
 	}
 	reader.finish();
@@ -553,13 +578,21 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 		         or entity.definition != "fvd.data.entities.Tower")) {
 			throw Error{MSG(err) << "FVD tower kills may only be sent to their owner"};
 		}
+		if (entity.hunter_stance
+		    and (entity.owner_id != state.local_player_id
+		         or entity.definition != HORSE_DEFINITION
+		         or not is_known_hunter_stance(static_cast<uint16_t>(*entity.hunter_stance)))) {
+			throw Error{MSG(err) << "FVD Hunter stances may only be sent to their owner"};
+		}
 		append_u64(output, entity.entity_id);
 		append_u64(output, entity.owner_id);
 		append_string(output, entity.definition, MAX_ENTITY_DEFINITION_SIZE);
 		append_position(output, entity.position);
 		append_u16(output, (entity.health ? ENTITY_HAS_HEALTH : 0)
-		                   | (entity.tower_kills ? ENTITY_HAS_TOWER_KILLS : 0));
-		append_u16(output, 0);
+		                   | (entity.tower_kills ? ENTITY_HAS_TOWER_KILLS : 0)
+		                   | (entity.hunter_stance ? ENTITY_HAS_HUNTER_STANCE : 0));
+		append_u16(output, static_cast<uint16_t>(
+			entity.hunter_stance.value_or(gamestate::HunterStance::OBSERVE)));
 		append_i64(output, entity.health.value_or(0));
 		append_i64(output, entity.maximum_health.value_or(0));
 		append_u64(output, entity.tower_kills.value_or(0));
@@ -717,14 +750,22 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		}
 		auto position = read_position(reader);
 		auto flags = reader.u16();
-		if ((flags & ~(ENTITY_HAS_HEALTH | ENTITY_HAS_TOWER_KILLS)) != 0
-		    or reader.u16() != 0) {
+		const auto hunter_stance = reader.u16();
+		if ((flags & ~(ENTITY_HAS_HEALTH | ENTITY_HAS_TOWER_KILLS | ENTITY_HAS_HUNTER_STANCE)) != 0
+		    or ((flags & ENTITY_HAS_HUNTER_STANCE) == 0 and hunter_stance != 0)) {
 			throw Error{MSG(err) << "Unsupported FVD entity state flags"};
 		}
 		auto health = reader.i64();
 		auto maximum_health = reader.i64();
 		auto tower_kills = reader.u64();
 		EntityState entity{entity_id, owner_id, std::move(definition), position};
+		if ((flags & ENTITY_HAS_HUNTER_STANCE) != 0) {
+			if (owner_id != state.local_player_id or entity.definition != HORSE_DEFINITION
+			    or not is_known_hunter_stance(hunter_stance)) {
+				throw Error{MSG(err) << "FVD Hunter stances belong only to the recipient"};
+			}
+			entity.hunter_stance = static_cast<gamestate::HunterStance>(hunter_stance);
+		}
 		if ((flags & ENTITY_HAS_TOWER_KILLS) != 0) {
 			if (owner_id != state.local_player_id
 			    or entity.definition != "fvd.data.entities.Tower") {

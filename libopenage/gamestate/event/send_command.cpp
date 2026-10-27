@@ -166,10 +166,23 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			}
 			return;
 		}
-		if (command_type == component::command::command_t::ATTACK_MOVE) {
-			bool accepted = params.check_type<coord::phys3>("target")
-			             and fvd->issue_attack_move(gstate, owner, ids,
-			                 params.get("target", coord::phys3{0, 0, 0}), time);
+		if (command_type == component::command::command_t::ATTACK_MOVE
+		    or command_type == component::command::command_t::PATROL) {
+			const auto destination = params.get("target", coord::phys3{0, 0, 0});
+			const bool accepted = params.check_type<coord::phys3>("target")
+			                  and (command_type == component::command::command_t::PATROL
+			                           ? fvd->issue_patrol(gstate, owner, ids, destination, time)
+			                           : fvd->issue_attack_move(gstate, owner, ids, destination, time));
+			if (result_cb) {
+				result_cb(accepted);
+			}
+			return;
+		}
+		if (command_type == component::command::command_t::SET_STANCE) {
+			const bool accepted = params.check_type<HunterStance>("stance")
+			                  and fvd->set_hunter_stance(
+				                  gstate, owner, ids,
+				                  params.get("stance", HunterStance::OBSERVE), time);
 			if (result_cb) {
 				result_cb(accepted);
 			}
