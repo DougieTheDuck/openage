@@ -392,6 +392,9 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 	         or intent.build_line.front() != intent.target)) {
 		throw Error{MSG(err) << "Invalid ordered FVD tower construction line"};
 	}
+	if (intent.kind == CommandKind::DEMOLISH_TOWER and intent.entity_ids.size() != 1) {
+		throw Error{MSG(err) << "FVD demolition requires exactly one tower entity"};
+	}
 	if ((intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()
 	    or (intent.stance
 	        and not is_known_hunter_stance(static_cast<uint16_t>(*intent.stance)))) {
@@ -477,7 +480,8 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 	    or (not intent.build_line.empty()
 	        and (intent.kind != CommandKind::BUILD_TOWER or not intent.queue
 	             or intent.build_line.front() != intent.target))
-	    or (intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()) {
+	    or (intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()
+	    or (intent.kind == CommandKind::DEMOLISH_TOWER and intent.entity_ids.size() != 1)) {
 		throw Error{MSG(err) << "Invalid FVD targeted/queued command payload"};
 	}
 	reader.finish();
