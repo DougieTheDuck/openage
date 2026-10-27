@@ -28,7 +28,7 @@ Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
 `bin/run test openage::gamestate::tests::fvd_animation_phase`,
 `bin/run test openage::network::tests::messages` and
 `bin/run test openage::network::tests::world_delta`.
-Multiplayer protocol v14 requires both clients and the relay to be rebuilt.
+Multiplayer protocol v15 adds Builder tower demolition commands; all participating clients and the relay must use compatible builds.
 
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
