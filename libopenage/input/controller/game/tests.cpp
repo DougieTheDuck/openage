@@ -86,7 +86,23 @@ void tower_placement_mode() {
 	TESTEQUALS(controller.is_patrol_active(), false);
 	controller.set_selected({101, 102, 103}, SelectionKind::GROUP_HORSES);
 	TESTEQUALS(controller.begin_attack_move(), true);
+	// HUD buttons and shortcuts use one validated stance command path.
+	int stance_commands = 0;
+	auto last_stance = gamestate::HunterStance::OBSERVE;
+	controller.set_hunter_stance_action([&](gamestate::HunterStance stance) {
+		++stance_commands;
+		last_stance = stance;
+	});
+	TESTEQUALS(controller.issue_hunter_stance(gamestate::HunterStance::AGGRESSIVE), true);
+	TESTEQUALS(stance_commands, 1);
+	TESTEQUALS(last_stance == gamestate::HunterStance::AGGRESSIVE, true);
+	TESTEQUALS(controller.issue_hunter_stance(gamestate::HunterStance::DEFENSIVE), true);
+	TESTEQUALS(controller.issue_hunter_stance(gamestate::HunterStance::OBSERVE), true);
+	TESTEQUALS(stance_commands, 3);
+	TESTEQUALS(last_stance == gamestate::HunterStance::OBSERVE, true);
 	controller.set_control(2);
+	TESTEQUALS(controller.issue_hunter_stance(gamestate::HunterStance::AGGRESSIVE), false);
+	TESTEQUALS(stance_commands, 3);
 	TESTEQUALS(controller.is_attack_move_active(), false);
 	TESTEQUALS(controller.begin_attack_move(), false);
 	TESTEQUALS(controller.begin_patrol(), false);
