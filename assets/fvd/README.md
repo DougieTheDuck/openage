@@ -137,7 +137,7 @@ Press **F9** before the first Hunter appears to spawn it immediately and continu
 This debug shortcut runs only on the local or host simulation; guests cannot trigger it.
 Drag with the left mouse button to select your Builder and right-click to move it.
 The lower-left HUD displays the controlled player and selected entity.
-Selecting a tower shows its live HP and its damage and armour fields instead of a build action.
+Selecting a tower shows its live HP and its damage and armour fields instead of a build action. As a Builder, select one of your own completed or in-progress towers and press **Delete** to demolish it immediately. The host validates ownership, removes the tower for all players and restores its pathfinding footprint. Demolishing an in-progress tower cancels that Builder's current construction queue without leaving a replacement foundation; existing lifetime tower kills remain credited.
 Tower damage and armour read the configured gameplay values, currently 2 arrow damage and 1 armour.
 Only a selected Builder can enter tower placement mode, using the B key or Build Tower HUD button.
 Select a Builder, click **Build Tower** (or press **B**) and move the cursor to see a footprint preview (green for available, red for occupied, reserved or out of bounds).
