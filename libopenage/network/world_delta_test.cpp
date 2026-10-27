@@ -426,6 +426,8 @@ void world_delta() {
 	attacking.world_revision = 4;
 	attacking.simulation_time = time::time_t::from_int(2);
 	attacking.entities.front().position = {3, 2, 0};
+	attacking.entities.front().motion_keys.erase(
+		attacking.entities.front().motion_keys.begin());
 	attacking.entities.front().animation_action = gamestate::AnimationAction::ATTACK;
 	attacking.entities.front().animation_started_at = time::time_t::from_int(2);
 	auto attack_delta = animation_host.advance(attacking);
@@ -441,6 +443,7 @@ void world_delta() {
 	auto next_volley = attacking;
 	next_volley.world_revision = 5;
 	next_volley.simulation_time = time::time_t::from_double(2.6);
+	next_volley.entities.front().position = {3.6, 2, 0};
 	next_volley.entities.front().animation_started_at = time::time_t::from_double(2.6);
 	auto volley_delta = animation_host.advance(next_volley);
 	TESTEQUALS(volley_delta.changed.entities.size(), size_t{1});
@@ -456,6 +459,7 @@ void world_delta() {
 	auto after_volley = next_volley;
 	after_volley.world_revision = 6;
 	after_volley.simulation_time = time::time_t::from_double(2.7);
+	after_volley.entities.front().position = {3.7, 2, 0};
 	auto no_volley_change = volley_recovery.advance(after_volley);
 	TESTEQUALS(no_volley_change.changed.entities.empty(), true);
 	auto after_volley_guest = apply_world_delta(next_volley, no_volley_change);
@@ -464,6 +468,8 @@ void world_delta() {
 	auto idle_again = next_volley;
 	idle_again.world_revision = 7;
 	idle_again.simulation_time = time::time_t::from_int(3);
+	idle_again.entities.front().position = {4, 2, 0};
+	idle_again.entities.front().motion_keys.clear();
 	idle_again.entities.front().animation_action = gamestate::AnimationAction::IDLE;
 	idle_again.entities.front().animation_started_at = time::time_t::from_int(3);
 	auto idle_delta = animation_host.advance(idle_again);

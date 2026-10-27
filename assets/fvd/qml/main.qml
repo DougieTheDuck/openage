@@ -320,9 +320,7 @@ Item {
 		anchors.left: parent.left
 		anchors.bottom: parent.bottom
 		width: 284
-		// Account for every laid-out child, including actions shown after
-		// selection/targeting mode changes.
-		height: Math.max(panelContent.implicitHeight, panelContent.childrenRect.height) + 24
+		height: panelContent.implicitHeight + 24
 		radius: 6
 		color: "#ee182824"
 		border.width: 1
