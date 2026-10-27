@@ -17,7 +17,6 @@ public:
 	enum class Action {
 		NONE,
 		PRIMARY,
-		ATTACK_MOVE,
 		PATROL,
 		CANCEL,
 		AGGRESSIVE,
