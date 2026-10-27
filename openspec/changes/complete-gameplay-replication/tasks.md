@@ -37,6 +37,9 @@
   - [ ] 1.4c Validate frame-by-frame parity, proper direction mapping, 2/4/8
     process animation changes and animation/resource budget on real hardware;
     extend to Horse-specific artwork, attacks, building and death.
+    Additional automated regression: consecutive ATTACK volleys with an
+    unchanged action ID must carry their new start timestamp through a
+    delta and preserve it after recovery. **Test authored, not run here.**
 - [x] 1.5a Retain uniquely identified arrow launches for a bounded
   3-second post-impact history; deliver them in normal recipient deltas
   even when the 0.2-second flight ends between captures. Guests dedupe
@@ -79,7 +82,9 @@
     authoritative snapshot. Verify no visual-event loss on an intact
     stream, no duplicate presentation, no speculative HP changes, and
     correct cancellation, impact and death behavior on 2/4/8 actual
-    clients (including Windows/Linux). Expired cosmetic projectiles need
+    clients (including Windows/Linux). An asset-backed Hunter regression
+    now schedules a hit, replaces the order before impact, and checks
+    that no HP loss occurs. **Test authored, not run here.** Expired cosmetic projectiles need
     not be replayed after reconnect; health, entities and orders must
     recover correctly. The 65,536 unsent-record memory guard currently
     fails explicitly on extreme stalls rather than silently discarding
@@ -132,3 +137,17 @@
   orders, construction states and private scores already have wire records.
 - Network state still uses one recipient-oriented world capture at a time.
   Ensure update cadence and performance do not deteriorate with players.
+
+## Verification evidence / next run
+
+The [FVD prototype verification matrix](../../../doc/code/network/FVD_PROTOTYPE_VERIFICATION.md)
+maps every outstanding OpenSpec acceptance item to its existing or new
+automated test and the remaining real-client manual checks.
+
+**2026-10-28:** Source and registration checks were reviewed. Two more
+automated regressions were added (same-action Hunter animation phase restart,
+and cancel-after-launch/no-authoritative-damage). This review environment
+cannot download/compile the whole engine or run its asset-backed tests.
+**No previously unexecuted test is marked as passed by this review.**
+The last reported Linux result was 82/86 before follow-up fixes, not
+a current verified pass rate.
