@@ -532,9 +532,38 @@ void fvd_scenario() {
 	auto selection_edge = Eigen::Vector2f{selection_clip.x(), selection_clip.y()};
 	selector.invoke(*loop, nullptr, state, time::TIME_ZERO,
 	                {{"controlled", size_t{2}},
-	                 {"drag_start", selection_edge},
-	                 {"drag_end", selection_edge + Eigen::Vector2f{0.1f, 0.1f}},
+	                 {"drag_start", selection_edge - Eigen::Vector2f{0.05f, 0.05f}},
+	                 {"drag_end", selection_edge + Eigen::Vector2f{0.05f, 0.05f}},
 	                 {"camera_matrix", selection_matrix},
+	                 {"select_cb", std::function<void(const std::vector<entity_id_t>)>{
+	                                   [&](const std::vector<entity_id_t> ids) {
+		                                   selection = ids;
+	                                   }}}});
+	TESTEQUALS(selection.size(), size_t{1});
+	TESTEQUALS(selection.front(), builders[2]);
+	// Even when the cursor ends exactly on the projected unit,
+	// rounding must not sporadically exclude it.
+	selector.invoke(*loop, nullptr, state, time::TIME_ZERO,
+	                {{"controlled", size_t{2}},
+	                 {"drag_start", selection_edge},
+	                 {"drag_end", selection_edge + Eigen::Vector2f{0.05f, 0.05f}},
+	                 {"camera_matrix", selection_matrix},
+	                 {"select_cb", std::function<void(const std::vector<entity_id_t>)>{
+	                                   [&](const std::vector<entity_id_t> ids) {
+		                                   selection = ids;
+	                                   }}}});
+	TESTEQUALS(selection.size(), size_t{1});
+	TESTEQUALS(selection.front(), builders[2]);
+	// Perspective camera: clip coordinates must be divided by w to
+	// match the NDC bounds supplied by the input controller.
+	Eigen::Matrix4f perspective_matrix = selection_matrix;
+	perspective_matrix(3, 3) = 2.0f;
+	const Eigen::Vector2f ndc_position = selection_edge / 2.0f;
+	selector.invoke(*loop, nullptr, state, time::TIME_ZERO,
+	                {{"controlled", size_t{2}},
+	                 {"drag_start", ndc_position - Eigen::Vector2f{0.05f, 0.05f}},
+	                 {"drag_end", ndc_position + Eigen::Vector2f{0.05f, 0.05f}},
+	                 {"camera_matrix", perspective_matrix},
 	                 {"select_cb", std::function<void(const std::vector<entity_id_t>)>{
 	                                   [&](const std::vector<entity_id_t> ids) {
 		                                   selection = ids;
@@ -1174,7 +1203,12 @@ void fvd_hunter_combat() {
 	horse_shot != projectiles.end() or TESTFAIL;
 	TESTEQUALS(horse_shot->target_id, tower);
 	TESTEQUALS(horse_shot->launch_time, at(33));
-	TESTEQUALS(horse_shot->impact_time, at(33.45));
+	// The cooldown is quantized to fixed-point time *before* the
+	// 75% hit delay is calculated. Independently converting 33.45
+	// differs by a raw tick on some platforms.
+	const auto expected_hit_delay = time::time_t::from_double(
+		time::time_t::from_double(0.6).to_double() * 0.75);
+	TESTEQUALS(horse_shot->impact_time, at(33) + expected_hit_delay);
 	TESTEQUALS(std::any_of(projectiles.begin(), projectiles.end(),
 	                       [&](const auto &shot) { return shot.arrow_id == horse_shot->arrow_id
 	                              and shot.destination.up > coord::phys_t::from_int(0); }), true);
@@ -1451,21 +1485,26 @@ void fvd_hunter_attack_move_regressions() {
 	                  }}}});
 	TESTEQUALS(accepted, true);
 	// A-click directly on an occupied tower tile must not be rejected by
-	// ground pathfinding. Hunters should stop within four tiles to attack.
+	// ground pathfinding. Its centre is (68.5, 69.5), not (68, 69);
+	// test exactly four tiles away from the actual centre, not tile origin.
 	auto clicked_horse = entities->spawn_game_entity(
-		loop, state, 1, "fvd.data.entities.Horse", {64, 69, 0}, at(32));
+		loop, state, 1, "fvd.data.entities.Horse", {64.5, 69.5, 0}, at(32));
 	TESTEQUALS(fvd->issue_attack_move(
 		state, 1, {clicked_horse->get_id()}, {68, 69, 0}, at(32)), true);
 	auto clicked_pos = std::dynamic_pointer_cast<component::Position>(
 		clicked_horse->get_component(component::component_t::POSITION));
+	const auto actual_tower_centre = std::dynamic_pointer_cast<component::Position>(
+		tower_entity->get_component(component::component_t::POSITION))
+		->get_positions().get(at(32));
+	TESTEQUALS(actual_tower_centre, (coord::phys3{68.5, 69.5, 0}));
 	fvd->combat_tick(state, at(32));
 	TESTEQUALS(clicked_horse->get_animation_action(), AnimationAction::ATTACK);
-	TESTEQUALS(clicked_pos->get_positions().get(at(32.2)), (coord::phys3{64, 69, 0}));
+	TESTEQUALS(clicked_pos->get_positions().get(at(32.2)), (coord::phys3{64.5, 69.5, 0}));
 
 	// A missed sprite pick still produces a ground Move command. Clicking
 	// the tower's actual tile must resolve to the same ranged focus order.
 	auto missed_pick_horse = entities->spawn_game_entity(
-		loop, state, 1, "fvd.data.entities.Horse", {68, 65, 0}, at(34));
+		loop, state, 1, "fvd.data.entities.Horse", {68.5, 65.5, 0}, at(34));
 	bool clicked_accepted = false;
 	event::SendCommandHandler tower_click;
 	tower_click.invoke(*loop, nullptr, state, at(34),
@@ -1481,7 +1520,7 @@ void fvd_hunter_attack_move_regressions() {
 		missed_pick_horse->get_component(component::component_t::POSITION));
 	fvd->combat_tick(state, at(34));
 	TESTEQUALS(missed_pick_horse->get_animation_action(), AnimationAction::ATTACK);
-	TESTEQUALS(missed_pick_pos->get_positions().get(at(34.2)), (coord::phys3{68, 65, 0}));
+	TESTEQUALS(missed_pick_pos->get_positions().get(at(34.2)), (coord::phys3{68.5, 65.5, 0}));
 
 }
 

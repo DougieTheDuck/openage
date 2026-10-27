@@ -48,6 +48,14 @@ void comparison() {
 	const std::vector<int> different{1, 2, 4};
 	TESTEQUALS(actual, expected);
 	TESTEQUALS(actual, (std::vector<int>{1, 2, 3}));
+	// Member references from temporary containers must stay valid
+	// throughout each assertion (including its failure diagnostics).
+	TESTEQUALS((std::vector<int>{42}).front(), 42);
+	TESTNOTEQUALS((std::vector<int>{42}).front(), 41);
+	const auto temporary_member_message = failure_message([&]() {
+		TESTEQUALS((std::vector<int>{42}).front(), 41);
+	});
+	TESTEQUALS(temporary_member_message.find("Expected 42 and 41") != std::string::npos, true);
 	TESTNOTEQUALS(actual, different);
 	const auto vector_message = failure_message([&]() { TESTEQUALS(actual, different); });
 	TESTEQUALS(vector_message.find("Expected <actual> and <different> to be equal") != std::string::npos, true);

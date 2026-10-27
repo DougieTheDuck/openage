@@ -3,6 +3,8 @@
 #include "drag_select.h"
 
 #include <eigen3/Eigen/Dense>
+#include <algorithm>
+#include <cmath>
 
 #include "coord/phys.h"
 #include "coord/pixel.h"
@@ -117,12 +119,24 @@ void DragSelectHandler::invoke(openage::event::EventLoop & /* loop */,
 		auto current_pos = pos->get_positions().get(time);
 		auto world_pos = current_pos.to_scene3().to_world_space();
 		Eigen::Vector4f clip_pos = cam_matrix * Eigen::Vector4f{world_pos.x(), world_pos.y(), world_pos.z(), 1};
-
-		// Check if the entity is in the rectangle
-		if (clip_pos.x() >= left
-		    and clip_pos.x() <= right
-		    and clip_pos.y() >= bottom
-		    and clip_pos.y() <= top) {
+		// The drag bounds are in normalized device coordinates, not
+		// homogeneous clip space. Exclude points behind the camera and
+		// perform the perspective divide before comparing them.
+		if (not std::isfinite(clip_pos.w()) or clip_pos.w() <= 0.0f) {
+			continue;
+		}
+		const float x = clip_pos.x() / clip_pos.w();
+		const float y = clip_pos.y() / clip_pos.w();
+		if (not std::isfinite(x) or not std::isfinite(y)) {
+			continue;
+		}
+		// A point exactly on a drag edge can differ by a few float ULPs
+		// between projection paths. Keep the inclusion test stable.
+		constexpr float boundary_tolerance = 1e-5f;
+		if (x >= left - boundary_tolerance
+		    and x <= right + boundary_tolerance
+		    and y >= bottom - boundary_tolerance
+		    and y <= top + boundary_tolerance) {
 			selected.push_back(entity.first);
 		}
 	}
