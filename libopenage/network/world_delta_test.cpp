@@ -435,18 +435,44 @@ void world_delta() {
 	           gamestate::AnimationAction::ATTACK);
 	TESTEQUALS(walking_guest.entities.front().animation_started_at,
 	           time::time_t::from_int(2));
-	auto idle_again = attacking;
-	idle_again.world_revision = 5;
-	idle_again.simulation_time = time::time_t::from_double(2.5);
+	// Consecutive volleys use the SAME ATTACK action, but each volley
+	// must restart the networked animation phase. A suppression rule that
+	// compares action IDs alone would silently drop this correction.
+	auto next_volley = attacking;
+	next_volley.world_revision = 5;
+	next_volley.simulation_time = time::time_t::from_double(2.6);
+	next_volley.entities.front().animation_started_at = time::time_t::from_double(2.6);
+	auto volley_delta = animation_host.advance(next_volley);
+	TESTEQUALS(volley_delta.changed.entities.size(), size_t{1});
+	walking_guest = apply_world_delta(
+		walking_guest, decode_world_delta(encode_world_delta(volley_delta)));
+	TESTEQUALS(walking_guest.entities.front().animation_action,
+	           gamestate::AnimationAction::ATTACK);
+	TESTEQUALS(walking_guest.entities.front().animation_started_at,
+	           time::time_t::from_double(2.6));
+	// A recovery snapshot must preserve the most recent animation phase.
+	WorldDeltaBaseline volley_recovery{};
+	volley_recovery.accept_snapshot(next_volley);
+	auto after_volley = next_volley;
+	after_volley.world_revision = 6;
+	after_volley.simulation_time = time::time_t::from_double(2.7);
+	auto no_volley_change = volley_recovery.advance(after_volley);
+	TESTEQUALS(no_volley_change.changed.entities.empty(), true);
+	auto after_volley_guest = apply_world_delta(next_volley, no_volley_change);
+	TESTEQUALS(after_volley_guest.entities.front().animation_started_at,
+	           time::time_t::from_double(2.6));
+	auto idle_again = next_volley;
+	idle_again.world_revision = 7;
+	idle_again.simulation_time = time::time_t::from_int(3);
 	idle_again.entities.front().animation_action = gamestate::AnimationAction::IDLE;
-	idle_again.entities.front().animation_started_at = time::time_t::from_double(2.5);
+	idle_again.entities.front().animation_started_at = time::time_t::from_int(3);
 	auto idle_delta = animation_host.advance(idle_again);
 	TESTEQUALS(idle_delta.changed.entities.size(), size_t{1});
 	walking_guest = apply_world_delta(walking_guest, idle_delta);
 	TESTEQUALS(walking_guest.entities.front().animation_action,
 	           gamestate::AnimationAction::IDLE);
 	TESTEQUALS(walking_guest.entities.front().animation_started_at,
-	           time::time_t::from_double(2.5));
+	           time::time_t::from_int(3));
 
 	// Even with hundreds of Hunter horses and 2/4/8 player rosters,
 	// an unchanged scheduled route needs no repeated per-horse payload.

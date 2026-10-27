@@ -1772,8 +1772,19 @@ void fvd_hunter_focus_attack() {
 		loop, state, 3, "fvd.data.entities.Builder", {71, 69, 0}, at(27));
 	TESTEQUALS(fvd->issue_focus_attack(
 		state, 1, {horse->get_id()}, other_builder->get_id(), at(27)), true);
+	// Confirm that an attack really launches before we cancel it; the
+	// immutable projectile remains cosmetic, while its pending HP event
+	// must be invalidated by the replacement Move command.
+	fvd->combat_tick(state, at(27));
+	auto launched = fvd->get_arrow_state(at(27));
+	auto cancelled_shot = std::find_if(
+		launched.begin(), launched.end(), [&](const auto &shot) {
+			return shot.owner == 1 and shot.target_id == other_builder->get_id()
+			       and shot.launch_time == at(27);
+		});
+	cancelled_shot != launched.end() or TESTFAIL;
 	accepted = false;
-	command.invoke(*loop, nullptr, state, at(27),
+	command.invoke(*loop, nullptr, state, at(27.1),
 	               {{"type", component::command::command_t::MOVE},
 	                {"owner", player_id_t{1}},
 	                {"target", coord::phys3{75, 69, 0}},
@@ -1786,6 +1797,9 @@ void fvd_hunter_focus_attack() {
 		other_builder->get_component(component::component_t::LIVE));
 	auto other_hp = other_live->get_attribute(
 		at(27), "fvd.data.entities.Health")->get(at(27));
+	loop->reach_time(at(27.6), state);
+	TESTEQUALS(other_live->get_attribute(
+		at(27.6), "fvd.data.entities.Health")->get(at(27.6)), other_hp);
 	fvd->combat_tick(state, at(28));
 	TESTEQUALS(other_live->get_attribute(
 		at(28), "fvd.data.entities.Health")->get(at(28)), other_hp);
