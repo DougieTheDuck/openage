@@ -100,7 +100,7 @@ private:
 
 bool is_known_command_kind(uint16_t value) {
 	return value >= static_cast<uint16_t>(CommandKind::MOVE)
-	    && value <= static_cast<uint16_t>(CommandKind::PATROL);
+	    && value <= static_cast<uint16_t>(CommandKind::DEMOLISH_TOWER);
 }
 
 bool is_known_hunter_stance(uint16_t value) {
