@@ -420,7 +420,7 @@ Item {
 				width: 252
 				height: 32
 				radius: 4
-				color: root.placing || root.targeting ? "#ae6e30" : "#3e7862"
+				color: root.attacking || root.placing ? "#ae6e30" : "#3e7862"
 				border.width: 1
 				border.color: "#b5d9c4"
 
@@ -429,7 +429,88 @@ Item {
 					color: "#ffffff"
 					font.bold: true
 					font.pixelSize: 14
-					text: root.placing || root.targeting ? "Cancel (Esc)" : root.canAttack ? "Attack-move (A)" : "Build Tower (B)"
+					text: root.canAttack ? "Attack-move (A)" : root.placing ? "Cancel (Esc)" : "Build Tower (B)"
+				}
+
+				MouseArea {
+					anchors.fill: parent
+					cursorShape: Qt.PointingHandCursor
+				}
+			}
+			Rectangle {
+				objectName: "fvdPatrolButton"
+				visible: root.canAttack
+				width: 252
+				height: 32
+				radius: 4
+				color: root.patrolling ? "#ae6e30" : "#3e7862"
+				border.width: 1
+				border.color: "#b5d9c4"
+
+				Text {
+					anchors.centerIn: parent
+					color: "#ffffff"
+					font.bold: true
+					font.pixelSize: 14
+					text: "Patrol (P)"
+				}
+
+				MouseArea {
+					anchors.fill: parent
+					cursorShape: Qt.PointingHandCursor
+				}
+			}
+			Row {
+				visible: root.canAttack
+				spacing: 6
+
+				Repeater {
+					model: [
+						{ name: "Aggressive", hotkey: "Z" },
+						{ name: "Defensive", hotkey: "X" },
+						{ name: "Observe", hotkey: "C" }
+					]
+
+					delegate: Rectangle {
+						objectName: "fvd" + modelData.name + "Button"
+						width: 80
+						height: 32
+						radius: 4
+						color: root.stance === modelData.name ? "#ae6e30" : "#3e7862"
+						border.width: 1
+						border.color: "#b5d9c4"
+
+						Text {
+							anchors.centerIn: parent
+							color: "#ffffff"
+							font.bold: true
+							font.pixelSize: 11
+							text: modelData.name + " (" + modelData.hotkey + ")"
+						}
+
+						MouseArea {
+							anchors.fill: parent
+							cursorShape: Qt.PointingHandCursor
+						}
+					}
+				}
+			}
+			Rectangle {
+				objectName: "fvdCancelButton"
+				visible: root.canAttack && root.targeting
+				width: 252
+				height: 32
+				radius: 4
+				color: "#674a32"
+				border.width: 1
+				border.color: "#b5d9c4"
+
+				Text {
+					anchors.centerIn: parent
+					color: "#ffffff"
+					font.bold: true
+					font.pixelSize: 14
+					text: "Cancel targeting (Esc)"
 				}
 
 				MouseArea {
