@@ -952,10 +952,24 @@ void Presenter::init_input() {
 		}
 		const bool over_hud = this->fvd_hud_state and this->gui
 		                      and this->gui->contains_item("fvdBuildPanel", ev.position());
-		const bool over_action = over_hud and this->gui->contains_item(
-			"fvdActionButton", ev.position());
+		using HudAction = HudMouseCapture::Action;
+		auto hovered_action = HudAction::NONE;
+		if (over_hud) {
+			for (const auto &[name, action] : {
+			         std::pair{"fvdActionButton", HudAction::PRIMARY},
+			         std::pair{"fvdPatrolButton", HudAction::PATROL},
+			         std::pair{"fvdCancelButton", HudAction::CANCEL},
+			         std::pair{"fvdAggressiveButton", HudAction::AGGRESSIVE},
+			         std::pair{"fvdDefensiveButton", HudAction::DEFENSIVE},
+			         std::pair{"fvdObserveButton", HudAction::OBSERVE}}) {
+				if (this->gui->contains_item(name, ev.position())) {
+					hovered_action = action;
+					break;
+				}
+			}
+		}
 		const auto hud_input = this->fvd_hud_capture.process(
-			ev.type(), ev.button(), over_hud, over_action);
+			ev.type(), ev.button(), over_hud, hovered_action);
 		// An offscreen Qt Quick view cannot be relied upon to deliver a
 		// MouseArea click. Deliver the panel's action once at the presenter
 		// boundary while preventing that gesture from selecting the world.
@@ -963,18 +977,36 @@ void Presenter::init_input() {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
 		}
-		if (hud_input.activated_button and this->game_controller) {
-			if (this->game_controller->is_tower_placement_active()
-			    or this->game_controller->is_attack_move_active()
-			    or this->game_controller->is_patrol_active()) {
-				this->game_controller->cancel_tower_placement();
+		if (this->game_controller) {
+			switch (hud_input.activated_action) {
+			case HudAction::PRIMARY:
+				if (this->game_controller->get_controlled() == 1) {
+					this->game_controller->begin_attack_move();
+				}
+				else if (this->game_controller->is_tower_placement_active()) {
+					this->game_controller->cancel_tower_placement();
+				}
+				else {
+					this->game_controller->begin_tower_placement();
+				}
+				break;
+			case HudAction::PATROL:
+				this->game_controller->begin_patrol();
+				break;
+			case HudAction::CANCEL:
 				this->game_controller->cancel_hunter_targeting();
-			}
-			else if (this->game_controller->get_controlled() == 1) {
-				this->game_controller->begin_attack_move();
-			}
-			else {
-				this->game_controller->begin_tower_placement();
+				break;
+			case HudAction::AGGRESSIVE:
+				this->game_controller->issue_hunter_stance(gamestate::HunterStance::AGGRESSIVE);
+				break;
+			case HudAction::DEFENSIVE:
+				this->game_controller->issue_hunter_stance(gamestate::HunterStance::DEFENSIVE);
+				break;
+			case HudAction::OBSERVE:
+				this->game_controller->issue_hunter_stance(gamestate::HunterStance::OBSERVE);
+				break;
+			case HudAction::NONE:
+				break;
 			}
 		}
 		if (hud_input.consumed) {
@@ -1071,7 +1103,7 @@ void Presenter::init_input() {
 		}
 		auto engine_context = std::make_shared<input::game::BindingContext>();
 		input::game::setup_defaults(
-			engine_context, this->time_loop, this->simulation, this->camera,
+			engine_context, game_controller, this->time_loop, this->simulation, this->camera,
 			[this](
 				const coord::input &position,
 				const std::function<void(std::optional<gamestate::entity_id_t>)> &callback) {
