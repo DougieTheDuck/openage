@@ -7,21 +7,24 @@ namespace openage::presenter {
 HudMouseCapture::Result HudMouseCapture::process(
 	QEvent::Type type, Qt::MouseButton button,
 	bool over_hud, Action hovered_action) {
+	// Buttons can extend beyond the reported panel rectangle while Qt Quick
+	// recalculates its Column height. They are still part of the HUD.
+	const bool over_surface = over_hud or hovered_action != Action::NONE;
 	const auto mask = static_cast<unsigned int>(button);
 	const bool captured = (this->captured_buttons & mask) != 0;
 	Action activated_action = Action::NONE;
 
 	if (type == QEvent::MouseButtonPress or type == QEvent::MouseButtonDblClick) {
-		if (over_hud) {
+		if (over_surface) {
 			this->captured_buttons |= mask;
 		}
 		if (button == Qt::LeftButton) {
-			this->pressed_action = over_hud ? hovered_action : Action::NONE;
+			this->pressed_action = over_surface ? hovered_action : Action::NONE;
 		}
 	}
 	else if (type == QEvent::MouseButtonRelease) {
 		if (button == Qt::LeftButton) {
-			if (captured and over_hud and this->pressed_action != Action::NONE
+			if (captured and over_surface and this->pressed_action != Action::NONE
 			    and hovered_action == this->pressed_action) {
 				activated_action = hovered_action;
 			}
@@ -29,7 +32,7 @@ HudMouseCapture::Result HudMouseCapture::process(
 		}
 		this->captured_buttons &= ~mask;
 	}
-	return {over_hud or captured, activated_action};
+	return {over_surface or captured, activated_action};
 }
 
 bool HudMouseCapture::is_capturing() const {
