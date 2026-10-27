@@ -950,11 +950,12 @@ void Presenter::init_input() {
 			}
 			return;
 		}
-		const bool over_hud = this->fvd_hud_state and this->gui
-		                      and this->gui->contains_item("fvdBuildPanel", ev.position());
 		using HudAction = HudMouseCapture::Action;
 		auto hovered_action = HudAction::NONE;
-		if (over_hud) {
+		// Hit-test buttons independently of the panel bounds. Qt Quick can
+		// place later Column children outside the parent's stale geometry
+		// during a visibility/layout update; those buttons must still work.
+		if (this->fvd_hud_state and this->gui) {
 			for (const auto &[name, action] : {
 			         std::pair{"fvdActionButton", HudAction::PRIMARY},
 			         std::pair{"fvdPatrolButton", HudAction::PATROL},
@@ -968,6 +969,9 @@ void Presenter::init_input() {
 				}
 			}
 		}
+		const bool over_panel = this->fvd_hud_state and this->gui
+		                        and this->gui->contains_item("fvdBuildPanel", ev.position());
+		const bool over_hud = over_panel or hovered_action != HudAction::NONE;
 		const auto hud_input = this->fvd_hud_capture.process(
 			ev.type(), ev.button(), over_hud, hovered_action);
 		// An offscreen Qt Quick view cannot be relied upon to deliver a
