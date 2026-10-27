@@ -37,6 +37,18 @@ void hud_mouse_capture() {
 		TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, true, action).activated_action == action, true);
 	}
 
+	// A button outside the outer panel's reported geometry remains clickable.
+	// Regression: only the first button was reachable when the panel hit-test
+	// did not include newly shown controls below it.
+	click(QEvent::MouseButtonPress, Qt::LeftButton, false, Action::PATROL);
+	auto outside_panel = click(QEvent::MouseButtonRelease, Qt::LeftButton, false, Action::PATROL);
+	TESTEQUALS(outside_panel.consumed, true);
+	TESTEQUALS(outside_panel.activated_action == Action::PATROL, true);
+	click(QEvent::MouseButtonPress, Qt::LeftButton, false, Action::AGGRESSIVE);
+	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, false, Action::AGGRESSIVE).activated_action == Action::AGGRESSIVE, true);
+	click(QEvent::MouseButtonPress, Qt::LeftButton, false, Action::CANCEL);
+	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, false, Action::CANCEL).activated_action == Action::CANCEL, true);
+
 	// Releasing over a different stance never changes the selected units.
 	click(QEvent::MouseButtonPress, Qt::LeftButton, true, Action::AGGRESSIVE);
 	TESTEQUALS(click(QEvent::MouseButtonRelease, Qt::LeftButton, true, Action::OBSERVE).activated_action == Action::NONE, true);
