@@ -254,6 +254,7 @@ std::vector<coord::tile> tower_line_sites(const coord::tile &start,
  *   clear its other orders and construct that foundation.
  *
  * @param ctx Binding context the actions are added to.
+ * @param controller Active controller receiving the shared Hunter stance command.
  * @param time_loop Time loop for getting simulation time.
  * @param simulation Game simulation.
  * @param camera Active game camera.
