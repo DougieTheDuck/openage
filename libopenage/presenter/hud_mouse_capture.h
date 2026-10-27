@@ -14,9 +14,20 @@ namespace openage::presenter {
  */
 class HudMouseCapture {
 public:
+	enum class Action {
+		NONE,
+		PRIMARY,
+		ATTACK_MOVE,
+		PATROL,
+		CANCEL,
+		AGGRESSIVE,
+		DEFENSIVE,
+		OBSERVE,
+	};
+
 	struct Result {
 		bool consumed;
-		bool activated_button;
+		Action activated_action;
 	};
 
 	/**
@@ -24,14 +35,14 @@ public:
 	 * Both press and release must occur within the same action button.
 	 */
 	Result process(QEvent::Type type, Qt::MouseButton button,
-	               bool over_hud, bool over_action);
+	               bool over_hud, Action hovered_action);
 
 	/** Whether any HUD mouse gesture is currently active. */
 	bool is_capturing() const;
 
 private:
 	unsigned int captured_buttons{0};
-	bool action_button_pressed{false};
+	Action pressed_action{Action::NONE};
 };
 
 } // namespace openage::presenter
