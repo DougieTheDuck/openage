@@ -99,7 +99,7 @@ Right-click empty terrain remains ordinary Move. The FOCUS_ATTACK command is sup
 They resume their original destination after an engagement, or stay there alert for nearby towers after arriving.
 If a selected horse dies before a group command is issued, its surviving teammates still carry out the order.
 Right-click issues an ordinary Move without seeking enemies; Escape cancels attack-move targeting.
-Each horse also has a stance for when it has no order, shown in the HUD for the selected horses.
+Each horse also has a stance for when it has no order, shown in the HUD for the selected horses. The lower-left Hunter command menu appears when you select one or more horses; click **Aggressive**, **Defensive**, or **Observe** to change their stance, or **Attack-move** and **Patrol** to choose a destination. The selected stance is highlighted; a group with different stances displays **Mixed**. Click **Cancel targeting** (or press Esc) to leave destination selection without sending an order. The keyboard shortcuts remain available.
 **C** sets Observe, the default for spawned horses: the horse never starts a fight on its own.
 **Z** sets Aggressive: the horse engages the nearest completed tower within eight tiles, otherwise the nearest Builder, and pursues it.
 **X** sets Defensive: the horse engages enemies within its four-tile firing range, gives up once the fight moves more than six tiles from where it began, and walks back there.

@@ -147,6 +147,12 @@ public:
 	/** Whether the active Hunter has selected horses it may command. */
 	bool is_hunter_selection() const;
 
+	/** Bind the same local/guest stance command used by Hunter hotkeys to the HUD. */
+	void set_hunter_stance_action(std::function<void(gamestate::HunterStance)> action);
+
+	/** Issue a stance for the currently selected Hunter horses, when permitted. */
+	bool issue_hunter_stance(gamestate::HunterStance stance);
+
 	/** Whether the next normal map click should place a tower. */
 	bool is_tower_placement_active() const;
 
@@ -218,6 +224,7 @@ private:
 	/** Controller-local input mode, not authoritative simulation state. */
 	bool placing_tower = false;
 	HunterTargeting hunter_targeting = HunterTargeting::NONE;
+	std::function<void(gamestate::HunterStance)> hunter_stance_action{};
 
 	/**
 	 * Start position of a drag selection.
@@ -247,6 +254,7 @@ std::vector<coord::tile> tower_line_sites(const coord::tile &start,
  *   clear its other orders and construct that foundation.
  *
  * @param ctx Binding context the actions are added to.
+ * @param controller Active controller receiving the shared Hunter stance command.
  * @param time_loop Time loop for getting simulation time.
  * @param simulation Game simulation.
  * @param camera Active game camera.
@@ -254,6 +262,7 @@ std::vector<coord::tile> tower_line_sites(const coord::tile &start,
  * @param can_spawn_hunter Whether this process owns the authoritative FVD simulation.
  */
 void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
+                    const std::shared_ptr<Controller> &controller,
                     const std::shared_ptr<time::TimeLoop> &time_loop,
                     const std::shared_ptr<openage::gamestate::GameSimulation> &simulation,
                     const std::shared_ptr<renderer::camera::Camera> &camera,
