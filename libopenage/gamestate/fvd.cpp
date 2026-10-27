@@ -777,7 +777,8 @@ bool FVD::prioritize_foundation(const std::shared_ptr<GameState> &state,
 
 bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
                        entity_id_t builder,
-                       const time::time_t &time) {
+                       const time::time_t &time,
+                       bool preserve_foundation) {
 	auto it = this->build_orders.find(builder);
 	if (it == this->build_orders.end()) {
 		return false;
@@ -791,15 +792,17 @@ bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
 	// Incomplete towers revert to foundations, so interrupted work stays reusable.
 	if (it->second.tower_id.has_value()) {
 		this->destroy_tower(state, *it->second.tower_id, time);
-		auto loop = this->event_loop.lock();
-		auto factory = this->entity_factory.lock();
-		if (not loop or not factory) [[unlikely]] {
-			throw Error{ERR << "FVD construction services no longer exist"};
+		if (preserve_foundation) {
+			auto loop = this->event_loop.lock();
+			auto factory = this->entity_factory.lock();
+			if (not loop or not factory) [[unlikely]] {
+				throw Error{ERR << "FVD construction services no longer exist"};
+			}
+			const auto &site = it->second.order->get_target();
+			factory->spawn_game_entity(
+				loop, state, it->second.order->get_owner(), this->foundation,
+				site.to_phys3_center(), time);
 		}
-		const auto &site = it->second.order->get_target();
-		factory->spawn_game_entity(
-			loop, state, it->second.order->get_owner(), this->foundation,
-			site.to_phys3_center(), time);
 	}
 	this->build_orders.erase(it);
 	// Abandon future work without deleting the visible, reusable foundations.
@@ -1016,12 +1019,47 @@ void FVD::refresh_paths(const std::shared_ptr<GameState> &state,
 	}
 }
 
+bool FVD::demolish_owned_tower(const std::shared_ptr<GameState> &state,
+                               player_id_t owner, const std::vector<entity_id_t> &ids,
+                               const time::time_t &time) {
+	if (owner < 2 or owner > this->player_count or ids.size() != 1) {
+		return false;
+	}
+	const auto tower_id = ids.front();
+	auto found = state->get_game_entities().find(tower_id);
+	if (found == state->get_game_entities().end()
+	    or found->second->get_definition() != this->tower
+	    or not found->second->has_component(component::component_t::OWNERSHIP)
+	    or not this->tower_footprints.contains(tower_id)) {
+		return false;
+	}
+	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+		found->second->get_component(component::component_t::OWNERSHIP));
+	if (not ownership or ownership->get_owners().get(time) != owner) {
+		return false;
+	}
+
+	// An unfinished tower still belongs to its Builder's current order.
+	// Cancel that order, release reservations and delete the tower without
+	// leaving the reusable foundation that an ordinary cancellation creates.
+	if (this->tower_footprints.at(tower_id).under_construction) {
+		for (const auto &[builder_id, build] : this->build_orders) {
+			if (build.tower_id == tower_id) {
+				return this->cancel_build(state, builder_id, time, false);
+			}
+		}
+		return false;
+	}
+	return this->destroy_tower(state, tower_id, time);
+}
+
 bool FVD::destroy_tower(const std::shared_ptr<GameState> &state,
                         entity_id_t tower_id,
                         const time::time_t &time) {
 	if (not this->tower_footprints.contains(tower_id)) {
 		return false;
 	}
+	this->tower_next_shot.erase(tower_id);
 	this->unblock_tower(state, tower_id, time);
 	if (state->get_game_entities().contains(tower_id)) {
 		state->remove_game_entity(tower_id, time);
