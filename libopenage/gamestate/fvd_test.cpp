@@ -215,6 +215,7 @@ void fvd_scenario() {
 	const auto &horse_idle2_layer = horse_idle2.get_layer(0);
 	const auto &horse_gallop_layer = horse_gallop.get_layer(0);
 	const auto &horse_attack_layer = horse_attack.get_layer(0);
+	const auto &tower_layer = tower_graphics.get_layer(0);
 	TESTEQUALS(idle_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(walk_layer.get_display_mode(),
@@ -227,6 +228,8 @@ void fvd_scenario() {
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_attack_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(tower_layer.get_display_mode(),
+	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_idle1_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_idle2_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_gallop_layer.get_angle_count(), size_t{16});
@@ -238,6 +241,7 @@ void fvd_scenario() {
 	TESTEQUALS(horse_idle1_layer.get_time_per_frame(), 0.15f);
 	TESTEQUALS(horse_idle2_layer.get_time_per_frame(), 0.4f);
 	TESTEQUALS(horse_attack_layer.get_time_per_frame(), 0.0375f);
+	TESTEQUALS(tower_layer.get_time_per_frame(), 0.125f);
 	const auto idle_frames = idle_layer.get_frame_timing();
 	const auto walk_frames = walk_layer.get_frame_timing();
 	TESTEQUALS(idle_frames->size(), size_t{16});
@@ -246,6 +250,13 @@ void fvd_scenario() {
 	TESTEQUALS(horse_idle1_layer.get_frame_timing()->size(), size_t{24});
 	TESTEQUALS(horse_idle2_layer.get_frame_timing()->size(), size_t{12});
 	TESTEQUALS(horse_attack_layer.get_frame_timing()->size(), size_t{16});
+	TESTEQUALS(tower_layer.get_frame_timing()->size(), size_t{16});
+	const auto &tower_angle = tower_layer.get_direction_angle(0.0f);
+	TESTEQUALS(tower_angle->get_frame_count(), size_t{16});
+	for (size_t frame = 0; frame < 16; ++frame) {
+		TESTEQUALS(tower_angle->get_frame(frame)->get_texture_idx(), size_t{0});
+		TESTEQUALS(tower_angle->get_frame(frame)->get_subtexture_idx(), frame);
+	}
 	const std::array<std::pair<float, size_t>, 16> horse_direction_rows{{
 		{0.0f, 15},
 		{22.0f, 14},
@@ -331,6 +342,14 @@ void fvd_scenario() {
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-attack.texture");
 	TESTEQUALS(horse_attack_sheet.get_size(), (std::pair<int32_t, int32_t>{4096, 4096}));
 	TESTEQUALS(horse_attack_sheet.get_subtex_count(), size_t{256});
+	auto tower_sheet = renderer::resources::parser::parse_texture_file(
+		graphics / "medieval-tower" / "medieval_tower.texture");
+	TESTEQUALS(tower_sheet.get_size(), (std::pair<int32_t, int32_t>{4096, 1024}));
+	TESTEQUALS(tower_sheet.get_subtex_count(), size_t{16});
+	TESTEQUALS(tower_sheet.get_subtex_info(0).get_size()[0], uint32_t{512});
+	TESTEQUALS(tower_sheet.get_subtex_info(0).get_size()[1], uint32_t{512});
+	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[0], uint32_t{512});
+	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[1], uint32_t{512});
 	for (const auto &idle_name : {"ethereal-hunter-horse-idle1_page_00.texture",
 	                              "ethereal-hunter-horse-idle1_page_01.texture",
 	                              "ethereal-hunter-horse-idle2.texture"}) {
@@ -341,6 +360,7 @@ void fvd_scenario() {
 	}
 	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
+	TESTEQUALS(tower_graphics.get_scalefactor(), 0.5f);
 	for (const auto &info : {plains_graphics.get_texture(0),
 	                        builder_graphics.get_texture(0),
 	                        horse_idle1.get_texture(0),

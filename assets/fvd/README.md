@@ -16,6 +16,7 @@ To try it, start a solo match with `bin/run game --solo --modpacks fvd`,
 select your Builder and right-click around the map. You should see the
 Orc idle loop while stopped and its 16-direction walk cycle when moving.
 Hunter Horses use a 12-frame gallop cycle for each of 16 directions at 0.08 seconds per frame.
+Every Builder constructs the same medieval tower, whose sixteen 512 by 512 idle frames advance every 0.125 seconds.
 Their 16-frame attack cycle lasts 0.6 seconds, matching the authoritative melee cooldown, and damage lands at the 75% hit frame.
 At the start of every idle loop, the renderer selects either idle1 or idle2 using the horse ID, authoritative animation start time and loop number.
 Idle1 uses 24 frames at 0.15 seconds per frame for a 3.6-second loop, while idle2 uses 12 frames at 0.4 seconds per frame for a 4.8-second loop.
