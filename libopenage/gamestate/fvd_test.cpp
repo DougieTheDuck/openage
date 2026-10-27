@@ -348,8 +348,12 @@ void fvd_scenario() {
 	TESTEQUALS(tower_sheet.get_subtex_count(), size_t{16});
 	TESTEQUALS(tower_sheet.get_subtex_info(0).get_size()[0], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(0).get_size()[1], uint32_t{512});
+	TESTEQUALS(tower_sheet.get_subtex_info(0).get_anchor_pos()[0], 318);
+	TESTEQUALS(tower_sheet.get_subtex_info(0).get_anchor_pos()[1], 409);
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[0], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[1], uint32_t{512});
+	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[0], 318);
+	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[1], 409);
 	for (const auto &idle_name : {"ethereal-hunter-horse-idle1_page_00.texture",
 	                              "ethereal-hunter-horse-idle1_page_01.texture",
 	                              "ethereal-hunter-horse-idle2.texture"}) {
