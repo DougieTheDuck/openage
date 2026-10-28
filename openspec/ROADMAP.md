@@ -12,7 +12,8 @@ Each builder can select and move their own Builder, choose
 a tower from the UI, place an order to build it on any free tile, and watch the 
 Builder walk to an adjacent tile and construct it. Towers defend against approaching 
 Hunter units. The human Hunter selects the horses gathering at map center and gives
-them attack-move orders; horses never advance automatically after spawning.
+them attack-move orders; horses never advance automatically after spawning
+unless the Hunter has set a rally point on the Hunter tower.
 A permanent, indestructible Hunter tower occupies the map center. Horses spawn
 around it; at the 20-second Hunter start it begins attacking enemy Builders
 within 10 tiles with missiles dealing 100 damage per hit.
@@ -74,7 +75,8 @@ over the menu do not unintentionally select or command the world.
 - One additional horse spawns per second thereafter, owned by human Hunter player 1.
 - Horses spawn at map center and receive no automatic navigation orders. A deterministic 2D contact shove spreads idle horses outwards when new horses arrive; human selection/Move/AttackMove still controls travel and combat.
 - Attack-moving horses engage eligible opponents they encounter, then continue to their destination.
-- Automatic rally/gather points are out of scope for this first version.
+- Automatic rally/gather points were out of scope for this first version; the
+  Hunter can now set one ([hunter-rally-point](changes/hunter-rally-point/proposal.md)).
 - Completed towers autonomously target enemies, fire arrows, inflict damage and kill.
 - Credited kills belong to the **owner of the tower that dealt lethal damage**;
   no double-credit, including near-simultaneous attacks.
@@ -115,6 +117,24 @@ not a prerequisite for the first multiplayer build.
 
 **Done when:** every connected participant sees the same authoritative towers,
 units, deaths and kill counts under concurrent build orders.
+
+### 6. Proposed next features — 2026-10-28
+
+Proposals only; each lists open questions to settle before implementation.
+
+- [match-end-conditions](changes/match-end-conditions/proposal.md): Hunter wins
+  when all Builders die; Builders win at 45 minutes or 7000 towers; a dead
+  Builder's towers collapse; win screens.
+- [builder-delete-all-foundations](changes/builder-delete-all-foundations/proposal.md):
+  one button clears a Builder's planned sites.
+- [kill-counter-units](changes/kill-counter-units/proposal.md): kill counters
+  count and say "units killed".
+- [builder-tower-double-click-select](changes/builder-tower-double-click-select/proposal.md):
+  double-click selects all visible towers (or foundations) of that kind.
+- [builder-garrison](changes/builder-garrison/proposal.md): G garrisons a
+  Builder in a tower; ungarrison point and key; hop between adjacent towers.
+- [enemy-unit-info-hud](changes/enemy-unit-info-hud/proposal.md): click an
+  enemy to see its type, HP and attack.
 
 ## Early technical risk to investigate
 
