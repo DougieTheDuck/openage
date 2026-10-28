@@ -18,6 +18,9 @@ implemented merely because it has a spec.
    a randomly assigned human Hunter, half-weight host draw, host Start.
 5. [Synchronized match](changes/synchronized-match/proposal.md): authoritative
    state, player ownership, concurrent commands and disconnect handling.
+6. [Hunter spawn tower](changes/hunter-spawn-tower/proposal.md): permanent central
+   Hunter tower, horses spawning around it, and 10-tile / 100-damage missiles
+   activated when the 20-second Hunter timer expires.
 
 The last four plans capture product requirements now. Hunter control is
 human selection, Move and AttackMove; automatic spawn movement is excluded.
