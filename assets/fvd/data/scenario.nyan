@@ -45,4 +45,5 @@ Scenario(engine.root.Object):
     tower_demolition : engine.util.game_entity.GameEntity = fvd.data.entities.TowerDemolition
     tower : engine.util.game_entity.GameEntity = fvd.data.entities.Tower
     hunter_tower : engine.util.game_entity.GameEntity = fvd.data.entities.HunterTower
+    hunter_rally_point : engine.util.game_entity.GameEntity = fvd.data.entities.HunterRallyPoint
     terrain : engine.util.terrain.Terrain = fvd.data.terrain.Plains

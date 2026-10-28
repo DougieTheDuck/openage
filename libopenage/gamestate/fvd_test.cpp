@@ -2970,4 +2970,96 @@ void fvd_hunter_tower() {
 	}
 	TESTEQUALS(spawned_beside, true);
 }
+
+void fvd_hunter_rally_point() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto alive = [&](entity_id_t id) { return state->get_game_entities().contains(id); };
+	auto spawn = [&](player_id_t owner, const char *definition, coord::phys3 position, double seconds) {
+		return entities->spawn_game_entity(
+			loop, state, owner, std::string{"fvd.data.entities."} + definition, position, at(seconds));
+	};
+	auto position_of = [&](entity_id_t id, double seconds) {
+		return std::dynamic_pointer_cast<component::Position>(
+			state->get_game_entity(id)->get_component(component::component_t::POSITION))
+		    ->get_positions().get(at(seconds));
+	};
+	auto markers = [&]() {
+		size_t count = 0;
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			count += entity->get_definition() == fvd->get_hunter_rally_marker_definition();
+		}
+		return count;
+	};
+	const auto central = *fvd->get_hunter_tower();
+	auto horse = spawn(1, "Horse", {70.5, 70.5, 0}, 0);
+	const coord::phys3 rally{80.5, 64.5, 0};
+
+	// Only the Hunter may set it, through its tower alone, on reachable ground.
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 2, {central}, rally, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {horse->get_id()}, rally, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central, horse->get_id()}, rally, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {200, 5, 0}, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {64.5, 64.5, 0}, at(0)), false);
+	TESTEQUALS(fvd->get_hunter_rally_point().has_value(), false);
+	TESTEQUALS(markers(), size_t{0});
+
+	// Moving it leaves one marker, in the new place. It cannot be selected.
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {50.5, 64.5, 0}, at(0)), true);
+	const auto first_marker = *fvd->get_hunter_rally_marker();
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, rally, at(1)), true);
+	TESTEQUALS(alive(first_marker), false);
+	const auto marker = *fvd->get_hunter_rally_marker();
+	TESTEQUALS(markers(), size_t{1});
+	TESTEQUALS(position_of(marker, 1), rally);
+	TESTEQUALS(*fvd->get_hunter_rally_point(), rally);
+	TESTEQUALS(state->get_game_entity(marker)->has_component(component::component_t::SELECTABLE), false);
+
+	// A box selection that also caught the tower still orders the horses;
+	// the tower on its own cannot be ordered about.
+	TESTEQUALS(fvd->can_command_units(state, 1, {horse->get_id(), central}, at(1)), true);
+	TESTEQUALS(fvd->can_command_units(state, 1, {central}, at(1)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {central, horse->get_id()}, {70.5, 80.5, 0}, at(1)), true);
+
+	// New horses ride from beside the tower to the rally point.
+	fvd->start_hunter_wave(state, at(1));
+	loop->reach_time(at(21), state);
+	entity_id_t first_spawn = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Horse" and id != horse->get_id()
+		    and (first_spawn == 0 or id < first_spawn)) {
+			first_spawn = id;
+		}
+	}
+	TESTEQUALS(first_spawn != 0, true);
+	TESTEQUALS((position_of(first_spawn, 21) - fvd->get_horse_spawn_point()).length() < 1.0, true);
+	loop->reach_time(at(40), state);
+	TESTEQUALS((position_of(first_spawn, 40) - rally).length() < 2.5, true);
+
+	// Only the Hunter is sent the marker, even with a Builder standing beside it.
+	auto scout = spawn(2, "Builder", rally + coord::phys3_delta{1, 1, 0}, 40);
+	fvd->update_vision(state, at(40));
+	TESTEQUALS(fvd->can_see(state, FVDTeam::BUILDERS, marker, at(40)), true);
+	network::MatchConnectionState connections{fvd->get_player_count()};
+	auto sent_marker = [&](player_id_t recipient) {
+		auto world = network::capture_fvd_state(state, connections, at(40), 0, 1, recipient);
+		return std::any_of(world.entities.begin(), world.entities.end(),
+		                   [&](const auto &entity) { return entity.entity_id == marker; });
+	};
+	TESTEQUALS(sent_marker(1), true);
+	TESTEQUALS(sent_marker(2), false);
+	TESTEQUALS(alive(scout->get_id()), true);
+}
 }

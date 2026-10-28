@@ -176,6 +176,7 @@ def tests_cpp():
     yield "openage::testing::tests::comparison", "Const and non-printable comparison assertions"
     yield "openage::input::game::tests::tower_line_axis_lock"
     yield "openage::input::game::tests::tower_placement_mode"
+    yield "openage::input::game::tests::horse_selection_priority", "Box selections keep horses and leave out the Hunter tower"
     yield "openage::presenter::tests::hud_mouse_capture"
     yield "openage::presenter::tests::guest_interpolation"
     yield "openage::presenter::tests::guest_clock_jitter"
@@ -279,7 +280,12 @@ def tests_cpp():
     )
     yield (
         "openage::gamestate::tests::fvd_hunter_tower",
-        "FVD invulnerable central Hunter tower: range, priority, cooldown and damage",
+        "FVD invulnerable central Hunter tower: 20-second gate, range, Builder-only targets and damage",
+        lambda env: env["has_assets"],
+    )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_rally_point",
+        "FVD Hunter tower rally point, Hunter-only marker and mixed horse/tower selections",
         lambda env: env["has_assets"],
     )
 

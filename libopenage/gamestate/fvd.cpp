@@ -359,6 +359,7 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->tower_demolition = settings.get_object("tower_demolition").get_name();
 	this->tower = settings.get_object("tower").get_name();
 	this->hunter_tower = settings.get_object("hunter_tower").get_name();
+	this->hunter_rally_marker = settings.get_object("hunter_rally_point").get_name();
 	this->plains = settings.get_object("terrain").get_name();
 	auto horse_attack = state->get_db_view()->get_object(this->horse + ".Attack");
 	auto attack_property = api::APIAbility::get_property(
@@ -1531,6 +1532,11 @@ void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	}
 	auto spawned = factory->spawn_game_entity(loop, state, 1, this->horse, this->horse_spawn_point, time);
 	this->relax_horse_crowd(state, spawned->get_id(), time);
+	// New horses ride to the rally point like a Move order: a travelling
+	// horse does not stop to fight, then its stance applies on arrival.
+	if (this->hunter_rally_point) {
+		system::Move::move_default(spawned, state, *this->hunter_rally_point, time);
+	}
 	this->next_hunter_spawn_event = loop->create_event(
 		"game.fvd_spawn_horse", this->horse_spawn_target, state,
 		time + this->horse_spawn_interval);
@@ -1552,6 +1558,11 @@ std::optional<std::vector<entity_id_t>> FVD::resolve_command_units(
 		// Only a horse known to have died can be pruned from an old
 		// selection. An unknown or forged entity ID must still fail.
 		if (owner == 1 and this->dead_horses.contains(id)) {
+			continue;
+		}
+		// A box selection may sweep up the Hunter tower with the horses.
+		// It cannot move or fight, so the order applies to the horses alone.
+		if (owner == 1 and this->hunter_tower_id == id) {
 			continue;
 		}
 		auto found = state->get_game_entities().find(id);
@@ -1698,6 +1709,61 @@ void FVD::remove_hunter_tower(const std::shared_ptr<GameState> &state, const tim
 	}
 	this->hunter_tower_id.reset();
 	this->horse_spawn_point = this->get_centre();
+	if (this->hunter_rally_marker_id and state->get_game_entities().contains(*this->hunter_rally_marker_id)) {
+		state->remove_game_entity(*this->hunter_rally_marker_id, time);
+	}
+	this->hunter_rally_marker_id.reset();
+	this->hunter_rally_point.reset();
+}
+
+bool FVD::set_hunter_rally_point(const std::shared_ptr<GameState> &state,
+                                 player_id_t owner, const std::vector<entity_id_t> &ids,
+                                 const coord::phys3 &point, const time::time_t &time) {
+	if (owner != 1 or not this->hunter_tower_id or ids.size() != 1
+	    or ids.front() != *this->hunter_tower_id
+	    or not state->get_game_entities().contains(*this->hunter_tower_id)
+	    or point.ne < 0 or point.se < 0
+	    or point.ne >= this->map_size or point.se >= this->map_size
+	    or point.up != 0) {
+		return false;
+	}
+	// Horses must be able to get there; this also rules out tower footprints.
+	auto pathfinder = state->get_map()->get_pathfinder();
+	auto route = pathfinder->get_path(path::PathRequest{
+		state->get_map()->get_grid_id("fvd.data.terrain.Land"),
+		this->horse_spawn_point.to_tile(),
+		point.to_tile(),
+		time});
+	if (route.status != path::PathResult::FOUND) {
+		return false;
+	}
+	auto loop = this->event_loop.lock();
+	auto factory = this->entity_factory.lock();
+	if (not loop or not factory) [[unlikely]] {
+		throw Error{ERR << "Cannot place a Hunter rally point without FVD services"};
+	}
+	// Replace the marker rather than moving it, so every client sees one
+	// entity appear in the new place without interpolating across the map.
+	if (this->hunter_rally_marker_id and state->get_game_entities().contains(*this->hunter_rally_marker_id)) {
+		state->remove_game_entity(*this->hunter_rally_marker_id, time);
+	}
+	auto marker = factory->spawn_game_entity(loop, state, 1, this->hunter_rally_marker, point, time);
+	system::Idle::idle(marker, time);
+	this->hunter_rally_marker_id = marker->get_id();
+	this->hunter_rally_point = point;
+	return true;
+}
+
+std::optional<coord::phys3> FVD::get_hunter_rally_point() const {
+	return this->hunter_rally_point;
+}
+
+std::optional<entity_id_t> FVD::get_hunter_rally_marker() const {
+	return this->hunter_rally_marker_id;
+}
+
+const std::string &FVD::get_hunter_rally_marker_definition() const {
+	return this->hunter_rally_marker;
 }
 
 coord::phys3 FVD::get_centre() const {

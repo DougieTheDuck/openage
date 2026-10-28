@@ -1,0 +1,19 @@
+# Copyright 2026 the openage authors. See copying.md for legal info.
+# openage texture definition file
+
+version 1
+
+imagefile "hunter_rally_point.png"
+
+size 1024 224
+
+pxformat rgba8 cbits=False
+
+subtex 0 0 128 224 64 196
+subtex 128 0 128 224 64 196
+subtex 256 0 128 224 64 196
+subtex 384 0 128 224 64 196
+subtex 512 0 128 224 64 196
+subtex 640 0 128 224 64 196
+subtex 768 0 128 224 64 196
+subtex 896 0 128 224 64 196

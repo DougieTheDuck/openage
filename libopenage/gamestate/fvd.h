@@ -305,6 +305,25 @@ public:
 	coord::phys3 get_horse_spawn_point() const;
 
 	/**
+	 * Set where newly spawned horses ride to, like an AoE2 rally point.
+	 * Only the Hunter may set it, through its tower (the single entry of
+	 * @p ids), on an in-bounds ground point horses can reach from their
+	 * spawn point. A red marker shows it to the Hunter only.
+	 */
+	bool set_hunter_rally_point(const std::shared_ptr<GameState> &state,
+	                            player_id_t owner, const std::vector<entity_id_t> &ids,
+	                            const coord::phys3 &point, const time::time_t &time);
+
+	/** The Hunter's rally point; without one, new horses stay where they spawn. */
+	std::optional<coord::phys3> get_hunter_rally_point() const;
+
+	/** The marker entity showing the rally point, while one is set. */
+	std::optional<entity_id_t> get_hunter_rally_marker() const;
+
+	/** Definition of the rally point marker, which only the Hunter may see. */
+	const std::string &get_hunter_rally_marker_definition() const;
+
+	/**
 	 * Play without the Hunter tower: remove it, free its tile and spawn
 	 * horses at the centre again. Used by scenarios built before it existed.
 	 */
@@ -549,6 +568,7 @@ private:
 	std::string tower_demolition;
 	std::string tower;
 	std::string hunter_tower;
+	std::string hunter_rally_marker;
 	int64_t hunter_tower_damage;
 	double hunter_tower_range;
 	time::time_t hunter_tower_cooldown;
@@ -562,6 +582,10 @@ private:
 	time::time_t hunter_tower_next_shot{};
 	/** When the Hunter tower may first fire: the first horse's spawn time. */
 	std::optional<time::time_t> hunter_tower_active_from{};
+	/** Where new horses ride to after spawning, if the Hunter set one. */
+	std::optional<coord::phys3> hunter_rally_point{};
+	/** The entity marking the rally point. */
+	std::optional<entity_id_t> hunter_rally_marker_id{};
 	std::string plains;
 	double tower_radius_ne;
 	double tower_radius_se;

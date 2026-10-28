@@ -499,6 +499,17 @@ void stance_messages() {
 	TESTEQUALS(decoded_patrol.target == patrol.target, true);
 	TESTEQUALS(decoded_patrol.stance.has_value(), false);
 
+	// A rally point names exactly the Hunter tower and the clicked point.
+	CommandIntent rally{12, CommandKind::SET_RALLY_POINT, {5}, {80.5, 64.5, 0}};
+	auto decoded_rally = decode_command_intent(encode_command_intent(rally));
+	decoded_rally.kind == CommandKind::SET_RALLY_POINT or TESTFAIL;
+	TESTEQUALS(decoded_rally.target == rally.target, true);
+	TESTEQUALS(decoded_rally.entity_ids.size(), size_t{1});
+	CommandIntent rally_without_tower{13, CommandKind::SET_RALLY_POINT, {}, {80.5, 64.5, 0}};
+	TESTTHROWS(encode_command_intent(rally_without_tower));
+	CommandIntent rally_with_horses{14, CommandKind::SET_RALLY_POINT, {5, 100}, {80.5, 64.5, 0}};
+	TESTTHROWS(encode_command_intent(rally_with_horses));
+
 	// Stances travel only to the Hunter that owns the horses.
 	WorldState hunter{};
 	hunter.base_revision = 1;

@@ -771,6 +771,10 @@ network::WorldState Presenter::fvd_local_view(const network::WorldState &world, 
 
 	network::WorldState view = world;
 	std::erase_if(view.entities, [&](const network::EntityState &entity) {
+		// Only the Hunter sees its rally point marker.
+		if (entity.definition == "fvd.data.entities.HunterRallyPoint") {
+			return role != network::PlayerRole::HUNTER;
+		}
 		return not own_side(entity.owner_id) and not visible(entity.position)
 		       and not remembered.contains(entity.entity_id);
 	});
@@ -904,6 +908,8 @@ void Presenter::refresh_fvd_guest_visuals() {
 		if (entity.definition != "fvd.data.entities.Builder"
 		    and entity.definition != "fvd.data.entities.Horse"
 		    and entity.definition != "fvd.data.entities.Tower"
+		    and entity.definition != "fvd.data.entities.HunterTower"
+		    and entity.definition != "fvd.data.entities.HunterRallyPoint"
 		    and entity.definition != "fvd.data.entities.TowerDemolition"
 		    and entity.definition != "fvd.data.entities.Foundation") {
 			continue;
@@ -952,7 +958,9 @@ void Presenter::refresh_fvd_guest_visuals() {
 		auto &visual = this->fvd_guest_entities[entity.entity_id];
 		const bool new_entity = not visual;
 		if (not visual) {
-			visual = std::make_shared<renderer::world::RenderEntity>();
+			// Clicks pass through the rally point marker, as on the host.
+			const bool pickable = entity.definition != "fvd.data.entities.HunterRallyPoint";
+			visual = std::make_shared<renderer::world::RenderEntity>(pickable);
 			this->world_renderer->add_render_entity(visual);
 			// Replicated proxies do not pass through the simulation's normal
 			// health-bar registration path.
@@ -1404,6 +1412,9 @@ void Presenter::render() {
 			}
 			else if (tower) {
 				selection_label = QString{"Tower"};
+			}
+			else if (selected.kind == input::game::SelectionKind::HUNTER_TOWER) {
+				selection_label = QString{"Hunter tower — right-click to set rally point"};
 			}
 			else if (hunter_horse) {
 				selection_label = QString{"Horse"};

@@ -45,6 +45,8 @@ gamestate::component::command::command_t simulation_command(CommandKind kind) {
 		return gamestate::component::command::command_t::PATROL;
 	case CommandKind::DEMOLISH_TOWER:
 		return gamestate::component::command::command_t::DEMOLISH_TOWER;
+	case CommandKind::SET_RALLY_POINT:
+		return gamestate::component::command::command_t::SET_RALLY_POINT;
 	default:
 		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
 		                     << static_cast<uint16_t>(kind)};
@@ -246,7 +248,12 @@ WorldState capture_fvd_state(
 	auto visible = [&](const coord::phys3 &position) {
 		return fog_tile_set(vision.visible, result.map_size, position.to_tile());
 	};
+	// The Hunter's rally point is its own business, even where Builders can see.
+	const auto &rally_marker = fvd->get_hunter_rally_marker_definition();
 	std::erase_if(result.entities, [&](const EntityState &entity) {
+		if (entity.definition == rally_marker) {
+			return team != gamestate::FVDTeam::HUNTER;
+		}
 		return not own_side(entity.owner_id) and not visible(entity.position);
 	});
 	std::unordered_set<gamestate::entity_id_t> sent;

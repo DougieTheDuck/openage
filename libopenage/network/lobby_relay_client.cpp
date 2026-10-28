@@ -48,6 +48,7 @@ const char *order_name(CommandKind kind) {
 	case CommandKind::SET_STANCE: return "Stance";
 	case CommandKind::PATROL: return "Patrol";
 	case CommandKind::DEMOLISH_TOWER: return "Demolish tower";
+	case CommandKind::SET_RALLY_POINT: return "Rally point";
 	}
 	return "Order";
 }

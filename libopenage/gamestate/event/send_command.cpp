@@ -178,6 +178,16 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			}
 			return;
 		}
+		if (command_type == component::command::command_t::SET_RALLY_POINT) {
+			const bool accepted = params.check_type<coord::phys3>("target")
+			                  and fvd->set_hunter_rally_point(
+				                  gstate, owner, ids,
+				                  params.get("target", coord::phys3{0, 0, 0}), time);
+			if (result_cb) {
+				result_cb(accepted);
+			}
+			return;
+		}
 		if (command_type == component::command::command_t::DEMOLISH_TOWER) {
 			const bool accepted = fvd->demolish_owned_tower(gstate, owner, ids, time);
 			if (result_cb) {

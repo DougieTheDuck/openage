@@ -61,6 +61,8 @@ enum class CommandKind : uint16_t {
 	SET_STANCE = 6,
 	PATROL = 7,
 	DEMOLISH_TOWER = 8,
+	/** The Hunter tower (sole entity) sets where new horses ride to. */
+	SET_RALLY_POINT = 9,
 };
 
 /** Host decision for one client command. */

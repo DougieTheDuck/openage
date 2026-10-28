@@ -104,7 +104,7 @@ private:
 
 bool is_known_command_kind(uint16_t value) {
 	return value >= static_cast<uint16_t>(CommandKind::MOVE)
-	    && value <= static_cast<uint16_t>(CommandKind::DEMOLISH_TOWER);
+	    && value <= static_cast<uint16_t>(CommandKind::SET_RALLY_POINT);
 }
 
 bool is_known_hunter_stance(uint16_t value) {
@@ -436,6 +436,9 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 	if (intent.kind == CommandKind::DEMOLISH_TOWER and intent.entity_ids.size() != 1) {
 		throw Error{MSG(err) << "FVD demolition requires exactly one tower entity"};
 	}
+	if (intent.kind == CommandKind::SET_RALLY_POINT and intent.entity_ids.size() != 1) {
+		throw Error{MSG(err) << "FVD rally point requires exactly the Hunter tower"};
+	}
 	if ((intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()
 	    or (intent.stance
 	        and not is_known_hunter_stance(static_cast<uint16_t>(*intent.stance)))) {
@@ -522,7 +525,8 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 	        and (intent.kind != CommandKind::BUILD_TOWER or not intent.queue
 	             or intent.build_line.front() != intent.target))
 	    or (intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()
-	    or (intent.kind == CommandKind::DEMOLISH_TOWER and intent.entity_ids.size() != 1)) {
+	    or (intent.kind == CommandKind::DEMOLISH_TOWER and intent.entity_ids.size() != 1)
+	    or (intent.kind == CommandKind::SET_RALLY_POINT and intent.entity_ids.size() != 1)) {
 		throw Error{MSG(err) << "Invalid FVD targeted/queued command payload"};
 	}
 	reader.finish();
