@@ -798,11 +798,19 @@ network::WorldState Presenter::fvd_local_view(const network::WorldState &world, 
 		for (const auto &entity : view.entities) {
 			shown.insert(entity.entity_id);
 		}
+		// Plans and orders must only reference entities this view shows, or
+		// the construction and order presentations reject the whole snapshot.
 		std::erase_if(view.reservations, [&](const auto &reservation) {
-			return not network::fog_tile_set(fog->visible, world.map_size, reservation.tile);
+			return not network::fog_tile_set(fog->visible, world.map_size, reservation.tile)
+			       or not shown.contains(reservation.builder_id);
 		});
 		std::erase_if(view.constructions, [&](const auto &construction) {
-			return not shown.contains(construction.site_entity_id);
+			return not shown.contains(construction.site_entity_id)
+			       or not shown.contains(construction.builder_id);
+		});
+		std::erase_if(view.attack_orders, [&](const auto &order) {
+			return not shown.contains(order.horse_id)
+			       or (order.target_id and not shown.contains(*order.target_id));
 		});
 	}
 	else {

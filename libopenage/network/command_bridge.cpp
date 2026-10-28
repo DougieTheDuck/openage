@@ -272,11 +272,16 @@ WorldState capture_fvd_state(
 	}
 	if (team == gamestate::FVDTeam::HUNTER) {
 		// Builder plans are only seen where the Hunter can see them.
+		// A visible plan can belong to a Builder standing in the fog. The
+		// guest's construction view rejects plans whose Builder it was not
+		// sent, so drop those too.
 		std::erase_if(result.reservations, [&](const TileReservation &reservation) {
-			return not fog_tile_set(vision.visible, result.map_size, reservation.tile);
+			return not fog_tile_set(vision.visible, result.map_size, reservation.tile)
+			       or not sent.contains(reservation.builder_id);
 		});
 		std::erase_if(result.constructions, [&](const ConstructionState &construction) {
-			return not sent.contains(construction.site_entity_id);
+			return not sent.contains(construction.site_entity_id)
+			       or not sent.contains(construction.builder_id);
 		});
 	}
 	result.fog.clear();
@@ -356,9 +361,21 @@ WorldState capture_fvd_state(
 	std::sort(result.entities.begin(), result.entities.end(), [](const auto &left, const auto &right) {
 		return left.entity_id < right.entity_id;
 	});
-	// Builders never learn where the Hunter is sending its horses.
+	// Builders never learn where the Hunter is sending its horses, and the
+	// Hunter only gets orders whose horse and target it was sent, because the
+	// order markers reject anything else.
 	if (team != gamestate::FVDTeam::HUNTER) {
 		result.attack_orders.clear();
+	}
+	else {
+		std::unordered_set<gamestate::entity_id_t> included;
+		for (const auto &entity : result.entities) {
+			included.insert(entity.entity_id);
+		}
+		std::erase_if(result.attack_orders, [&](const AttackOrderState &order) {
+			return not included.contains(order.horse_id)
+			       or (order.target_id and not included.contains(*order.target_id));
+		});
 	}
 	for (const auto &arrow : fvd->get_arrow_state(time, delivered_projectile_id)) {
 		result.arrows.push_back({
