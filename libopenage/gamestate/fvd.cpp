@@ -97,6 +97,33 @@ public:
 	}
 };
 
+/** Remove a tower demolition after its configured lifetime. */
+class TowerDemolitionExpiryHandler : public openage::event::OnceEventHandler {
+public:
+	TowerDemolitionExpiryHandler() :
+		OnceEventHandler{"game.fvd_tower_demolition_expiry"} {}
+
+	void setup_event(const std::shared_ptr<openage::event::Event> &,
+	                 const std::shared_ptr<openage::event::State> &) override {}
+
+	void invoke(openage::event::EventLoop &,
+	            const std::shared_ptr<openage::event::EventEntity> &,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time,
+	            const param_map &params) override {
+		auto game_state = std::dynamic_pointer_cast<GameState>(state);
+		game_state->get_fvd()->expire_tower_demolition(
+			game_state, params.get<entity_id_t>("demolition"), time);
+	}
+
+	time::time_t predict_invoke_time(
+		const std::shared_ptr<openage::event::EventEntity> &,
+		const std::shared_ptr<openage::event::State> &,
+		const time::time_t &at) override {
+		return at;
+	}
+};
+
 /** Schedule Hunter-owned horses without assigning automatic movement. */
 class SpawnHorseHandler : public openage::event::OnceEventHandler {
 public:
@@ -237,6 +264,7 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	auto chunk = settings.get_int("chunk_size");
 	auto players = settings.get_int("player_count");
 	auto build_time = settings.get_float("construction_time");
+	auto demolition_time = settings.get_int("tower_demolition_time");
 	auto horse_delay = settings.get_int("horse_spawn_delay");
 	auto horse_interval = settings.get_int("horse_spawn_interval");
 	auto collision_radius = settings.get_float("horse_collision_radius");
@@ -249,6 +277,7 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	    or chunk > MAX_CHUNK_WIDTH or chunk > MAX_CHUNK_HEIGHT
 	    or size % chunk != 0 or players < 2 or players > 8
 	    or build_time <= 0.0 or build_time > 300.0
+	    or demolition_time < 1 or demolition_time > 300
 	    or horse_delay < 0 or horse_delay > 600
 	    or horse_interval < 1 or horse_interval > 60
 	    or collision_radius < 0.1 or collision_radius > 0.49
@@ -264,6 +293,7 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->chunk_size = chunk;
 	this->player_count = players;
 	this->construction_time = time::time_t::from_double(build_time);
+	this->tower_demolition_time = time::time_t::from_int(demolition_time);
 	this->horse_spawn_delay = time::time_t::from_int(horse_delay);
 	this->horse_spawn_interval = time::time_t::from_int(horse_interval);
 	this->horse_collision_radius = collision_radius;
@@ -284,6 +314,7 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->builder = settings.get_object("builder").get_name();
 	this->horse = settings.get_object("horse").get_name();
 	this->foundation = settings.get_object("foundation").get_name();
+	this->tower_demolition = settings.get_object("tower_demolition").get_name();
 	this->tower = settings.get_object("tower").get_name();
 	this->plains = settings.get_object("terrain").get_name();
 	auto horse_attack = state->get_db_view()->get_object(this->horse + ".Attack");
@@ -337,6 +368,7 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 	loop->add_event_handler(std::make_shared<FVDArrowHitHandler>());
 	loop->add_event_handler(std::make_shared<FVDHorseHitHandler>());
 	loop->add_event_handler(std::make_shared<BuildProgressHandler>());
+	loop->add_event_handler(std::make_shared<TowerDemolitionExpiryHandler>());
 	loop->add_event_handler(std::make_shared<RefreshPathsHandler>());
 
 	std::vector<std::shared_ptr<TerrainChunk>> chunks;
@@ -377,7 +409,8 @@ bool FVD::tile_occupied(const std::shared_ptr<GameState> &state,
 		if (ignore.has_value() and id == *ignore) {
 			continue;
 		}
-		if (entity->get_definition() == this->foundation) {
+		if (entity->get_definition() == this->foundation
+		    or entity->get_definition() == this->tower_demolition) {
 			continue;
 		}
 		auto position = std::dynamic_pointer_cast<component::Position>(
@@ -622,6 +655,7 @@ bool FVD::start_build(const std::shared_ptr<GameState> &state,
 	if (not loop or not factory) [[unlikely]] {
 		throw Error{ERR << "FVD construction services no longer exist"};
 	}
+	this->clear_tower_demolition(state, site, time);
 
 	auto order = std::make_shared<component::command::BuildTowerCommand>(
 		this->next_build_id++, owner, builder_id, site);
@@ -678,6 +712,7 @@ bool FVD::queue_build(const std::shared_ptr<GameState> &state,
 	if (not loop or not factory) {
 		return false;
 	}
+	this->clear_tower_demolition(state, site, time);
 	// Render queued markers as actual pickable world entities immediately.
 	auto foundation = factory->spawn_game_entity(
 		loop, state, owner, this->foundation, site.to_phys3_center(), time);
@@ -799,6 +834,7 @@ bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
 				throw Error{ERR << "FVD construction services no longer exist"};
 			}
 			const auto &site = it->second.order->get_target();
+			this->clear_tower_demolition(state, site, time);
 			factory->spawn_game_entity(
 				loop, state, it->second.order->get_owner(), this->foundation,
 				site.to_phys3_center(), time);
@@ -1059,12 +1095,71 @@ bool FVD::destroy_tower(const std::shared_ptr<GameState> &state,
 	if (not this->tower_footprints.contains(tower_id)) {
 		return false;
 	}
+	std::optional<coord::phys3> position;
+	player_id_t owner = 0;
+	auto tower = state->get_game_entities().find(tower_id);
+	if (tower != state->get_game_entities().end()) {
+		auto position_component = std::dynamic_pointer_cast<component::Position>(
+			tower->second->get_component(component::component_t::POSITION));
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			tower->second->get_component(component::component_t::OWNERSHIP));
+		position = position_component->get_positions().get(time);
+		owner = ownership->get_owners().get(time);
+	}
 	this->tower_next_shot.erase(tower_id);
 	this->unblock_tower(state, tower_id, time);
 	if (state->get_game_entities().contains(tower_id)) {
 		state->remove_game_entity(tower_id, time);
 	}
+	if (position) {
+		auto loop = this->event_loop.lock();
+		auto factory = this->entity_factory.lock();
+		if (not loop or not factory) [[unlikely]] {
+			throw Error{ERR << "FVD demolition services no longer exist"};
+		}
+		const auto site = position->to_tile();
+		this->clear_tower_demolition(state, site, time);
+		auto demolition = factory->spawn_game_entity(
+			loop, state, owner, this->tower_demolition, *position, time);
+		system::Idle::idle(demolition, time);
+		const auto inserted = this->tower_demolitions.emplace(site, demolition->get_id()).second;
+		if (not inserted) [[unlikely]] {
+			throw Error{ERR << "FVD tower demolition site was not cleared"};
+		}
+		loop->create_event(
+			"game.fvd_tower_demolition_expiry", demolition->get_manager(), state,
+			time + this->tower_demolition_time,
+			{{"demolition", demolition->get_id()}});
+	}
 	return true;
+}
+
+void FVD::expire_tower_demolition(const std::shared_ptr<GameState> &state,
+                                  entity_id_t demolition_id,
+                                  const time::time_t &time) {
+	auto found = std::find_if(
+		this->tower_demolitions.begin(), this->tower_demolitions.end(),
+		[demolition_id](const auto &entry) { return entry.second == demolition_id; });
+	if (found == this->tower_demolitions.end()) {
+		return;
+	}
+	this->clear_tower_demolition(state, found->first, time);
+}
+
+void FVD::clear_tower_demolition(const std::shared_ptr<GameState> &state,
+                                 const coord::tile &site,
+                                 const time::time_t &time) {
+	auto found = this->tower_demolitions.find(site);
+	if (found == this->tower_demolitions.end()) {
+		return;
+	}
+	auto entity = state->get_game_entities().find(found->second);
+	if (entity == state->get_game_entities().end()
+	    or entity->second->get_definition() != this->tower_demolition) [[unlikely]] {
+		throw Error{ERR << "FVD tower demolition state is inconsistent"};
+	}
+	state->remove_game_entity(found->second, time);
+	this->tower_demolitions.erase(found);
 }
 
 std::shared_ptr<component::command::BuildTowerCommand> FVD::get_build_order(

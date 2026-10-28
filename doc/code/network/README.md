@@ -57,7 +57,7 @@ and sends versioned `WORLD_DELTA` frames based on the last **transmitted**
 state, and the guest validates/applies them using `ReplicationTracker`. After the five-second reveal, the host resumes its simulation and the
 presenter requests simulation-thread captures every 50 ms by default (20 updates per second).
 The host can tune this cadence with `game --network-update-interval-ms MS`, where `MS` must be positive; this is replication sampling, not a simulation tick rate.
-The guest draws replicated Builder/Horse/Tower/Foundation sprite proxies,
+The guest draws replicated Builder/Horse/Tower/Foundation/TowerDemolition sprite proxies,
 uses only its assigned faction, and sends basic Move, AttackMove and BuildTower
 intents to the host for simulation-side validation. Host decisions return as
 `COMMAND_RESULT` messages. The full-screen role dialog disappears after

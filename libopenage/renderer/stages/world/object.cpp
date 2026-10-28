@@ -192,9 +192,14 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 		// Current frame index considering current time
 		size_t frame_idx;
 		switch (layer.get_display_mode()) {
-		case renderer::resources::display_mode::ONCE:
+		case renderer::resources::display_mode::ONCE: {
+			auto &timing = layer.get_frame_timing();
+			const auto elapsed = time - last_update;
+			frame_idx = elapsed >= timing->get_total_length()
+			              ? timing->size() - 1
+			              : timing->get_frame(std::max(elapsed, time::TIME_ZERO));
+		} break;
 		case renderer::resources::display_mode::LOOP: {
-			// ONCE and LOOP are animated based on time
 			auto &timing = layer.get_frame_timing();
 			frame_idx = timing->get_frame(time, last_update);
 		} break;

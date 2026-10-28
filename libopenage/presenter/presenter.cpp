@@ -817,6 +817,7 @@ void Presenter::refresh_fvd_guest_visuals() {
 		if (entity.definition != "fvd.data.entities.Builder"
 		    and entity.definition != "fvd.data.entities.Horse"
 		    and entity.definition != "fvd.data.entities.Tower"
+		    and entity.definition != "fvd.data.entities.TowerDemolition"
 		    and entity.definition != "fvd.data.entities.Foundation") {
 			continue;
 		}
@@ -1607,7 +1608,8 @@ void Presenter::render() {
 							         or std::any_of(construction_world->entities.begin(),
 							                        construction_world->entities.end(),
 							                        [&](const network::EntityState &entry) {
-								                        return entry.position.to_tile() == tile;
+								                        return entry.definition != "fvd.data.entities.TowerDemolition"
+								                            and entry.position.to_tile() == tile;
 							                        }))) {
 								valid = false;
 							}

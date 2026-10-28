@@ -148,6 +148,21 @@ Foundation(engine.util.game_entity.GameEntity):
             Animation(engine.util.graphics.Animation):
                 Animation.sprite = "../../../fvd/graphics/foundation.sprite"
 
+TowerDemolition(engine.util.game_entity.GameEntity):
+    GameEntity.types = {}
+    GameEntity.abilities = {Idle}
+    GameEntity.modifiers = {}
+    GameEntity.variants = {}
+
+    Idle(engine.ability.type.Idle):
+        Ability.properties = {engine.ability.property.type.Animated: Animated}
+
+        Animated(engine.ability.property.type.Animated):
+            Animated.animations = {Animation}
+
+            Animation(engine.util.graphics.Animation):
+                Animation.sprite = "../../../fvd/graphics/fvd_stone_tower_demolition.sprite"
+
 Tower(engine.util.game_entity.GameEntity):
     GameEntity.types = {}
     GameEntity.abilities = {Idle, Live, Pathable, Selectable}

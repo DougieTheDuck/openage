@@ -191,6 +191,8 @@ void fvd_scenario() {
 	auto builder_graphics = renderer::resources::parser::parse_sprite_file(graphics / "builder.sprite");
 	auto foundation_graphics = renderer::resources::parser::parse_sprite_file(graphics / "foundation.sprite");
 	auto tower_graphics = renderer::resources::parser::parse_sprite_file(graphics / "tower.sprite");
+	auto tower_demolition_graphics = renderer::resources::parser::parse_sprite_file(
+		graphics / "fvd_stone_tower_demolition.sprite");
 	TESTEQUALS(plains_graphics.get_texture_count(), 1);
 	TESTEQUALS(builder_graphics.get_texture_count(), 1);
 	auto animated_idle = renderer::resources::parser::parse_sprite_file(graphics / "orc_idle.sprite");
@@ -216,6 +218,7 @@ void fvd_scenario() {
 	const auto &horse_gallop_layer = horse_gallop.get_layer(0);
 	const auto &horse_attack_layer = horse_attack.get_layer(0);
 	const auto &tower_layer = tower_graphics.get_layer(0);
+	const auto &tower_demolition_layer = tower_demolition_graphics.get_layer(0);
 	TESTEQUALS(idle_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(walk_layer.get_display_mode(),
@@ -230,6 +233,10 @@ void fvd_scenario() {
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(tower_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(tower_demolition_layer.get_display_mode(),
+	           renderer::resources::display_mode::ONCE);
+	TESTEQUALS(tower_demolition_layer.get_time_per_frame(), 0.125f);
+	TESTEQUALS(tower_demolition_layer.get_frame_timing()->size(), size_t{14});
 	TESTEQUALS(horse_idle1_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_idle2_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_gallop_layer.get_angle_count(), size_t{16});
@@ -354,6 +361,13 @@ void fvd_scenario() {
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[1], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[0], 318);
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[1], 409);
+	auto tower_demolition_sheet = renderer::resources::parser::parse_texture_file(
+		graphics / "fvd_stone_tower_demolition.texture");
+	TESTEQUALS(tower_demolition_sheet.get_size(),
+	           (std::pair<int32_t, int32_t>{1024, 1024}));
+	TESTEQUALS(tower_demolition_sheet.get_subtex_count(), size_t{14});
+	TESTEQUALS(tower_demolition_sheet.get_subtex_info(13).get_anchor_pos()[0], 128);
+	TESTEQUALS(tower_demolition_sheet.get_subtex_info(13).get_anchor_pos()[1], 206);
 	for (const auto &idle_name : {"ethereal-hunter-horse-idle1_page_00.texture",
 	                              "ethereal-hunter-horse-idle1_page_01.texture",
 	                              "ethereal-hunter-horse-idle2.texture"}) {
@@ -907,9 +921,10 @@ void fvd_construction() {
 	                   - canceled_sector->get_position().to_tile(sector_size);
 	TESTEQUALS(canceled_sector->get_cost_field()->get_cost(canceled_local), path::cost_t{1});
 
-	// Destruction removes the entity and restores the terrain's original path cost.
+	// Destruction replaces the tower with nonblocking demolition rubble and
+	// restores the terrain's original path cost.
 	TESTEQUALS(fvd->destroy_tower(state, first_tower, t(221)), true);
-	TESTEQUALS(state->get_game_entities().size(), 21);
+	TESTEQUALS(state->get_game_entities().size(), 22);
 	TESTEQUALS(tower_sector->get_cost_field()->get_cost(tower_local), path::cost_t{1});
 	TESTEQUALS(fvd->destroy_tower(state, first_tower, t(222)), false);
 }
@@ -935,16 +950,18 @@ void fvd_builder_demolition() {
 	auto fvd = state->get_fvd();
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 	entity_id_t builder_id = 0;
+	bool found_builder = false;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
 		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
 		if (ownership->get_owners().get(time::TIME_ZERO) == player_id_t{2}) {
 			builder_id = id;
+			found_builder = true;
 			break;
 		}
 	}
-	TESTEQUALS(builder_id != 0, true);
+	TESTEQUALS(found_builder, true);
 	const coord::phys3 site{61, 66, 0};
 	auto tower_at_site = [&](const time::time_t &time) {
 		entity_id_t tower_id = 0;
@@ -993,14 +1010,30 @@ void fvd_builder_demolition() {
 	TESTEQUALS(demolish(2, {tower}, at(0.12)), true);
 	TESTEQUALS(state->get_game_entities().contains(tower), false);
 	TESTEQUALS(cost(), path::cost_t{1});
+	entity_id_t demolition = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.TowerDemolition") {
+			demolition = id;
+		}
+	}
+	TESTNOTEQUALS(demolition, entity_id_t{0});
+	auto demolition_entity = state->get_game_entity(demolition);
+	TESTEQUALS(demolition_entity->get_animation_action(), AnimationAction::IDLE);
+	TESTEQUALS(demolition_entity->get_animation_started_at(), at(0.12));
 	TESTEQUALS(demolish(2, {tower}, at(0.13)), false);
 	auto snapshot = network::capture_fvd_presentation_state(state, at(0.13));
 	TESTEQUALS(std::none_of(snapshot.entities.begin(), snapshot.entities.end(),
 	                       [tower](const auto &entry) { return entry.entity_id == tower; }), true);
+	TESTEQUALS(std::any_of(snapshot.entities.begin(), snapshot.entities.end(),
+	                      [demolition](const auto &entry) {
+		                      return entry.entity_id == demolition
+		                             and entry.definition == "fvd.data.entities.TowerDemolition";
+	                      }), true);
 
 	// Delete during construction must not leave a foundation, reservation
 	// or scheduled completion event able to resurrect the tower.
 	TESTEQUALS(fvd->request_build(state, 2, {builder_id}, site, at(0.2)), true);
+	TESTEQUALS(state->get_game_entities().contains(demolition), false);
 	loop->reach_time(at(0.25), state);
 	auto unfinished = tower_at_site(at(0.25));
 	TESTEQUALS(unfinished != entity_id_t{0}, true);
@@ -1013,10 +1046,16 @@ void fvd_builder_demolition() {
 	TESTEQUALS(cost(), path::cost_t{1});
 	loop->reach_time(at(1), state);
 	TESTEQUALS(tower_at_site(at(1)), entity_id_t{0});
+	entity_id_t unfinished_demolition = 0;
 	for (const auto &[id, entity] : state->get_game_entities()) {
-		(void)id;
 		TESTNOTEQUALS(entity->get_definition(), "fvd.data.entities.Foundation");
+		if (entity->get_definition() == "fvd.data.entities.TowerDemolition") {
+			unfinished_demolition = id;
+		}
 	}
+	TESTNOTEQUALS(unfinished_demolition, entity_id_t{0});
+	loop->reach_time(at(30.27), state);
+	TESTEQUALS(state->get_game_entities().contains(unfinished_demolition), false);
 }
 
 void fvd_hunter_spawning() {

@@ -186,6 +186,11 @@ public:
 	                   entity_id_t tower_id,
 	                   const time::time_t &time);
 
+	/** Remove a demolition remnant if it still owns its scheduled expiry. */
+	void expire_tower_demolition(const std::shared_ptr<GameState> &state,
+	                            entity_id_t demolition_id,
+	                            const time::time_t &time);
+
 	/**
 	 * Start the local match's Hunter spawn schedule at match simulation time.
 	 * Safe to call more than once; no horses spawn while waiting to start.
@@ -435,11 +440,16 @@ private:
 	void unblock_tower(const std::shared_ptr<GameState> &state,
 	                   entity_id_t tower_id,
 	                   const time::time_t &time);
+	/** Remove the nonblocking demolition remnant at a construction site. */
+	void clear_tower_demolition(const std::shared_ptr<GameState> &state,
+	                            const coord::tile &site,
+	                            const time::time_t &time);
 
 	size_t map_size;
 	size_t chunk_size;
 	size_t player_count;
 	time::time_t construction_time;
+	time::time_t tower_demolition_time;
 	time::time_t horse_spawn_delay;
 	time::time_t horse_spawn_interval;
 	double horse_collision_radius;
@@ -457,6 +467,7 @@ private:
 	std::string horse;
 	std::string horse_attack_animation;
 	std::string foundation;
+	std::string tower_demolition;
 	std::string tower;
 	std::string plains;
 	double tower_radius_ne;
@@ -503,5 +514,6 @@ private:
 	std::unordered_map<entity_id_t, std::deque<QueuedBuildSite>> queued_builds;
 	std::unordered_map<coord::tile, entity_id_t> reserved_tiles;
 	std::unordered_map<entity_id_t, TowerFootprint> tower_footprints;
+	std::unordered_map<coord::tile, entity_id_t> tower_demolitions;
 };
 }

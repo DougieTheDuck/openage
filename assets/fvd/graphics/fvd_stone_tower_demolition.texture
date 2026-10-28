@@ -1,0 +1,39 @@
+# Copyright 2026 the openage authors. See copying.md for legal info.
+# FVD stone tower demolition (source frames 11-24; 14 frames total)
+# Row-major sequence, four columns; final 2 cells are empty.
+# Frame indices 0-13 correspond to original frames 11-24.
+# Non-looping animation; leave frame 13 (original 24) as rubble.
+# Anchors are consistent (center of ground footprint) across frames.
+version 1
+imagefile "fvd_stone_tower_demolition.png"
+size 1024 1024
+pxformat rgba8
+
+# Frame 0 (original source frame 11)
+subtex 0 0 256 256 128 206
+# Frame 1 (original source frame 12)
+subtex 256 0 256 256 128 206
+# Frame 2 (original source frame 13)
+subtex 512 0 256 256 128 206
+# Frame 3 (original source frame 14)
+subtex 768 0 256 256 128 206
+# Frame 4 (original source frame 15)
+subtex 0 256 256 256 128 206
+# Frame 5 (original source frame 16)
+subtex 256 256 256 256 128 206
+# Frame 6 (original source frame 17)
+subtex 512 256 256 256 128 206
+# Frame 7 (original source frame 18)
+subtex 768 256 256 256 128 206
+# Frame 8 (original source frame 19)
+subtex 0 512 256 256 128 206
+# Frame 9 (original source frame 20)
+subtex 256 512 256 256 128 206
+# Frame 10 (original source frame 21)
+subtex 512 512 256 256 128 206
+# Frame 11 (original source frame 22)
+subtex 768 512 256 256 128 206
+# Frame 12 (original source frame 23)
+subtex 0 768 256 256 128 206
+# Frame 13 (original source frame 24)
+subtex 256 768 256 256 128 206
