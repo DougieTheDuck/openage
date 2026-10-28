@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <typeinfo>
 #include <unordered_map>
 #include <utility>
@@ -73,7 +74,61 @@ public:
 	 */
 	class param_map {
 	public:
-		using map_t = std::unordered_map<std::string, std::any>;
+		/**
+		 * Type-erased parameter value.
+		 *
+		 * Expression-template values with a PlainObject type are materialized
+		 * before storage so their operands cannot expire and consumers retrieve
+		 * the owning type they expect.
+		 */
+		class value {
+		public:
+			value() = default;
+			value(const value &) = default;
+			value(value &&) noexcept = default;
+			value &operator=(const value &) = default;
+			value &operator=(value &&) noexcept = default;
+
+			template <typename T,
+			          typename = std::enable_if_t<not std::is_same_v<std::decay_t<T>, value>>>
+			value(T &&input) :
+				data{store(std::forward<T>(input))} {}
+
+			const std::type_info &type() const noexcept {
+				return this->data.type();
+			}
+
+			template <typename T>
+			T get() const {
+				return std::any_cast<T>(this->data);
+			}
+
+		private:
+			template <typename T, typename = void>
+			struct is_materializable_expression : std::false_type {};
+
+			template <typename T>
+			struct is_materializable_expression<
+				T,
+				std::void_t<typename T::PlainObject,
+				            decltype(std::declval<const T &>().eval())>> : std::true_type {};
+
+			template <typename T>
+			static std::any store(T &&input) {
+				using input_t = std::decay_t<T>;
+				if constexpr (is_materializable_expression<input_t>::value) {
+					using plain_t = typename input_t::PlainObject;
+					return std::any{plain_t{std::forward<T>(input)}};
+				}
+				else {
+					return std::any{std::forward<T>(input)};
+				}
+			}
+
+			std::any data;
+		};
+
+		using map_t = std::unordered_map<std::string, value>;
 
 		param_map() {}
 		param_map(std::initializer_list<map_t::value_type> l) :
@@ -89,7 +144,7 @@ public:
 		T get(const std::string &key, const T &defaultval = T()) const {
 			auto it = this->map.find(key);
 			if (it != this->map.end() && this->check_type<T>(it)) {
-				return std::any_cast<T>(it->second);
+				return it->second.template get<T>();
 			}
 			else {
 				return defaultval;

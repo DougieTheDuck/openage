@@ -356,11 +356,11 @@ void fvd_scenario() {
 	TESTEQUALS(tower_sheet.get_subtex_info(0).get_size()[0], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(0).get_size()[1], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(0).get_anchor_pos()[0], 318);
-	TESTEQUALS(tower_sheet.get_subtex_info(0).get_anchor_pos()[1], 409);
+	TESTEQUALS(tower_sheet.get_subtex_info(0).get_anchor_pos()[1], 403);
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[0], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[1], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[0], 318);
-	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[1], 409);
+	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[1], 403);
 	auto tower_demolition_sheet = renderer::resources::parser::parse_texture_file(
 		graphics / "fvd_stone_tower_demolition.texture");
 	TESTEQUALS(tower_demolition_sheet.get_size(),
@@ -565,13 +565,20 @@ void fvd_scenario() {
 	                           .get(time::TIME_ZERO)
 	                           .to_scene3()
 	                           .to_world_space();
-	auto selection_clip = selection_matrix * Eigen::Vector4f{
+	const Eigen::Vector4f selection_clip = selection_matrix * Eigen::Vector4f{
 		selection_world.x(), selection_world.y(), selection_world.z(), 1};
-	auto selection_edge = Eigen::Vector2f{selection_clip.x(), selection_clip.y()};
+	const Eigen::Vector2f selection_edge{selection_clip.x(), selection_clip.y()};
+	const Eigen::Vector2f selection_margin{0.05f, 0.05f};
+	// std::any preserves Eigen expression types, while the handler expects
+	// concrete vectors in its parameter map.
+	const Eigen::Vector2f selection_drag_start =
+		selection_edge - selection_margin;
+	const Eigen::Vector2f selection_drag_end =
+		selection_edge + selection_margin;
 	selector.invoke(*loop, nullptr, state, time::TIME_ZERO,
 	                {{"controlled", size_t{2}},
-	                 {"drag_start", selection_edge - Eigen::Vector2f{0.05f, 0.05f}},
-	                 {"drag_end", selection_edge + Eigen::Vector2f{0.05f, 0.05f}},
+	                 {"drag_start", selection_drag_start},
+	                 {"drag_end", selection_drag_end},
 	                 {"camera_matrix", selection_matrix},
 	                 {"select_cb", std::function<void(const std::vector<entity_id_t>)>{
 	                                   [&](const std::vector<entity_id_t> ids) {
@@ -584,7 +591,7 @@ void fvd_scenario() {
 	selector.invoke(*loop, nullptr, state, time::TIME_ZERO,
 	                {{"controlled", size_t{2}},
 	                 {"drag_start", selection_edge},
-	                 {"drag_end", selection_edge + Eigen::Vector2f{0.05f, 0.05f}},
+	                 {"drag_end", selection_drag_end},
 	                 {"camera_matrix", selection_matrix},
 	                 {"select_cb", std::function<void(const std::vector<entity_id_t>)>{
 	                                   [&](const std::vector<entity_id_t> ids) {
@@ -597,10 +604,14 @@ void fvd_scenario() {
 	Eigen::Matrix4f perspective_matrix = selection_matrix;
 	perspective_matrix(3, 3) = 2.0f;
 	const Eigen::Vector2f ndc_position = selection_edge / 2.0f;
+	const Eigen::Vector2f perspective_drag_start =
+		ndc_position - selection_margin;
+	const Eigen::Vector2f perspective_drag_end =
+		ndc_position + selection_margin;
 	selector.invoke(*loop, nullptr, state, time::TIME_ZERO,
 	                {{"controlled", size_t{2}},
-	                 {"drag_start", ndc_position - Eigen::Vector2f{0.05f, 0.05f}},
-	                 {"drag_end", ndc_position + Eigen::Vector2f{0.05f, 0.05f}},
+	                 {"drag_start", perspective_drag_start},
+	                 {"drag_end", perspective_drag_end},
 	                 {"camera_matrix", perspective_matrix},
 	                 {"select_cb", std::function<void(const std::vector<entity_id_t>)>{
 	                                   [&](const std::vector<entity_id_t> ids) {

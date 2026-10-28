@@ -9,6 +9,8 @@
 #include <string_view>
 #include <utility>
 
+#include <eigen3/Eigen/Dense>
+
 #include "log/log.h"
 #include "log/message.h"
 #include "testing/testing.h"
@@ -572,6 +574,12 @@ void eventtrigger() {
 				TESTEQUALS(param.contains("testStdString"), true);
 				TESTEQUALS(param.check_type<std::string>("testStdString"), true);
 				TESTEQUALS(param.get<std::string>("testStdString"), "stdstring");
+
+				log::log(DBG << "Testing expression parameter materialization");
+				TESTEQUALS(param.check_type<Eigen::Vector2f>("testVector"), true);
+				const auto vector = param.get<Eigen::Vector2f>("testVector");
+				TESTEQUALS(vector.x(), 4.0f);
+				TESTEQUALS(vector.y(), 6.0f);
 			}
 
 			time::time_t predict_invoke_time(const std::shared_ptr<EventEntity> & /*target*/,
@@ -588,7 +596,12 @@ void eventtrigger() {
 		auto state = std::make_shared<TestState>(loop);
 		auto gstate = std::dynamic_pointer_cast<State>(state);
 
-		loop->create_event("EventParameterMap", state->objectA, gstate, 1, {{"testInt", 1}, {"testStdString", "stdstring"s}, {"testString", "string"}});
+		const Eigen::Vector2f vector{1.0f, 2.0f};
+		loop->create_event("EventParameterMap", state->objectA, gstate, 1,
+		                   {{"testInt", 1},
+		                    {"testStdString", "stdstring"s},
+		                    {"testString", "string"},
+		                    {"testVector", vector + Eigen::Vector2f{3.0f, 4.0f}}});
 		loop->reach_time(10, gstate);
 	}
 

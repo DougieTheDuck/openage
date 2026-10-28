@@ -15,6 +15,13 @@ vec2 uv = vec2(
 	vert_uv.y * tile_params.w + tile_params.y
 );
 
+const float shadow_rgb_max = 8.0 / 255.0;
+
+bool is_shadow(vec4 value, int alpha) {
+	return alpha < 250
+	    && max(max(value.r, value.g), value.b) <= shadow_rgb_max;
+}
+
 void main() {
 	vec4 tex_val = texture(tex, uv);
 	int alpha = int(round(tex_val.a * 255));
@@ -23,10 +30,12 @@ void main() {
 	if (alpha <= 20) {
 		discard;
 	}
-	// Translucent shadows and effects belong behind opaque sprite pixels.
-	// Moving their depth to the far plane keeps them visible on empty ground
-	// while allowing every ordinary sprite fragment to render in front.
-	gl_FragDepth = alpha < 128 ? 1.0 : gl_FragCoord.z;
+	// Translucent effects and dark shadow pixels belong behind opaque sprites.
+	// Dense rendered shadows can be more than 50% opaque, so alpha alone does
+	// not identify them. Values 250 and above include team-color markers.
+	gl_FragDepth = alpha < 128 || is_shadow(tex_val, alpha)
+	             ? 1.0
+	             : gl_FragCoord.z;
 	if (!cbits) {
 		col = tex_val;
 		return;

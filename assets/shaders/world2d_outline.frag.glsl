@@ -11,12 +11,19 @@ uniform vec4 outline_color;
 uniform vec4 tile_params;
 
 const float silhouette_alpha = 0.625;
+const float shadow_rgb_max = 8.0 / 255.0;
 
 float sprite_alpha(ivec2 texel, ivec2 tile_min, ivec2 tile_max) {
 	if (any(lessThan(texel, tile_min)) || any(greaterThanEqual(texel, tile_max))) {
 		return 0.0;
 	}
-	return texelFetch(tex, texel, 0).a;
+	vec4 value = texelFetch(tex, texel, 0);
+	int alpha = int(round(value.a * 255));
+	if (alpha < 250
+	    && max(max(value.r, value.g), value.b) <= shadow_rgb_max) {
+		return 0.0;
+	}
+	return value.a;
 }
 
 void main() {
