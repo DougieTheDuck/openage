@@ -6,8 +6,10 @@
   pathfinding.
 - Replication: the owner sees "garrisoned in tower X"; the Hunter sees nothing
   (it is inside a building).
-- Ungarrison point: reuse the rally point code (marker entity per tower,
-  owner-only visibility, `closest_reachable` when walled off).
+- Ungarrison point: reuse the rally point code (marker entity per tower with
+  the same `hunter_rally_point` red arrow sprite, owner-only visibility,
+  `closest_reachable` when walled off). It is optional: without one, the
+  Builder is placed on the free adjacent tile and given no order.
 - Adjacent hop: footprints touching, including diagonally. The Builder moves
   instantly, or after a short animation, without walking outside.
 - Commands: `GARRISON` (Builder plus tower), `UNGARRISON` (tower),
@@ -23,8 +25,11 @@
   garrisoning cancels his current job (his queued foundations stay).
 - Garrisoning does not change the tower's damage, range, armour or rate of fire.
 
+- No ungarrison point: the Builder steps straight out onto a free tile next
+  to the tower and stays, exposed to attack (Dougie, 2026-10-28). Tie-break
+  between free tiles deterministically (e.g. the tile he entered from if free,
+  otherwise a fixed scan order).
+
 ## Still to decide
 
-- Default ungarrison point when none is set; proposed: the tile the Builder
-  entered from.
 - A garrisoned Builder counts as alive for "all Builders dead"; assumed yes.

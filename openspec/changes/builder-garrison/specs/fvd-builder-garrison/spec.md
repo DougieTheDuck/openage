@@ -37,16 +37,22 @@ be placed unharmed on a free tile next to it before the tower collapses.
 - **WHEN** horses destroy a tower with a Builder inside
 - **THEN** the Builder appears beside the rubble with the same HP he had inside
 
-### Requirement: Ungarrison point and shortcut
+### Requirement: Ungarrison and optional ungarrison point
 
-Each tower SHALL have an ungarrison point that its owner can set by selecting
-the tower and right-clicking; it SHALL be shown only to the owner. A shortcut
-key SHALL ungarrison the Builder, who then moves to the ungarrison point (or as
-close as he can get).
+A shortcut key SHALL ungarrison the Builder. Without an ungarrison point, the
+Builder SHALL be placed immediately on a free tile next to the tower and given
+no further order, even if enemies are near. The owner MAY set an ungarrison
+point by selecting the tower and right-clicking; it SHALL be marked with the
+same red arrow as the Hunter's rally point and shown only to the owner. With a
+point set, the ungarrisoned Builder SHALL walk to it, or as close as he can get.
 
-#### Scenario: Ungarrison
-- **WHEN** the owner selects a garrisoned tower and presses the ungarrison key
-- **THEN** the Builder reappears next to the tower and walks to its ungarrison point
+#### Scenario: Ungarrison without a point
+- **WHEN** the owner presses the ungarrison key on a tower with no ungarrison point while a horse stands nearby
+- **THEN** the Builder appears on a free tile beside the tower, stays there and can be attacked
+
+#### Scenario: Ungarrison with a point
+- **WHEN** the owner has set an ungarrison point and presses the ungarrison key
+- **THEN** the Builder appears beside the tower and walks to the red arrow
 
 ### Requirement: Hop between adjacent towers
 

@@ -10,9 +10,13 @@ their own towers and hop along a wall of towers.
 - With a Builder selected, **G** enables garrison mode; clicking one of your
   finished towers sends the Builder there and puts him inside.
 - A garrisoned Builder is hidden and cannot be targeted.
-- A tower has an **ungarrison point**, set like the Hunter's rally point:
-  select the tower and right-click. A red arrow marks it, visible only to its owner.
-- A shortcut key (proposed **U**) ungarrisons the Builder to that point.
+- A shortcut key (proposed **U**) ungarrisons the Builder. With no ungarrison
+  point set, he steps straight out onto a free tile next to the tower and
+  stays there, even if horses are nearby.
+- Optionally, a tower gets an **ungarrison point**, set like the Hunter's
+  rally point: select the tower and right-click. It uses the same red arrow
+  sprite as the rally point, visible only to the tower's owner. When one is
+  set, the Builder walks there on ungarrisoning.
 - If the ungarrison point is on one of your finished towers **adjacent** to the
   current one, ungarrisoning moves the Builder straight into that tower instead
   (hopping between towers).
