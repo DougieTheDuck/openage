@@ -40,10 +40,10 @@ receives everything the host knows.
 ### Modified Capabilities
 
 - `fvd-hunter-stances`: Aggressive acquisition and the Aggressive patrol
-  leash use the horse's vision range; an Aggressive patrol whose target
-  vanishes into fog stops patrolling.
+  give-up distance use the horse's vision range; an Aggressive patrol
+  whose target vanishes into fog resumes its route.
 - `fvd-synchronized-match`: world state gains per-side fog and remembered
-  buildings. The protocol major version increases to 15.
+  buildings. The protocol major version increases to 16.
 
 ## Out of scope
 

@@ -107,11 +107,12 @@ back to its own starting position, repeating until another order replaces
 it. The horse's stance SHALL decide how it fights while patrolling:
 an Observe horse SHALL never attack; a Defensive horse SHALL engage
 enemies within 4 tiles, abandon a target once the horse or the target is
-more than 10 tiles from where it left its route, then return there and
-resume the patrol; an Aggressive horse SHALL engage enemies within its
-8-tile sight and, if the target escapes beyond that sight, stop patrolling
-and remain where it is. A patrolling horse that kills its target SHALL
-resume the patrol. A Patrol command SHALL
+more than 6 tiles from where it left its route (the same leash as a
+stationary Defensive horse), then return there and resume the patrol; an
+Aggressive horse SHALL engage enemies within its sight, with no leash, and
+SHALL resume the patrol once the target dies or escapes beyond that sight.
+Patrol SHALL decide only the route; a stance change during a patrol SHALL
+take effect immediately. A Patrol command SHALL
 be rejected entirely unless it comes from the Hunter, every horse is owned
 and alive or known dead, the destination is an in-bounds ground position
 outside completed tower footprints, and every horse has a path to it.
@@ -129,12 +130,12 @@ outside completed tower footprints, and every horse has a path to it.
 - **THEN** the horse attacks it and afterwards resumes its patrol
 
 #### Scenario: Defensive patrol, enemy flees
-- **WHEN** a Defensive patrolling horse's target runs more than 10 tiles from where the horse left its route
+- **WHEN** a Defensive patrolling horse's target runs more than 6 tiles from where the horse left its route
 - **THEN** the horse gives up, returns to that point and resumes its patrol
 
 #### Scenario: Aggressive patrol, enemy escapes
 - **WHEN** an Aggressive patrolling horse's target moves beyond 8 tiles from it
-- **THEN** the horse stops patrolling and stays where it is, still Aggressive
+- **THEN** the horse gives up and carries on along its patrol route, still Aggressive
 
 #### Scenario: Unreachable destination
 - **WHEN** any selected horse has no path to the Patrol destination

@@ -2668,32 +2668,39 @@ void fvd_hunter_patrol_stances() {
 	TESTEQUALS(has_order(hunter), true);
 	TESTEQUALS(position_of(hunter, now).se.to_double() > 100.5, true);
 
-	// Its quarry escapes beyond sight, so it stops patrolling where it is.
+	// Its quarry escapes beyond sight, so it gives up but keeps patrolling.
 	std::dynamic_pointer_cast<component::Position>(
 		quarry->get_component(component::component_t::POSITION))->set_position(at(now), {23, 125, 0});
 	run_until(1.4);
-	TESTEQUALS(has_order(hunter), false);
+	TESTEQUALS(has_order(hunter), true);
 	fvd->get_hunter_stance(hunter->get_id()) == HunterStance::AGGRESSIVE or TESTFAIL;
-	const auto hunter_stopped = position_of(hunter, now);
+	TESTEQUALS(fvd->get_attack_order_state().empty(), false);
+	for (const auto &order : fvd->get_attack_order_state()) {
+		if (order.horse_id == hunter->get_id()) {
+			TESTEQUALS(order.target_id.has_value(), false);
+		}
+	}
 
 	// The Defensive patrol has engaged the Builder near its route by now;
-	// the Builder runs, and the horse chases until the ten-tile leash.
+	// the Builder runs, and the horse chases until the six-tile leash.
 	TESTEQUALS(health_of(fleeing, now) < 25, true);
-	system::Move::move_default(fleeing, state, {23, 95, 0}, at(now));
+	system::Move::move_default(fleeing, state, {23, 80, 0}, at(now));
 
 	run_until(16.0);
 	// Observe on patrol never attacks, even two tiles from its route.
 	TESTEQUALS(health_of(ignored, now), int64_t{25});
 	TESTEQUALS(has_order(watcher), true);
-	// The Defensive horse chased, gave up within its leash and went back
-	// to patrolling the original route; its target escaped.
-	TESTEQUALS(guard_furthest > 1.0 and guard_furthest < 11.0, true);
+	// The Defensive horse chased, gave up within the stationary six-tile
+	// leash and went back to patrolling the original route; its target escaped.
+	TESTEQUALS(guard_furthest > 1.0 and guard_furthest < 7.0, true);
 	TESTEQUALS(guard_resumed, true);
 	TESTEQUALS(has_order(guard), true);
 	TESTEQUALS(state->get_game_entities().contains(fleeing->get_id()), true);
-	// The Aggressive horse stayed where it lost its quarry.
-	TESTEQUALS((position_of(hunter, now) - hunter_stopped).length() < 0.2, true);
-	TESTEQUALS(has_order(hunter), false);
+	// The Aggressive horse went back to its route and is still patrolling;
+	// it never caught its quarry.
+	TESTEQUALS(std::abs(position_of(hunter, now).se.to_double() - 100.0) < 0.5, true);
+	TESTEQUALS(has_order(hunter), true);
+	TESTEQUALS(health_of(quarry, now), int64_t{25});
 }
 
 void fvd_fog_of_war() {

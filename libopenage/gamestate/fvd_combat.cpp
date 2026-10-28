@@ -37,9 +37,6 @@ constexpr double HORSE_ATTACK_RANGE_SQUARED = HORSE_ATTACK_RANGE * HORSE_ATTACK_
 /** Furthest a Defensive engagement may stray from its engagement point. */
 constexpr double HORSE_LEASH_RANGE = 6.0;
 constexpr double HORSE_LEASH_RANGE_SQUARED = HORSE_LEASH_RANGE * HORSE_LEASH_RANGE;
-/** Furthest a Defensive patrol chases from where it left its route. */
-constexpr double PATROL_LEASH_RANGE = 10.0;
-constexpr double PATROL_LEASH_RANGE_SQUARED = PATROL_LEASH_RANGE * PATROL_LEASH_RANGE;
 
 /** Use stable ordering for simultaneous combat and lethal-hit decisions. */
 std::vector<entity_id_t> entities_by_definition(
@@ -675,15 +672,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			}
 		}
 		if (order.target and not eligible(*order.target)) {
-			// An Aggressive patrol whose quarry slipped into the fog stops
-			// where it is; one whose quarry died carries on patrolling.
-			if (patrolling and stance == HunterStance::AGGRESSIVE
-			    and state->get_game_entities().contains(*order.target)) {
-				halt_for_engagement(horse, time);
-				this->attack_orders.erase(order_it);
-				continue;
-			}
-			// A destroyed target must not leave an orphaned approach route.
+			// A destroyed or vanished target must not leave an orphaned approach route.
 			if (move->get_active_target() and move->get_active_arrival() > time) {
 				halt_for_engagement(horse, time);
 			}
@@ -710,7 +699,6 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			}
 			else if (patrolling and order.patrol_engagement) {
 				anchor = order.patrol_engagement;
-				anchor_radius = PATROL_LEASH_RANGE;
 			}
 			const auto nearest = this->nearest_hunter_target(
 				state, horse, towers, builders,
@@ -729,14 +717,16 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			if (stance == HunterStance::AGGRESSIVE
 			    and std::sqrt(distance_squared(current, enemy_at))
 			            > this->vision_range(state, horse->get_definition())) {
-				// An Aggressive patrol that loses its quarry stops where it is.
+				// An Aggressive patrol has no leash, but once its quarry is out
+				// of its own sight it gives up and carries on along the route.
 				halt_for_engagement(horse, time);
-				this->attack_orders.erase(order_it);
-				continue;
+				order.target.reset();
 			}
+			// A Defensive patrol keeps the stationary Defensive leash, measured
+			// from where it left the route.
 			if (stance == HunterStance::DEFENSIVE and order.patrol_engagement
-			    and (distance_squared(current, *order.patrol_engagement) > PATROL_LEASH_RANGE_SQUARED
-			         or distance_squared(enemy_at, *order.patrol_engagement) > PATROL_LEASH_RANGE_SQUARED)) {
+			    and (distance_squared(current, *order.patrol_engagement) > HORSE_LEASH_RANGE_SQUARED
+			         or distance_squared(enemy_at, *order.patrol_engagement) > HORSE_LEASH_RANGE_SQUARED)) {
 				halt_for_engagement(horse, time);
 				order.target.reset();
 			}

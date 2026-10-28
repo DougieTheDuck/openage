@@ -42,8 +42,8 @@ those within a given distance of a point.
 |---|---|---|---|
 | AttackMove | 4 tiles (firing range) | none | resume destination |
 | Patrol, Observe | never acquires | — | — |
-| Patrol, Defensive | 4 tiles | candidates within 10 tiles of where it left the route | walk back there, then resume the leg |
-| Patrol, Aggressive | 8 tiles (sight) | none | resume the leg if the target died; stop patrolling if it escaped beyond 8 tiles |
+| Patrol, Defensive | 4 tiles | candidates within 6 tiles of where it left the route | walk back there, then resume the leg |
+| Patrol, Aggressive | 8 tiles (sight) | none | resume the leg once the target dies or escapes beyond its sight |
 | Aggressive | 8 tiles (sight) | none | drop the order where it stands; next tick rescans at 8 tiles |
 | Defensive | 4 tiles | candidates within 6 tiles of the anchor | walk back to the anchor, still defending; drop the order on arrival |
 
