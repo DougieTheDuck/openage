@@ -8,6 +8,7 @@
 #include <variant>
 
 #include "gamestate/fvd.h"
+#include "gamestate/fvd_test_support.h"
 
 #include "assets/mod_manager.h"
 #include "config.h"
@@ -48,6 +49,7 @@ void match_disconnect_coordinator() {
 	auto terrain = std::make_shared<gamestate::TerrainFactory>();
 	gamestate::Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
+	gamestate::tests::use_centre_test_layout(state);
 	auto commander = std::make_shared<gamestate::event::Commander>(loop);
 
 	std::optional<gamestate::entity_id_t> builder_two{};

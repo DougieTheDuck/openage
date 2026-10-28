@@ -25,6 +25,7 @@ constexpr uint16_t ENTITY_HAS_HUNTER_STANCE = 1 << 2;
 constexpr uint16_t ENTITY_REMEMBERED = 1 << 3;
 constexpr const char *TOWER_DEFINITION = "fvd.data.entities.Tower";
 constexpr const char *FOUNDATION_DEFINITION = "fvd.data.entities.Foundation";
+constexpr const char *HUNTER_TOWER_DEFINITION = "fvd.data.entities.HunterTower";
 constexpr const char *HORSE_DEFINITION = "fvd.data.entities.Horse";
 constexpr uint16_t ATTACK_HAS_TARGET = 1 << 0;
 constexpr uint16_t ATTACK_REACHED_DESTINATION = 1 << 1;
@@ -128,7 +129,8 @@ bool is_known_construction_phase(uint16_t value) {
 
 /** A remembered entity is an enemy building with nothing but its last place. */
 bool valid_remembered(const EntityState &entity, gamestate::player_id_t local_player) {
-	return (entity.definition == TOWER_DEFINITION or entity.definition == FOUNDATION_DEFINITION)
+	return (entity.definition == TOWER_DEFINITION or entity.definition == FOUNDATION_DEFINITION
+	        or entity.definition == HUNTER_TOWER_DEFINITION)
 	   and entity.owner_id != local_player and not entity.health and not entity.tower_kills
 	   and not entity.hunter_stance and entity.motion_keys.empty() and entity.facing_keys.empty();
 }

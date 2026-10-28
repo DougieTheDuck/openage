@@ -277,6 +277,11 @@ def tests_cpp():
         "FVD per-side vision, hidden targets, explored memory and filtered replication",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_tower",
+        "FVD invulnerable central Hunter tower: range, priority, cooldown and damage",
+        lambda env: env["has_assets"],
+    )
 
 
 def demos_cpp():

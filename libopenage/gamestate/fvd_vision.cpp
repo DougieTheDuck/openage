@@ -176,7 +176,8 @@ void FVD::update_vision(const std::shared_ptr<GameState> &state, const time::tim
 		};
 		for (const auto &[id, entity] : state->get_game_entities()) {
 			const auto &definition = entity->get_definition();
-			if ((definition != this->tower and definition != this->foundation)
+			if ((definition != this->tower and definition != this->foundation
+			     and definition != this->hunter_tower)
 			    or not entity->has_component(component::component_t::OWNERSHIP)) {
 				continue;
 			}

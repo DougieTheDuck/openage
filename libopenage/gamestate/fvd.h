@@ -294,6 +294,22 @@ public:
 	               player_id_t owner, entity_id_t firing_tower,
 	               int64_t damage, const time::time_t &time);
 
+	/** Apply a Hunter tower shot when its projectile lands. */
+	void hunter_tower_hit(const std::shared_ptr<GameState> &state, entity_id_t target,
+	                      int64_t damage, const time::time_t &time);
+
+	/** The Hunter's central tower, if this scenario has one. */
+	std::optional<entity_id_t> get_hunter_tower() const;
+
+	/** Where new Hunter horses appear, beside the Hunter tower. */
+	coord::phys3 get_horse_spawn_point() const;
+
+	/**
+	 * Play without the Hunter tower: remove it, free its tile and spawn
+	 * horses at the centre again. Used by scenarios built before it existed.
+	 */
+	void remove_hunter_tower(const std::shared_ptr<GameState> &state, const time::time_t &time);
+
 	/** Apply a Hunter horse's pending strike at its animation's hit frame. */
 	void horse_hit(const std::shared_ptr<GameState> &state,
 	               entity_id_t horse, entity_id_t target,
@@ -532,6 +548,20 @@ private:
 	std::string foundation;
 	std::string tower_demolition;
 	std::string tower;
+	std::string hunter_tower;
+	int64_t hunter_tower_damage;
+	double hunter_tower_range;
+	time::time_t hunter_tower_cooldown;
+	double builder_start_radius;
+	/** Absent before the map exists or in scenarios without the tower. */
+	std::optional<entity_id_t> hunter_tower_id{};
+	/** Path costs under the Hunter tower before it blocked them. */
+	std::vector<FootprintCell> hunter_tower_cells;
+	/** Where new horses appear: the first free tile beside the Hunter tower. */
+	coord::phys3 horse_spawn_point{0, 0, 0};
+	time::time_t hunter_tower_next_shot{};
+	/** When the Hunter tower may first fire: the first horse's spawn time. */
+	std::optional<time::time_t> hunter_tower_active_from{};
 	std::string plains;
 	double tower_radius_ne;
 	double tower_radius_se;

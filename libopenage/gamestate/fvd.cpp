@@ -47,6 +47,7 @@
 #include "pathfinding/grid.h"
 #include "pathfinding/sector.h"
 #include "pathfinding/pathfinder.h"
+#include "util/math_constants.h"
 
 namespace openage::gamestate {
 
@@ -173,6 +174,28 @@ public:
 };
 
 /** A launched arrow deals damage at its predicted impact time. */
+/** A Hunter tower shot deals its damage when the projectile lands. */
+class FVDHunterTowerHitHandler : public openage::event::OnceEventHandler {
+public:
+	FVDHunterTowerHitHandler() : OnceEventHandler{"game.fvd_hunter_tower_hit"} {}
+	void setup_event(const std::shared_ptr<openage::event::Event> &,
+	                 const std::shared_ptr<openage::event::State> &) override {}
+	void invoke(openage::event::EventLoop &,
+	            const std::shared_ptr<openage::event::EventEntity> &,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time, const param_map &params) override {
+		auto gstate = std::dynamic_pointer_cast<GameState>(state);
+		gstate->get_fvd()->hunter_tower_hit(gstate, params.get<entity_id_t>("target"),
+		                                  params.get<int64_t>("damage"), time);
+	}
+	time::time_t predict_invoke_time(
+		const std::shared_ptr<openage::event::EventEntity> &,
+		const std::shared_ptr<openage::event::State> &,
+		const time::time_t &at) override {
+		return at;
+	}
+};
+
 class FVDArrowHitHandler : public openage::event::OnceEventHandler {
 public:
 	FVDArrowHitHandler() : OnceEventHandler{"game.fvd_arrow_hit"} {}
@@ -273,6 +296,16 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	auto armor = settings.get_int("tower_armor");
 	auto melee_damage = settings.get_int("horse_melee_damage");
 	auto arrow_duration = settings.get_float("arrow_travel_time");
+	auto central_damage = settings.get_int("hunter_tower_damage");
+	auto central_range = settings.get_float("hunter_tower_range");
+	auto central_cooldown = settings.get_float("hunter_tower_cooldown");
+	auto start_radius = settings.get_float("builder_start_radius");
+	if (central_damage < 1 or central_range < 1.0 or central_range > 32.0
+	    or central_cooldown < 0.1 or central_cooldown > 60.0
+	    or start_radius <= central_range or start_radius > size / 2.0 - 2.0) {
+		throw Error{ERR << "Invalid FVD Hunter tower settings: damage >= 1, range 1..32 tiles, "
+		                << "cooldown 0.1..60 seconds, Builders starting outside its range on the map"};
+	}
 	if (size < 16 or size > 512 or chunk < 4 or chunk > size
 	    or chunk > MAX_CHUNK_WIDTH or chunk > MAX_CHUNK_HEIGHT
 	    or size % chunk != 0 or players < 2 or players > 8
@@ -302,6 +335,10 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->tower_armor = armor;
 	this->horse_damage = melee_damage;
 	this->arrow_travel = time::time_t::from_double(arrow_duration);
+	this->hunter_tower_damage = central_damage;
+	this->hunter_tower_range = central_range;
+	this->hunter_tower_cooldown = time::time_t::from_double(central_cooldown);
+	this->builder_start_radius = start_radius;
 	const size_t vision_words = (this->map_size * this->map_size + 63) / 64;
 	for (auto &team : this->team_vision) {
 		team.explored.assign(vision_words, 0);
@@ -321,6 +358,7 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->foundation = settings.get_object("foundation").get_name();
 	this->tower_demolition = settings.get_object("tower_demolition").get_name();
 	this->tower = settings.get_object("tower").get_name();
+	this->hunter_tower = settings.get_object("hunter_tower").get_name();
 	this->plains = settings.get_object("terrain").get_name();
 	auto horse_attack = state->get_db_view()->get_object(this->horse + ".Attack");
 	auto attack_property = api::APIAbility::get_property(
@@ -372,6 +410,7 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 	loop->add_event_handler(std::make_shared<FVDCombatHandler>());
 	loop->add_event_handler(std::make_shared<FVDArrowHitHandler>());
 	loop->add_event_handler(std::make_shared<FVDHorseHitHandler>());
+	loop->add_event_handler(std::make_shared<FVDHunterTowerHitHandler>());
 	loop->add_event_handler(std::make_shared<BuildProgressHandler>());
 	loop->add_event_handler(std::make_shared<TowerDemolitionExpiryHandler>());
 	loop->add_event_handler(std::make_shared<RefreshPathsHandler>());
@@ -393,16 +432,41 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 		auto setup = id == 0 ? "" : (id == 1 ? this->hunter : this->builders);
 		state->add_player(entities->add_player(loop, state, setup));
 		if (id >= 2) {
-			auto centre = this->get_centre();
-			auto offset = static_cast<int>(id) - static_cast<int>((this->player_count + 2) / 2);
+			// Builders start evenly around a ring outside the Hunter tower's reach.
+			const double angle = 2.0 * math::PI * static_cast<double>(id - 2)
+			                     / static_cast<double>(this->player_count - 1);
+			const auto centre = this->get_centre();
+			const coord::tile site{
+				static_cast<coord::tile_t>(std::floor(centre.ne.to_double()
+				                                      + this->builder_start_radius * std::cos(angle))),
+				static_cast<coord::tile_t>(std::floor(centre.se.to_double()
+				                                      + this->builder_start_radius * std::sin(angle)))};
 			auto entity = entities->spawn_game_entity(
-				loop, state, id, this->builder,
-				centre + coord::phys3_delta{offset, 1, 0}, time::TIME_ZERO);
+				loop, state, id, this->builder, site.to_phys3_center(), time::TIME_ZERO);
 			if (not refresh_target) {
 				refresh_target = entity;
 			}
 		}
 	}
+	this->hunter_tower_id = entities->spawn_game_entity(
+		loop, state, 1, this->hunter_tower, this->get_centre(), time::TIME_ZERO)->get_id();
+	// The Hunter tower is solid like a Builder tower. Horses appear on the
+	// first free tile beside it, on the side facing the camera.
+	auto map = state->get_map();
+	std::unordered_set<nyan::fqon_t> blocked_grids;
+	coord::tile_t spawn_se = this->get_centre().to_tile().se;
+	for (const auto &tile : this->get_tower_footprint(this->get_centre().to_tile())) {
+		for (const auto &[path_type, cost] : this->tower_path_costs) {
+			auto previous = map->set_path_cost(path_type, tile, cost, time::TIME_ZERO);
+			this->hunter_tower_cells.push_back(FootprintCell{tile, path_type, previous});
+			blocked_grids.insert(path_type);
+		}
+		spawn_se = std::max(spawn_se, tile.se);
+	}
+	for (const auto &path_type : blocked_grids) {
+		map->rebuild_path_grid(path_type);
+	}
+	this->horse_spawn_point = coord::tile{this->get_centre().to_tile().ne, spawn_se + 1}.to_phys3_center();
 	loop->create_event("game.fvd_refresh_paths", refresh_target->get_manager(), state, time::TIME_ZERO);
 	// Players see their starting surroundings before the first combat tick.
 	this->update_vision(state, time::TIME_ZERO);
@@ -1403,6 +1467,7 @@ void FVD::start_hunter_wave(const std::shared_ptr<GameState> &state,
 		std::lock_guard lock{this->hunter_spawn_time_mutex};
 		this->first_hunter_spawn_time = spawn_time;
 	}
+	this->hunter_tower_active_from = spawn_time;
 	this->hunter_wave_started = true;
 	this->next_hunter_spawn_event = loop->create_event(
 		"game.fvd_spawn_horse", this->horse_spawn_target, state, spawn_time);
@@ -1464,7 +1529,7 @@ void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	if (not loop or not factory or not this->horse_spawn_target) {
 		throw Error{ERR << "Cannot spawn a Hunter horse without FVD services"};
 	}
-	auto spawned = factory->spawn_game_entity(loop, state, 1, this->horse, this->get_centre(), time);
+	auto spawned = factory->spawn_game_entity(loop, state, 1, this->horse, this->horse_spawn_point, time);
 	this->relax_horse_crowd(state, spawned->get_id(), time);
 	this->next_hunter_spawn_event = loop->create_event(
 		"game.fvd_spawn_horse", this->horse_spawn_target, state,
@@ -1615,6 +1680,24 @@ bool FVD::issue_hunter_route(const std::shared_ptr<GameState> &state,
 		system::Move::move_default(entity, state, destination, time);
 	}
 	return true;
+}
+
+void FVD::remove_hunter_tower(const std::shared_ptr<GameState> &state, const time::time_t &time) {
+	auto map = state->get_map();
+	std::unordered_set<nyan::fqon_t> changed_grids;
+	for (const auto &cell : this->hunter_tower_cells) {
+		map->set_path_cost(cell.path_type, cell.tile, cell.previous_cost, time);
+		changed_grids.insert(cell.path_type);
+	}
+	for (const auto &path_type : changed_grids) {
+		map->rebuild_path_grid(path_type);
+	}
+	this->hunter_tower_cells.clear();
+	if (this->hunter_tower_id) {
+		state->remove_game_entity(*this->hunter_tower_id, time);
+	}
+	this->hunter_tower_id.reset();
+	this->horse_spawn_point = this->get_centre();
 }
 
 coord::phys3 FVD::get_centre() const {

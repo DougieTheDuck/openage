@@ -477,6 +477,23 @@ bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
 	return true;
 }
 
+void FVD::hunter_tower_hit(const std::shared_ptr<GameState> &state, entity_id_t target,
+                           int64_t damage, const time::time_t &time) {
+	// Damage only lands while the shooter stands; kills earn no Builder credit.
+	if (not this->hunter_tower_id or not state->get_game_entities().contains(*this->hunter_tower_id)) {
+		return;
+	}
+	this->apply_damage(state, target, damage, 1, false, time);
+}
+
+std::optional<entity_id_t> FVD::get_hunter_tower() const {
+	return this->hunter_tower_id;
+}
+
+coord::phys3 FVD::get_horse_spawn_point() const {
+	return this->horse_spawn_point;
+}
+
 bool FVD::set_hunter_stance(const std::shared_ptr<GameState> &state,
                             player_id_t owner, const std::vector<entity_id_t> &ids,
                             HunterStance stance, const time::time_t &time) {
@@ -866,6 +883,42 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		else if (not move->get_active_target()
 		         or move->get_active_arrival() <= time) {
 			system::Move::move_default(horse, state, order.destination, time);
+		}
+	}
+
+	// The Hunter's invulnerable central tower shoots the nearest Builder unit
+	// in range and in sight, never a tower. It stays silent until the first
+	// horse is due, so Builders keep their 20-second head start.
+	auto central = this->hunter_tower_id ? state->get_game_entities().find(*this->hunter_tower_id)
+	                                     : state->get_game_entities().end();
+	if (central != state->get_game_entities().end() and this->hunter_tower_active_from
+	    and time >= *this->hunter_tower_active_from and time >= this->hunter_tower_next_shot) {
+		static const std::vector<entity_id_t> no_towers{};
+		const auto target = this->nearest_hunter_target(
+			state, central->second, no_towers, builders, this->hunter_tower_range,
+			std::nullopt, 0.0, time);
+		if (target) {
+			auto loop = this->event_loop.lock();
+			if (not loop) [[unlikely]] {
+				throw Error{ERR << "Cannot schedule a Hunter tower shot without an event loop"};
+			}
+			auto start = position_at(central->second, time);
+			start.up += coord::phys_t::from_double(1.3);
+			auto destination = position_at(state->get_game_entity(*target), time);
+			destination.up += coord::phys_t::from_double(0.55);
+			const auto impact = time + this->arrow_travel;
+			{
+				std::lock_guard lock{this->arrow_visuals_mutex};
+				if (this->arrow_visuals.size() >= 65536) {
+					throw Error{ERR << "FVD projectile backlog exceeded 65536 unsent records"};
+				}
+				this->arrow_visuals.push_back(
+					ArrowVisual{this->next_arrow_id++, player_id_t{1}, *target,
+					            start, destination, time, impact});
+			}
+			loop->create_event("game.fvd_hunter_tower_hit", this->horse_spawn_target, state, impact,
+			                   {{"target", *target}, {"damage", this->hunter_tower_damage}});
+			this->hunter_tower_next_shot = time + this->hunter_tower_cooldown;
 		}
 	}
 

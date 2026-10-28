@@ -5,6 +5,7 @@ add_sources(libopenage
 	fvd_combat.cpp
 	fvd_vision.cpp
 	fvd_test.cpp
+	fvd_test_support.cpp
 	game_entity.cpp
     game_state.cpp
 	game.cpp

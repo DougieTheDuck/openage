@@ -81,8 +81,12 @@ The [scenario settings](data/scenario.nyan) define a square 128 by 128 tile map 
 Every tile is flat, walkable plains using the generated grass texture.
 The FVD renderer draws the exact tile boundaries over the plains for placement reference.
 All eight players start with their camera centred at (64, 64).
-Player 1 has the Hunter civilisation, starts without units and cannot place buildings.
-Players 2 through 8 have the Builders civilisation and each receive exactly one Builder near the centre, with distinct starting positions.
+Player 1 has the Hunter civilisation, starts with only the Hunter tower at the map centre and cannot place buildings.
+Players 2 through 8 have the Builders civilisation and each receive exactly one Builder, spaced evenly on a ring 20 tiles from the centre, outside the Hunter tower's reach.
+The Hunter tower cannot be damaged or demolished. It stays silent for the Builders' 20-second head start; from the moment the first horse is due, it fires once per second at the nearest Builder unit it can see within 10 tiles, each arrow dealing 100 damage. It never shoots Builder towers.
+It also gives the Hunter vision 15 tiles around the centre. It is solid, and Hunter horses appear on the free tile just beside it rather than at the exact centre. Its damage, range, rate of fire and the Builders' starting ring are set in the scenario settings; its vision is its `LineOfSight` range.
+The crimson tower graphic is a placeholder recoloured from the Builder tower.
+Run `bin/run test openage::gamestate::tests::fvd_hunter_tower` for its rules.
 A top-centre countdown shows the seconds remaining until the first Hunter horse, starting at 00:20 when the match begins and disappearing at the first spawn.
 It uses the same simulation-time deadline as spawning, so changing the clock speed or pausing the match does not desynchronize the display.
 After 20 seconds of match time, the first Hunter horse spawns at the centre of the map; one more spawns every second thereafter.
