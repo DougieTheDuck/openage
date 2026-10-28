@@ -20,6 +20,7 @@ enum class command_t {
 	SET_STANCE,
 	PATROL,
 	DEMOLISH_TOWER,
+	SET_RALLY_POINT,
 };
 
 } // namespace openage::gamestate::component::command

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <iterator>
 #include <utility>
 
 #include <QGuiApplication>
@@ -312,6 +313,14 @@ std::vector<coord::tile> tower_line_sites(const coord::tile &start,
 	return sites;
 }
 
+std::vector<gamestate::entity_id_t> units_take_priority(
+	const std::vector<gamestate::entity_id_t> &ids,
+	const std::function<bool(gamestate::entity_id_t)> &is_unit) {
+	std::vector<gamestate::entity_id_t> units;
+	std::copy_if(ids.begin(), ids.end(), std::back_inserter(units), is_unit);
+	return units.empty() ? ids : units;
+}
+
 namespace {
 
 /** Resolve the selected entity type on the simulation thread. */
@@ -323,15 +332,28 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 		controller->set_selected_if_current(generation, ids);
 		return;
 	}
+	auto is_horse = [&](gamestate::entity_id_t id) {
+		auto found = state->get_game_entities().find(id);
+		return found != state->get_game_entities().end()
+		    and found->second->get_definition() == "fvd.data.entities.Horse";
+	};
+	auto is_unit = [&](gamestate::entity_id_t id) {
+		auto found = state->get_game_entities().find(id);
+		return found != state->get_game_entities().end()
+		    and (found->second->get_definition() == "fvd.data.entities.Horse"
+		         or found->second->get_definition() == "fvd.data.entities.Builder");
+	};
 	if (ids.size() > 1) {
-		bool all_horses = std::all_of(ids.begin(), ids.end(), [&](auto id) {
-			auto found = state->get_game_entities().find(id);
-			return found != state->get_game_entities().end()
-			    and found->second->get_definition() == "fvd.data.entities.Horse";
-		});
-		controller->set_selected_if_current(
-			generation, ids,
-			all_horses ? SelectionKind::GROUP_HORSES : SelectionKind::NONE);
+		const auto chosen = units_take_priority(ids, is_unit);
+		if (chosen.size() > 1) {
+			bool all_horses = std::all_of(chosen.begin(), chosen.end(), is_horse);
+			controller->set_selected_if_current(
+				generation, chosen,
+				all_horses ? SelectionKind::GROUP_HORSES : SelectionKind::NONE);
+			return;
+		}
+		// One unit and some buildings: select that unit on its own below.
+		apply_selection(controller, state, generation, chosen);
 		return;
 	}
 	if (ids.empty()) {
@@ -354,6 +376,12 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 	else if (definition == "fvd.data.entities.Tower") {
 		kind = SelectionKind::TOWER;
 	}
+	else if (definition == "fvd.data.entities.HunterTower") {
+		kind = SelectionKind::HUNTER_TOWER;
+	}
+	else if (definition == "fvd.data.entities.Foundation") {
+		kind = SelectionKind::FOUNDATION;
+	}
 	controller->set_selected_if_current(
 		generation, ids, kind, found->second->get_render_entity());
 }
@@ -366,9 +394,18 @@ void apply_guest_selection(
 	const std::vector<gamestate::entity_id_t> &ids) {
 	std::vector<gamestate::entity_id_t> valid;
 	SelectionKind kind = SelectionKind::NONE;
-	for (auto id : ids) {
-		auto found = std::find_if(world.entities.begin(), world.entities.end(),
+	auto find = [&world](gamestate::entity_id_t id) {
+		return std::find_if(world.entities.begin(), world.entities.end(),
 			[id](const network::EntityState &entity) { return entity.entity_id == id; });
+	};
+	const auto candidates = units_take_priority(ids, [&](gamestate::entity_id_t id) {
+		auto found = find(id);
+		return found != world.entities.end() and found->owner_id == world.local_player_id
+		    and (found->definition == "fvd.data.entities.Horse"
+		         or found->definition == "fvd.data.entities.Builder");
+	});
+	for (auto id : candidates) {
+		auto found = find(id);
 		if (found == world.entities.end() or found->owner_id != world.local_player_id) {
 			continue;
 		}
@@ -383,6 +420,14 @@ void apply_guest_selection(
 		else if (found->definition == "fvd.data.entities.Tower") {
 			if (not valid.empty()) continue;
 			kind = SelectionKind::TOWER;
+		}
+		else if (found->definition == "fvd.data.entities.HunterTower") {
+			if (not valid.empty()) continue;
+			kind = SelectionKind::HUNTER_TOWER;
+		}
+		else if (found->definition == "fvd.data.entities.Foundation") {
+			if (not valid.empty()) continue;
+			kind = SelectionKind::FOUNDATION;
 		}
 		else {
 			continue;
@@ -522,7 +567,10 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		                                        const std::shared_ptr<Controller> controller) {
 			const auto selection = controller->get_selection_details();
 			const auto owner = static_cast<gamestate::player_id_t>(controller->get_controlled());
-			if (owner < 2 or selection.kind != SelectionKind::TOWER or selection.ids.size() != 1) {
+			// Delete removes the selected tower (with its collapse animation)
+			// or the selected foundation; the host checks ownership.
+			if (owner < 2 or selection.ids.size() != 1
+			    or (selection.kind != SelectionKind::TOWER and selection.kind != SelectionKind::FOUNDATION)) {
 				return;
 			}
 			if (guest_world and guest_world().has_value()) {
@@ -636,6 +684,28 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		auto mouse_pos = args.mouse.to_phys3(camera);
 		auto selection = controller->get_selection_details();
 		auto owner = static_cast<gamestate::player_id_t>(controller->get_controlled());
+		// Right-clicking with the Hunter tower selected moves its rally point.
+		if (owner == 1 and selection.kind == SelectionKind::HUNTER_TOWER
+		    and selection.ids.size() == 1) {
+			if (guest_world and guest_world().has_value()) {
+				if (send_guest_command) {
+					send_guest_command(network::CommandIntent{
+						0, network::CommandKind::SET_RALLY_POINT, selection.ids, mouse_pos});
+				}
+				return;
+			}
+			event::EventHandler::param_map::map_t params{
+				{"type", gamestate::component::command::command_t::SET_RALLY_POINT},
+				{"target", mouse_pos},
+				{"owner", owner},
+				{"entity_ids", selection.ids},
+			};
+			simulation->get_event_loop()->submit_event(
+				"game.send_command", simulation->get_commander(),
+				simulation->get_game()->get_state(),
+				time_loop->get_clock()->get_time(), params);
+			return;
+		}
 		if (guest_world) {
 			auto replica = guest_world();
 			if (replica) {

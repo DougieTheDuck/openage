@@ -18,7 +18,7 @@ At match initialization, the simulation SHALL create exactly one Hunter-owned sp
 
 ### Requirement: Spawn horses around the permanent tower
 
-The simulation SHALL spawn each scheduled Hunter horse in a valid location surrounding the central tower, outside its blocked footprint, without issuing automatic movement or attack orders. The first spawn SHALL remain at t=20 seconds and additional horses SHALL spawn once per second thereafter. Spawn-site selection SHALL be deterministic and cope with occupied preferred sites.
+The simulation SHALL spawn each scheduled Hunter horse in a valid location surrounding the central tower, outside its blocked footprint, without issuing automatic movement or attack orders unless the Hunter has set a rally point (see `fvd-hunter-rally-point`), in which case each new horse rides there. The first spawn SHALL remain at t=20 seconds and additional horses SHALL spawn once per second thereafter. Spawn-site selection SHALL be deterministic and cope with occupied preferred sites.
 
 #### Scenario: First and following waves
 - **WHEN** simulation time reaches 20, 21 and 22 seconds

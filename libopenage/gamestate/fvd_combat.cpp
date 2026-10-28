@@ -34,8 +34,6 @@ namespace {
 constexpr const char *HEALTH = "fvd.data.entities.Health";
 constexpr double HORSE_ATTACK_RANGE = 4.0;
 constexpr double HORSE_ATTACK_RANGE_SQUARED = HORSE_ATTACK_RANGE * HORSE_ATTACK_RANGE;
-/** Aggressive stance acquisition radius. */
-constexpr double HORSE_SIGHT_RANGE = 8.0;
 /** Furthest a Defensive engagement may stray from its engagement point. */
 constexpr double HORSE_LEASH_RANGE = 6.0;
 constexpr double HORSE_LEASH_RANGE_SQUARED = HORSE_LEASH_RANGE * HORSE_LEASH_RANGE;
@@ -413,7 +411,8 @@ bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
 	}
 	auto target_it = state->get_game_entities().find(enemy_id);
 	if (target_it == state->get_game_entities().end()
-	    or not alive(target_it->second, time)) {
+	    or not alive(target_it->second, time)
+	    or not this->can_see(state, FVDTeam::HUNTER, enemy_id, time)) {
 		return false;
 	}
 	auto target = target_it->second;
@@ -475,6 +474,23 @@ bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
 	return true;
 }
 
+void FVD::hunter_tower_hit(const std::shared_ptr<GameState> &state, entity_id_t target,
+                           int64_t damage, const time::time_t &time) {
+	// Damage only lands while the shooter stands; kills earn no Builder credit.
+	if (not this->hunter_tower_id or not state->get_game_entities().contains(*this->hunter_tower_id)) {
+		return;
+	}
+	this->apply_damage(state, target, damage, 1, false, time);
+}
+
+std::optional<entity_id_t> FVD::get_hunter_tower() const {
+	return this->hunter_tower_id;
+}
+
+coord::phys3 FVD::get_horse_spawn_point() const {
+	return this->horse_spawn_point;
+}
+
 bool FVD::set_hunter_stance(const std::shared_ptr<GameState> &state,
                             player_id_t owner, const std::vector<entity_id_t> &ids,
                             HunterStance stance, const time::time_t &time) {
@@ -514,7 +530,8 @@ HunterStance FVD::get_hunter_stance(entity_id_t horse) const {
 bool FVD::hunter_target_eligible(const std::shared_ptr<GameState> &state,
                                  entity_id_t candidate, const time::time_t &time) const {
 	auto other = state->get_game_entities().find(candidate);
-	if (other == state->get_game_entities().end() or not alive(other->second, time)) {
+	if (other == state->get_game_entities().end() or not alive(other->second, time)
+	    or not this->can_see(state, FVDTeam::HUNTER, candidate, time)) {
 		return false;
 	}
 	if (other->second->get_definition() == this->tower) {
@@ -572,7 +589,8 @@ bool FVD::begin_stance_engagement(const std::shared_ptr<GameState> &state,
 	const auto here = position_at(horse, time);
 	const auto target = stance == HunterStance::AGGRESSIVE
 		? this->nearest_hunter_target(state, horse, towers, builders,
-		                              HORSE_SIGHT_RANGE, std::nullopt, 0.0, time)
+		                              this->vision_range(state, horse->get_definition()),
+		                              std::nullopt, 0.0, time)
 		: this->nearest_hunter_target(state, horse, towers, builders,
 		                              HORSE_ATTACK_RANGE, here, HORSE_LEASH_RANGE, time);
 	if (not target) {
@@ -590,6 +608,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 	const auto horses = entities_by_definition(state, this->horse);
 	const auto builders = entities_by_definition(state, this->builder);
 	const auto towers = entities_by_definition(state, this->tower);
+	this->update_vision(state, time);
+	this->vision_cached_at = time;
 
 	// AttackMove searches within four tiles, including after arrival.
 	// Towers retain priority over Builders. Idle horses without an order
@@ -623,6 +643,13 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		const auto stance = this->get_hunter_stance(id);
 		// A Defensive engagement guards its engagement point, the order's destination.
 		const bool defending = order.stance_engagement and stance == HunterStance::DEFENSIVE;
+		// On patrol the stance decides whether and how far the horse fights.
+		const bool patrolling = order.patrol_return.has_value();
+		if (patrolling and stance == HunterStance::OBSERVE and order.target) {
+			halt_for_engagement(horse, time);
+			order.target.reset();
+			order.patrol_engagement.reset();
+		}
 
 		auto eligible = [&](entity_id_t candidate) {
 			return this->hunter_target_eligible(state, candidate, time);
@@ -645,7 +672,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			}
 		}
 		if (order.target and not eligible(*order.target)) {
-			// A destroyed target must not leave an orphaned approach route.
+			// A destroyed or vanished target must not leave an orphaned approach route.
 			if (move->get_active_target() and move->get_active_arrival() > time) {
 				halt_for_engagement(horse, time);
 			}
@@ -658,21 +685,50 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			this->attack_orders.erase(order_it);
 			continue;
 		}
-		if (not order.target) {
+		if (not order.target and not (patrolling and stance == HunterStance::OBSERVE)) {
 			// A tower within firing range takes priority over a nearby
 			// Builder, even if the original move destination was reached.
-			// An Aggressive engagement keeps looking as far as it can see;
-			// a Defensive one only accepts enemies near its engagement point.
-			const bool aggressive = order.stance_engagement
-			                        and stance == HunterStance::AGGRESSIVE;
+			// Aggressive horses look as far as they can see; Defensive ones
+			// only accept enemies near the point they are guarding.
+			const bool aggressive = stance == HunterStance::AGGRESSIVE
+			                        and (order.stance_engagement or patrolling);
+			std::optional<coord::phys3> anchor{};
+			double anchor_radius = HORSE_LEASH_RANGE;
+			if (defending) {
+				anchor = order.destination;
+			}
+			else if (patrolling and order.patrol_engagement) {
+				anchor = order.patrol_engagement;
+			}
 			const auto nearest = this->nearest_hunter_target(
 				state, horse, towers, builders,
-				aggressive ? HORSE_SIGHT_RANGE : HORSE_ATTACK_RANGE,
-				defending ? std::make_optional(order.destination) : std::nullopt,
-				HORSE_LEASH_RANGE, time);
+				aggressive ? this->vision_range(state, horse->get_definition()) : HORSE_ATTACK_RANGE,
+				anchor, anchor_radius, time);
 			if (nearest) {
 				order.target = nearest;
 				halt_for_engagement(horse, time);
+				if (patrolling and stance == HunterStance::DEFENSIVE and not order.patrol_engagement) {
+					order.patrol_engagement = current;
+				}
+			}
+		}
+		if (patrolling and order.target) {
+			const auto enemy_at = position_at(state->get_game_entity(*order.target), time);
+			if (stance == HunterStance::AGGRESSIVE
+			    and std::sqrt(distance_squared(current, enemy_at))
+			            > this->vision_range(state, horse->get_definition())) {
+				// An Aggressive patrol has no leash, but once its quarry is out
+				// of its own sight it gives up and carries on along the route.
+				halt_for_engagement(horse, time);
+				order.target.reset();
+			}
+			// A Defensive patrol keeps the stationary Defensive leash, measured
+			// from where it left the route.
+			if (stance == HunterStance::DEFENSIVE and order.patrol_engagement
+			    and (distance_squared(current, *order.patrol_engagement) > HORSE_LEASH_RANGE_SQUARED
+			         or distance_squared(enemy_at, *order.patrol_engagement) > HORSE_LEASH_RANGE_SQUARED)) {
+				halt_for_engagement(horse, time);
+				order.target.reset();
 			}
 		}
 		if (defending and order.target) {
@@ -781,6 +837,17 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			continue;
 		}
 
+		// A Defensive patrol walks back to where it left its route first.
+		if (order.patrol_engagement) {
+			if ((current - *order.patrol_engagement).length() >= 0.15) {
+				if (not travelling(horse, time)) {
+					system::Move::move_default(horse, state, *order.patrol_engagement, time);
+				}
+				continue;
+			}
+			order.patrol_engagement.reset();
+		}
+
 		// After reaching the destination, remain alert to enemies within
 		// four tiles until a human issues another command, unless a
 		// non-Observe stance takes over from here.
@@ -809,6 +876,42 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		}
 	}
 
+	// The Hunter's invulnerable central tower shoots the nearest Builder unit
+	// in range and in sight, never a tower. It stays silent until the first
+	// horse is due, so Builders keep their 20-second head start.
+	auto central = this->hunter_tower_id ? state->get_game_entities().find(*this->hunter_tower_id)
+	                                     : state->get_game_entities().end();
+	if (central != state->get_game_entities().end() and this->hunter_tower_active_from
+	    and time >= *this->hunter_tower_active_from and time >= this->hunter_tower_next_shot) {
+		static const std::vector<entity_id_t> no_towers{};
+		const auto target = this->nearest_hunter_target(
+			state, central->second, no_towers, builders, this->hunter_tower_range,
+			std::nullopt, 0.0, time);
+		if (target) {
+			auto loop = this->event_loop.lock();
+			if (not loop) [[unlikely]] {
+				throw Error{ERR << "Cannot schedule a Hunter tower shot without an event loop"};
+			}
+			auto start = position_at(central->second, time);
+			start.up += coord::phys_t::from_double(1.3);
+			auto destination = position_at(state->get_game_entity(*target), time);
+			destination.up += coord::phys_t::from_double(0.55);
+			const auto impact = time + this->arrow_travel;
+			{
+				std::lock_guard lock{this->arrow_visuals_mutex};
+				if (this->arrow_visuals.size() >= 65536) {
+					throw Error{ERR << "FVD projectile backlog exceeded 65536 unsent records"};
+				}
+				this->arrow_visuals.push_back(
+					ArrowVisual{this->next_arrow_id++, player_id_t{1}, *target,
+					            start, destination, time, impact});
+			}
+			loop->create_event("game.fvd_hunter_tower_hit", this->horse_spawn_target, state, impact,
+			                   {{"target", *target}, {"damage", this->hunter_tower_damage}});
+			this->hunter_tower_next_shot = time + this->hunter_tower_cooldown;
+		}
+	}
+
 	// Completed towers fire automatically, with a deterministic target order.
 	for (auto tower_id : towers) {
 		auto tower_it = state->get_game_entities().find(tower_id);
@@ -829,7 +932,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		for (auto horse_id : horses) {
 			auto horse_it = state->get_game_entities().find(horse_id);
 			if (horse_it == state->get_game_entities().end()
-			    or not alive(horse_it->second, time)) {
+			    or not alive(horse_it->second, time)
+			    or not this->can_see(state, FVDTeam::BUILDERS, horse_id, time)) {
 				continue;
 			}
 			const double d = distance_squared(tower_it->second, horse_it->second, time);
@@ -876,6 +980,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		                    {"damage", this->tower_damage}});
 		this->tower_next_shot.insert_or_assign(tower_id, time + this->tower_cooldown);
 	}
+	this->vision_cached_at.reset();
 }
 
 } // namespace openage::gamestate

@@ -24,6 +24,7 @@
 #include "gamestate/event/send_command.h"
 #include "gamestate/event/wait.h"
 #include "gamestate/fvd.h"
+#include "gamestate/fvd_test_support.h"
 #include "gamestate/game.h"
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
@@ -121,6 +122,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	auto terrain = std::make_shared<gamestate::TerrainFactory>();
 	gamestate::Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
+	gamestate::tests::use_centre_test_layout(state);
 	auto commander = std::make_shared<gamestate::event::Commander>(loop);
 	MatchConnectionState connections{state->get_fvd()->get_player_count()};
 	MatchDisconnectCoordinator lifecycle_coordinator{connections};

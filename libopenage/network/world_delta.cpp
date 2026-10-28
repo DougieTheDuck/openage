@@ -112,6 +112,7 @@ void difference_entities(const WorldState &before, const WorldState &after,
 		    or previous.maximum_health != entry.maximum_health
 		    or previous.tower_kills != entry.tower_kills
 		    or previous.hunter_stance != entry.hunter_stance
+		    or previous.remembered != entry.remembered
 		    or previous.animation_action != entry.animation_action
 		    or previous.animation_started_at != entry.animation_started_at
 		    or not same_facing_at(previous, entry, after.simulation_time)
@@ -269,6 +270,12 @@ std::vector<ConfirmedCombatEffect> confirmed_combat_effects(
 		if (next == remaining.end()) {
 			// The host removed a previously living entity. The cue is
 			// cosmetic; only the host decides death and kill attribution.
+			// An entity merely walking into the recipient's fog is not dead.
+			if (current.fog.size() == 1
+			    and not fog_tile_set(current.fog.front().visible, current.map_size,
+			                         prior.position.to_tile())) {
+				continue;
+			}
 			effects.push_back({prior.entity_id, prior.position, true});
 		}
 		else if (next->second->health
@@ -311,6 +318,9 @@ WorldDelta make_world_delta(const WorldState &previous, const WorldState &curren
 	           delta.changed.constructions, delta.removed_constructions, construction_key);
 	difference(previous.attack_orders, current.attack_orders,
 	           delta.changed.attack_orders, delta.removed_attack_orders, attack_key);
+	if (previous.fog != current.fog) {
+		delta.changed.fog = current.fog;
+	}
 	// Arrows are immutable launch events. The client discards them at impact_time,
 	// so an arrow's absence from the next host capture needs no tombstone.
 	std::unordered_map<uint64_t, const ArrowState *> old_arrows;
@@ -379,6 +389,9 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	patch(next.reservations, changed.reservations, delta.removed_reservations, reservation_key);
 	patch(next.constructions, changed.constructions, delta.removed_constructions, construction_key);
 	patch(next.attack_orders, changed.attack_orders, delta.removed_attack_orders, attack_key);
+	if (not changed.fog.empty()) {
+		next.fog = changed.fog;
+	}
 	// The host can deliver older projectile batches after congestion.
 	// Preserve newly received IDs for at least this delta so the guest
 	// presenter can replay their cosmetic flight once on receipt. Existing

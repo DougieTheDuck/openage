@@ -6,6 +6,8 @@ layout(location=0) out vec4 col;
 
 uniform sampler2D tex;
 uniform bool cbits = false;
+// Below 1 for things remembered in explored fog rather than seen now.
+uniform float brightness = 1.0;
 
 // position (top left corner) and size: (x, y, width, height)
 uniform vec4 tile_params;
@@ -37,7 +39,7 @@ void main() {
 	             ? 1.0
 	             : gl_FragCoord.z;
 	if (!cbits) {
-		col = tex_val;
+		col = vec4(tex_val.rgb * brightness, tex_val.a);
 		return;
 	}
 	switch (alpha) {
@@ -54,4 +56,5 @@ void main() {
 			col = tex_val;
 			break;
 	}
+	col.rgb *= brightness;
 }

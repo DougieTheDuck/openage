@@ -33,6 +33,10 @@ Scenario(engine.root.Object):
     tower_armor : int = 1
     horse_melee_damage : int = 3
     arrow_travel_time : float = 0.2
+    hunter_tower_damage : int = 100
+    hunter_tower_range : float = 10.0
+    hunter_tower_cooldown : float = 1.0
+    builder_start_radius : float = 20.0
     hunter : Civilisation = Hunter
     builders : Civilisation = Builders
     builder : engine.util.game_entity.GameEntity = fvd.data.entities.Builder
@@ -40,4 +44,6 @@ Scenario(engine.root.Object):
     foundation : engine.util.game_entity.GameEntity = fvd.data.entities.Foundation
     tower_demolition : engine.util.game_entity.GameEntity = fvd.data.entities.TowerDemolition
     tower : engine.util.game_entity.GameEntity = fvd.data.entities.Tower
+    hunter_tower : engine.util.game_entity.GameEntity = fvd.data.entities.HunterTower
+    hunter_rally_point : engine.util.game_entity.GameEntity = fvd.data.entities.HunterRallyPoint
     terrain : engine.util.terrain.Terrain = fvd.data.terrain.Plains

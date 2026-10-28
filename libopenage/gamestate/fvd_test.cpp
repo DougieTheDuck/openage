@@ -29,6 +29,7 @@
 #include "gamestate/event/spawn_entity.h"
 #include "gamestate/event/wait.h"
 #include "gamestate/fvd.h"
+#include "gamestate/fvd_test_support.h"
 #include "gamestate/game.h"
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
@@ -493,12 +494,23 @@ void fvd_scenario() {
 	}
 	TESTEQUALS(tile_count, 128 * 128);
 	TESTEQUALS(state->get_player(1)->get_setup(), "fvd.data.scenario.Hunter");
-	TESTEQUALS(state->get_game_entities().size(), 7);
+	// Seven Builders on a ring outside the Hunter tower's reach, which
+	// stands alone at the centre.
+	TESTEQUALS(state->get_game_entities().size(), 8);
 	std::array<size_t, 9> counts{};
 	std::array<entity_id_t, 9> builders{};
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		auto owner = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP))->get_owners().get(time::TIME_ZERO);
+		auto at_start = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION))->get_positions().get(time::TIME_ZERO);
+		if (entity->get_definition() == "fvd.data.entities.HunterTower") {
+			TESTEQUALS(owner, player_id_t{1});
+			TESTEQUALS(fvd->get_hunter_tower() == id, true);
+			TESTEQUALS(at_start, (coord::phys3{64, 64, 0}));
+			continue;
+		}
+		TESTEQUALS((at_start - fvd->get_centre()).length() > 15.0, true);
 		TESTEQUALS(entity->get_definition(), "fvd.data.entities.Builder");
 		counts.at(owner)++;
 		builders.at(owner) = id;
@@ -637,7 +649,7 @@ void fvd_scenario() {
 	auto builder_pos = std::dynamic_pointer_cast<component::Position>(
 		builder_entity->get_component(component::component_t::POSITION));
 	TESTEQUALS(place(2, {builders[2]}, builder_pos->get_positions().get(time::TIME_ZERO)), false);
-	TESTEQUALS(state->get_game_entities().size(), 7);
+	TESTEQUALS(state->get_game_entities().size(), 8);
 	TESTEQUALS(place(2, {builders[2]}, {10, 10, 0}), true);
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{10, 10}), true);
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{12, 12}), false);
@@ -647,7 +659,7 @@ void fvd_scenario() {
 	TESTEQUALS(order->get_owner(), player_id_t{2});
 	TESTEQUALS(order->get_builder(), builders[2]);
 	TESTEQUALS(order->get_target(), (coord::tile{10, 10}));
-	TESTEQUALS(state->get_game_entities().size(), 8);
+	TESTEQUALS(state->get_game_entities().size(), 9);
 	entity_id_t first_foundation = 0;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() != "fvd.data.entities.Foundation") {
@@ -680,7 +692,7 @@ void fvd_scenario() {
 	// An orphaned foundation blocks direct placement by another Builder.
 	TESTEQUALS(place(3, {builders[3]}, {10, 10, 0}), false);
 	TESTEQUALS(fvd->get_build_order(builders[3]) == nullptr, true);
-	TESTEQUALS(state->get_game_entities().size(), 9);
+	TESTEQUALS(state->get_game_entities().size(), 10);
 
 	// Dead Builders cannot initiate new construction.
 	auto live = std::dynamic_pointer_cast<component::Live>(
@@ -717,7 +729,7 @@ void fvd_scenario() {
 	TESTEQUALS(place(5, {builders[5]}, {12, 12, 0}), false);
 	TESTEQUALS(fvd->cancel_build(state, builders[3], time::TIME_ZERO), false);
 	TESTEQUALS(fvd->cancel_build(state, builders[5], time::TIME_ZERO), false);
-	TESTEQUALS(state->get_game_entities().size(), 10);
+	TESTEQUALS(state->get_game_entities().size(), 11);
 
 	event::SpawnEntityHandler spawner{loop, entities};
 	TESTTHROWS(spawner.invoke(*loop, nullptr, state, time::TIME_ZERO,
@@ -749,6 +761,7 @@ void fvd_construction() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 
 	std::array<entity_id_t, 9> builders{};
 	for (const auto &[id, entity] : state->get_game_entities()) {
@@ -959,6 +972,7 @@ void fvd_builder_demolition() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 	entity_id_t builder_id = 0;
 	bool found_builder = false;
@@ -1067,6 +1081,85 @@ void fvd_builder_demolition() {
 	TESTNOTEQUALS(unfinished_demolition, entity_id_t{0});
 	loop->reach_time(at(30.27), state);
 	TESTEQUALS(state->get_game_entities().contains(unfinished_demolition), false);
+}
+
+void fvd_builder_delete_foundation() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto alive = [&](entity_id_t id) { return state->get_game_entities().contains(id); };
+	std::optional<entity_id_t> found_builder{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (entity->get_definition() == "fvd.data.entities.Builder"
+		    and ownership->get_owners().get(time::TIME_ZERO) == player_id_t{2}) {
+			found_builder = id;
+		}
+	}
+	TESTEQUALS(found_builder.has_value(), true);
+	const auto builder = *found_builder;
+	auto foundation_at = [&](coord::tile site) {
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			if (entity->get_definition() != "fvd.data.entities.Foundation") continue;
+			auto position = std::dynamic_pointer_cast<component::Position>(
+				entity->get_component(component::component_t::POSITION));
+			if (position->get_positions().get(at(0.01)).to_tile() == site) return id;
+		}
+		return entity_id_t{0};
+	};
+
+	// The Builder walks to the first of three sites; two wait in its queue.
+	const coord::tile first{66, 72}, second{68, 72}, third{70, 72};
+	TESTEQUALS(fvd->request_build(state, 2, {builder}, first.to_phys3_center(), at(0)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, {builder}, second.to_phys3_center(), at(0)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, {builder}, third.to_phys3_center(), at(0)), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{2});
+	const auto first_site = foundation_at(first);
+	const auto second_site = foundation_at(second);
+	const auto third_site = foundation_at(third);
+	TESTEQUALS(first_site != 0 and second_site != 0 and third_site != 0, true);
+
+	// Only the owner may remove them.
+	TESTEQUALS(fvd->delete_owned_foundation(state, 1, second_site, at(0.01)), false);
+	TESTEQUALS(fvd->delete_owned_foundation(state, 3, second_site, at(0.01)), false);
+	TESTEQUALS(fvd->delete_owned_foundation(state, 2, builder, at(0.01)), false);
+
+	// A queued site leaves the queue, frees its tiles and lowers the count.
+	TESTEQUALS(fvd->delete_owned_foundation(state, 2, second_site, at(0.01)), true);
+	TESTEQUALS(alive(second_site), false);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{1});
+	TESTEQUALS(fvd->is_tile_reserved(second), false);
+
+	// The site being walked to: the Builder moves on to the next one.
+	TESTEQUALS(fvd->delete_owned_foundation(state, 2, first_site, at(0.02)), true);
+	TESTEQUALS(alive(first_site), false);
+	TESTEQUALS(fvd->is_tile_reserved(first), false);
+	TESTEQUALS(fvd->get_build_order(builder) != nullptr, true);
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), third);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+
+	// An abandoned foundation goes through the same Delete command as towers.
+	TESTEQUALS(fvd->cancel_build(state, builder, at(0.03)), true);
+	TESTEQUALS(alive(third_site), true);
+	TESTEQUALS(fvd->demolish_owned_tower(state, 3, {third_site}, at(0.04)), false);
+	TESTEQUALS(fvd->demolish_owned_tower(state, 2, {third_site}, at(0.04)), true);
+	TESTEQUALS(alive(third_site), false);
+	TESTEQUALS(foundation_at(third), entity_id_t{0});
+	loop->reach_time(at(5), state);
+	TESTEQUALS(fvd->get_build_order(builder) == nullptr, true);
 }
 
 void fvd_hunter_spawning() {
@@ -1237,6 +1330,7 @@ void fvd_horse_spawn_blocked() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 	auto t = [](double seconds) {
 		return time::time_t::from_double(seconds);
 	};
@@ -1286,6 +1380,7 @@ void fvd_hunter_combat() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 
 	entity_id_t builder = 0;
@@ -1453,6 +1548,7 @@ void fvd_combat_balance() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 
 	auto rules = state->get_db_view()->get_object("fvd.data.scenario.Scenario");
@@ -1549,6 +1645,7 @@ void fvd_hunter_attack_move_regressions() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 
 	entity_id_t builder = 0;
@@ -1837,6 +1934,7 @@ void fvd_hunter_focus_attack() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 	auto at = [](double sec) { return time::time_t::from_double(sec); };
 
 	entity_id_t owner_builder = 0;
@@ -1972,7 +2070,8 @@ void fvd_presentation_snapshot() {
 	simulation.initialize();
 	auto initial = simulation.get_fvd_presentation_state();
 	TESTEQUALS(initial != nullptr, true);
-	TESTEQUALS(initial->entities.size(), size_t{7});
+	// Seven Builders and the Hunter tower.
+	TESTEQUALS(initial->entities.size(), size_t{8});
 	TESTEQUALS(network::make_construction_presentation(*initial).sites.empty(), true);
 	auto builder = std::find_if(
 		initial->entities.begin(), initial->entities.end(), [](const auto &entity) { return entity.owner_id == 2; });
@@ -1980,6 +2079,7 @@ void fvd_presentation_snapshot() {
 
 	auto state = simulation.get_game()->get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 	network::AuthenticatedCommand command{};
 	command.identity.player_id = 2;
 	command.intent.command_id = 1;
@@ -2045,6 +2145,7 @@ void fvd_build_queue() {
 	Game game{loop, mods, entities, terrain};
 	auto state = game.get_state();
 	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
 	auto at = [](double sec) { return time::time_t::from_double(sec); };
 	std::optional<entity_id_t> builder{};
 	for (const auto &[id, entity] : state->get_game_entities()) {
@@ -2451,7 +2552,7 @@ void fvd_hunter_stances() {
 	auto observer = spawn(1, "Horse", {12, 12, 0});
 	auto observed = spawn(2, "Builder", {14, 12, 0});
 	auto aggressor = spawn(1, "Horse", {30, 12, 0});
-	auto prey = spawn(2, "Builder", {37, 12, 0});
+	auto prey = spawn(2, "Builder", {36, 12, 0});
 	auto far_sighted = spawn(1, "Horse", {30, 30, 0});
 	auto distant = spawn(2, "Builder", {39, 30, 0});
 	auto guard = spawn(1, "Horse", {12, 40, 0});
@@ -2459,9 +2560,9 @@ void fvd_hunter_stances() {
 	auto leashed = spawn(1, "Horse", {12, 90, 0});
 	auto runner = spawn(2, "Builder", {15, 90, 0});
 	auto arriving = spawn(1, "Horse", {80, 12, 0});
-	auto awaited = spawn(2, "Builder", {90, 12, 0});
+	auto awaited = spawn(2, "Builder", {89, 12, 0});
 	auto arriving_observer = spawn(1, "Horse", {80, 40, 0});
-	auto unnoticed = spawn(2, "Builder", {90, 40, 0});
+	auto unnoticed = spawn(2, "Builder", {89, 40, 0});
 	auto patroller = spawn(1, "Horse", {100, 100, 0});
 	auto ambusher = spawn(1, "Horse", {100, 120, 0});
 	auto ambushed = spawn(2, "Builder", {103, 122, 0});
@@ -2496,6 +2597,8 @@ void fvd_hunter_stances() {
 		state, 1, {patroller->get_id(), observed->get_id()}, {106, 100, 0}, at(0)), false);
 	TESTEQUALS(has_order(patroller), false);
 	TESTEQUALS(fvd->issue_patrol(state, 1, {patroller->get_id()}, {106, 100, 0}, at(0)), true);
+	TESTEQUALS(fvd->set_hunter_stance(
+		state, 1, {ambusher->get_id()}, HunterStance::DEFENSIVE, at(0)), true);
 	TESTEQUALS(fvd->issue_patrol(state, 1, {ambusher->get_id()}, {106, 120, 0}, at(0)), true);
 
 	// Drive the authoritative 0.2-second combat tick and track each loop.
@@ -2526,7 +2629,7 @@ void fvd_hunter_stances() {
 	// Observe never starts a fight, even with an enemy two tiles away.
 	TESTEQUALS(has_order(observer), false);
 	TESTEQUALS(health_of(observed, now), int64_t{25});
-	// Aggressive sees seven tiles away and closes in; nine is out of sight.
+	// Aggressive acts on anything its seven-tile vision reveals; nine is out of sight.
 	TESTEQUALS(has_order(aggressor), true);
 	TESTEQUALS(position_of(aggressor, now).ne.to_double() > 30.0, true);
 	TESTEQUALS(has_order(far_sighted), false);
@@ -2556,7 +2659,7 @@ void fvd_hunter_stances() {
 	TESTEQUALS((position_of(leashed, now) - coord::phys3{12, 90, 0}).length() < 0.2, true);
 	TESTEQUALS(has_order(leashed), false);
 	TESTEQUALS(state->get_game_entities().contains(runner->get_id()), true);
-	// The arrived Aggressive horse found an enemy seven tiles from its
+	// The arrived Aggressive horse found an enemy six tiles from its
 	// destination; the Observe horse kept waiting at its own.
 	TESTEQUALS(health_of(awaited, now) < 25, true);
 	TESTEQUALS(health_of(unnoticed, now), int64_t{25});
@@ -2566,10 +2669,512 @@ void fvd_hunter_stances() {
 	TESTEQUALS(patrol_out and patrol_back and patrol_out_again, true);
 	TESTEQUALS(has_order(patroller), true);
 
-	// A patrolling horse fights an enemy beside its route, then resumes.
+	// A Defensive patrol fights an enemy beside its route, then resumes.
 	run_until(16.0);
 	TESTEQUALS(state->get_game_entities().contains(ambushed->get_id()), false);
 	TESTEQUALS(ambush_resumed, true);
 	TESTEQUALS(has_order(ambusher), true);
+}
+
+void fvd_hunter_patrol_stances() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto spawn = [&](player_id_t owner, const char *definition, coord::phys3 position) {
+		return entities->spawn_game_entity(
+			loop, state, owner, std::string{"fvd.data.entities."} + definition, position, at(0));
+	};
+	auto position_of = [&](const std::shared_ptr<GameEntity> &entity, double seconds) {
+		return std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION))->get_positions().get(at(seconds));
+	};
+	auto health_of = [&](const std::shared_ptr<GameEntity> &entity, double seconds) {
+		return std::dynamic_pointer_cast<component::Live>(
+			entity->get_component(component::component_t::LIVE))
+		    ->get_attribute(at(seconds), "fvd.data.entities.Health")->get(at(seconds));
+	};
+	auto has_order = [&](const std::shared_ptr<GameEntity> &horse) {
+		const auto orders = fvd->get_attack_order_state();
+		return std::any_of(orders.begin(), orders.end(), [&](const auto &order) {
+			return order.horse_id == horse->get_id();
+		});
+	};
+
+	// Three patrols far enough apart that no sight radius overlaps another.
+	auto watcher = spawn(1, "Horse", {20, 20, 0});
+	auto ignored = spawn(2, "Builder", {23, 22, 0});
+	auto guard = spawn(1, "Horse", {20, 60, 0});
+	auto fleeing = spawn(2, "Builder", {23, 63, 0});
+	auto hunter = spawn(1, "Horse", {20, 100, 0});
+	auto quarry = spawn(2, "Builder", {23, 106, 0});
+	TESTEQUALS(fvd->set_hunter_stance(state, 1, {guard->get_id()}, HunterStance::DEFENSIVE, at(0)), true);
+	TESTEQUALS(fvd->set_hunter_stance(state, 1, {hunter->get_id()}, HunterStance::AGGRESSIVE, at(0)), true);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {watcher->get_id()}, {26, 20, 0}, at(0)), true);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {guard->get_id()}, {26, 60, 0}, at(0)), true);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {hunter->get_id()}, {26, 100, 0}, at(0)), true);
+
+	double now = 0;
+	double guard_furthest = 0;
+	bool guard_resumed = false;
+	auto run_until = [&](double until, const std::function<void()> &each_tick = {}) {
+		while (now + 0.1 < until) {
+			now += 0.2;
+			loop->reach_time(at(now), state);
+			fvd->combat_tick(state, at(now));
+			const auto guard_at = position_of(guard, now);
+			guard_furthest = std::max(guard_furthest, std::abs(guard_at.se.to_double() - 60.0));
+			guard_resumed = guard_resumed
+			             or (guard_furthest > 1.0 and std::abs(guard_at.se.to_double() - 60.0) < 0.2
+			                 and guard_at.ne.to_double() >= 25.8);
+			if (each_tick) {
+				each_tick();
+			}
+		}
+	};
+
+	// The Aggressive patrol sees a Builder six tiles off its route and
+	// leaves the route for it; a Defensive one would ignore it.
+	run_until(1.0);
+	TESTEQUALS(has_order(hunter), true);
+	TESTEQUALS(position_of(hunter, now).se.to_double() > 100.5, true);
+
+	// Its quarry escapes beyond sight, so it gives up but keeps patrolling.
+	std::dynamic_pointer_cast<component::Position>(
+		quarry->get_component(component::component_t::POSITION))->set_position(at(now), {23, 125, 0});
+	run_until(1.4);
+	TESTEQUALS(has_order(hunter), true);
+	fvd->get_hunter_stance(hunter->get_id()) == HunterStance::AGGRESSIVE or TESTFAIL;
+	TESTEQUALS(fvd->get_attack_order_state().empty(), false);
+	for (const auto &order : fvd->get_attack_order_state()) {
+		if (order.horse_id == hunter->get_id()) {
+			TESTEQUALS(order.target_id.has_value(), false);
+		}
+	}
+
+	// The Defensive patrol has engaged the Builder near its route by now;
+	// the Builder runs, and the horse chases until the six-tile leash.
+	TESTEQUALS(health_of(fleeing, now) < 25, true);
+	system::Move::move_default(fleeing, state, {23, 80, 0}, at(now));
+
+	run_until(16.0);
+	// Observe on patrol never attacks, even two tiles from its route.
+	TESTEQUALS(health_of(ignored, now), int64_t{25});
+	TESTEQUALS(has_order(watcher), true);
+	// The Defensive horse chased, gave up within the stationary six-tile
+	// leash and went back to patrolling the original route; its target escaped.
+	TESTEQUALS(guard_furthest > 1.0 and guard_furthest < 7.0, true);
+	TESTEQUALS(guard_resumed, true);
+	TESTEQUALS(has_order(guard), true);
+	TESTEQUALS(state->get_game_entities().contains(fleeing->get_id()), true);
+	// The Aggressive horse went back to its route and is still patrolling;
+	// it never caught its quarry.
+	TESTEQUALS(std::abs(position_of(hunter, now).se.to_double() - 100.0) < 0.5, true);
+	TESTEQUALS(has_order(hunter), true);
+	TESTEQUALS(health_of(quarry, now), int64_t{25});
+}
+
+void fvd_fog_of_war() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto spawn = [&](player_id_t owner, const char *definition, coord::phys3 position, double seconds) {
+		return entities->spawn_game_entity(
+			loop, state, owner, std::string{"fvd.data.entities."} + definition, position, at(seconds));
+	};
+	auto teleport = [&](const std::shared_ptr<GameEntity> &entity, coord::phys3 position, double seconds) {
+		std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION))->set_position(at(seconds), position);
+	};
+	auto has_order = [&](const std::shared_ptr<GameEntity> &horse) {
+		const auto orders = fvd->get_attack_order_state();
+		return std::any_of(orders.begin(), orders.end(), [&](const auto &order) {
+			return order.horse_id == horse->get_id();
+		});
+	};
+
+	TESTEQUALS(FVD::team_of(1) == FVDTeam::HUNTER, true);
+	TESTEQUALS(FVD::team_of(2) == FVDTeam::BUILDERS, true);
+	TESTEQUALS(FVD::team_of(8) == FVDTeam::BUILDERS, true);
+	TESTEQUALS(fvd->tile_visible(state, FVDTeam::BUILDERS, {-1, 4}, at(0)), false);
+
+	// Vision ranges come from each type's LineOfSight: Builders see six
+	// tiles, horses seven. Distances below are to tile centres.
+	auto scout = spawn(2, "Builder", {10.5, 10.5, 0}, 0);
+	auto near_horse = spawn(1, "Horse", {15.5, 10.5, 0}, 0);
+	auto far_horse = spawn(1, "Horse", {17.5, 10.5, 0}, 0);
+	auto hidden_builder = spawn(3, "Builder", {30.5, 10.5, 0}, 0);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::BUILDERS, near_horse->get_id(), at(0)), true);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::BUILDERS, far_horse->get_id(), at(0)), false);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::HUNTER, scout->get_id(), at(0)), true);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::HUNTER, hidden_builder->get_id(), at(0)), false);
+	// A side always sees its own units, wherever they are.
+	TESTEQUALS(fvd->can_see(state, FVDTeam::BUILDERS, hidden_builder->get_id(), at(0)), true);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::HUNTER, far_horse->get_id(), at(0)), true);
+
+	// Nothing hidden may be targeted.
+	TESTEQUALS(fvd->issue_focus_attack(state, 1, {near_horse->get_id()},
+	                                   hidden_builder->get_id(), at(0)), false);
+	TESTEQUALS(has_order(near_horse), false);
+	TESTEQUALS(fvd->issue_focus_attack(state, 1, {near_horse->get_id()}, scout->get_id(), at(0)), true);
+	fvd->update_vision(state, at(0));
+	auto builders_view = fvd->get_vision(FVDTeam::BUILDERS);
+	TESTEQUALS(network::fog_tile_set(builders_view.visible, 128, {8, 8}), true);
+	TESTEQUALS(network::fog_tile_set(builders_view.explored, 128, {8, 8}), true);
+
+	// The scout escapes beyond every horse's sight: the focus attack ends,
+	// and the Builders keep the ground they explored, now unseen.
+	teleport(scout, {10.5, 60.5, 0}, 0.1);
+	fvd->combat_tick(state, at(0.2));
+	TESTEQUALS(has_order(near_horse), false);
+	builders_view = fvd->get_vision(FVDTeam::BUILDERS);
+	TESTEQUALS(network::fog_tile_set(builders_view.visible, 128, {8, 8}), false);
+	TESTEQUALS(network::fog_tile_set(builders_view.explored, 128, {8, 8}), true);
+	TESTEQUALS(network::fog_tile_set(builders_view.explored, 128, {120, 120}), false);
+
+	// The Hunter remembers an enemy tower it has seen until it sees the
+	// tower's site again without it.
+	entity_id_t builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (entity->get_definition() == "fvd.data.entities.Builder"
+		    and ownership->get_owners().get(time::TIME_ZERO) == player_id_t{5}) {
+			builder = id;
+		}
+	}
+	TESTEQUALS(fvd->request_build(state, 5, {builder}, {68, 69, 0}, at(1)), true);
+	loop->reach_time(at(15), state);
+	entity_id_t tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			tower = id;
+		}
+	}
+	TESTEQUALS(tower != 0, true);
+	auto remembers_tower = [&]() {
+		const auto view = fvd->get_vision(FVDTeam::HUNTER);
+		return std::any_of(view.remembered.begin(), view.remembered.end(), [&](const auto &building) {
+			return building.entity_id == tower;
+		});
+	};
+	auto watcher = spawn(1, "Horse", {72.5, 69.5, 0}, 15);
+	fvd->update_vision(state, at(15));
+	TESTEQUALS(remembers_tower(), true);
+	teleport(watcher, {110.5, 110.5, 0}, 15.1);
+	fvd->update_vision(state, at(15.2));
+	TESTEQUALS(remembers_tower(), true);
+
+	// Each recipient receives only its own side's view.
+	network::MatchConnectionState connections{fvd->get_player_count()};
+	auto hunter_world = network::decode_world_state(network::encode_world_state(
+		network::capture_fvd_state(state, connections, at(15.2), 0, 1, 1)));
+	TESTEQUALS(hunter_world.fog.size(), size_t{1});
+	(hunter_world.fog.front().team == network::PlayerRole::HUNTER) or TESTFAIL;
+	auto sent_tower = std::find_if(hunter_world.entities.begin(), hunter_world.entities.end(),
+	                               [&](const auto &entity) { return entity.entity_id == tower; });
+	sent_tower != hunter_world.entities.end() or TESTFAIL;
+	TESTEQUALS(sent_tower->remembered, true);
+	TESTEQUALS(sent_tower->health.has_value(), false);
+	auto sent_hidden = std::find_if(hunter_world.entities.begin(), hunter_world.entities.end(),
+	                                [&](const auto &entity) { return entity.entity_id == hidden_builder->get_id(); });
+	TESTEQUALS(sent_hidden == hunter_world.entities.end(), true);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {watcher->get_id()}, {112, 110, 0}, at(15.2)), true);
+	auto builder_world = network::decode_world_state(network::encode_world_state(
+		network::capture_fvd_state(state, connections, at(15.2), 0, 1, 2)));
+	(builder_world.fog.front().team == network::PlayerRole::BUILDER) or TESTFAIL;
+	TESTEQUALS(builder_world.attack_orders.empty(), true);
+	auto sent_watcher = std::find_if(builder_world.entities.begin(), builder_world.entities.end(),
+	                                 [&](const auto &entity) { return entity.entity_id == watcher->get_id(); });
+	TESTEQUALS(sent_watcher == builder_world.entities.end(), true);
+
+	// Destroyed while unseen, the tower stays remembered until seen gone.
+	TESTEQUALS(fvd->destroy_tower(state, tower, at(15.3)), true);
+	fvd->update_vision(state, at(15.4));
+	TESTEQUALS(remembers_tower(), true);
+	fvd->cancel_attack_move(watcher->get_id());
+	teleport(watcher, {72.5, 69.5, 0}, 15.5);
+	fvd->update_vision(state, at(15.6));
+	TESTEQUALS(remembers_tower(), false);
+}
+
+void fvd_hunter_tower() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto alive = [&](entity_id_t id) { return state->get_game_entities().contains(id); };
+	auto spawn = [&](player_id_t owner, const char *definition, coord::phys3 position, double seconds) {
+		return entities->spawn_game_entity(
+			loop, state, owner, std::string{"fvd.data.entities."} + definition, position, at(seconds));
+	};
+	auto position_of_entity = [&](entity_id_t id, double seconds) {
+		return std::dynamic_pointer_cast<component::Position>(
+			state->get_game_entity(id)->get_component(component::component_t::POSITION))
+		    ->get_positions().get(at(seconds));
+	};
+	TESTEQUALS(fvd->get_hunter_tower().has_value(), true);
+	const auto central = *fvd->get_hunter_tower();
+	TESTEQUALS(alive(central), true);
+
+
+	// The first horse, and the tower's first shot, are due 20 seconds in.
+	fvd->start_hunter_wave(state, time::TIME_ZERO);
+	const auto centre = position_of_entity(central, 0);
+
+	// A Builder tower well inside range, which the Hunter tower must ignore.
+	auto mason = spawn(2, "Builder", {72.5, 66.5, 0}, 0);
+	TESTEQUALS(fvd->request_build(state, 2, {mason->get_id()}, {72, 64, 0}, at(0)), true);
+	loop->reach_time(at(10), state);
+	entity_id_t tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			tower = id;
+		}
+	}
+	TESTEQUALS(tower != 0, true);
+	std::dynamic_pointer_cast<component::Position>(
+		mason->get_component(component::component_t::POSITION))->set_position(at(10), {110.5, 110.5, 0});
+
+	// Builders six tiles away, just inside the 10-tile range and just outside it.
+	auto near = spawn(3, "Builder", centre + coord::phys3_delta{-6, 0, 0}, 10);
+	auto edge = spawn(4, "Builder", centre + coord::phys3_delta{0, 9.9, 0}, 10);
+	auto outside = spawn(5, "Builder", centre + coord::phys3_delta{0, -10.1, 0}, 10);
+	// Enough health to count individual 100-damage hits.
+	auto near_live = std::dynamic_pointer_cast<component::Live>(
+		near->get_component(component::component_t::LIVE));
+	near_live->set_attribute(at(10), "fvd.data.entities.Health", 200);
+	auto near_health = [&](double seconds) {
+		return near_live->get_attribute(at(seconds), "fvd.data.entities.Health")->get(at(seconds));
+	};
+	auto hunter_tower_shots = [&](double seconds) {
+		size_t shots = 0;
+		for (const auto &shot : fvd->get_arrow_state(at(seconds))) {
+			shots += shot.owner == player_id_t{1} and shot.start.up.to_double() > 1.0;
+		}
+		return shots;
+	};
+	const auto kills = fvd->get_kills(3);
+
+	// Silent through the Builders' head start, even with targets in range.
+	loop->reach_time(at(19.999), state);
+	TESTEQUALS(hunter_tower_shots(19.999), size_t{0});
+	TESTEQUALS(near_health(19.999), int64_t{200});
+	TESTEQUALS(alive(edge->get_id()) and alive(outside->get_id()), true);
+
+	// From 20 seconds it fires once a second at the nearest Builder unit,
+	// each hit taking exactly 100 health.
+	loop->reach_time(at(20.5), state);
+	TESTEQUALS(hunter_tower_shots(20.5), size_t{1});
+	TESTEQUALS(near_health(20.5), int64_t{100});
+	loop->reach_time(at(20.9), state);
+	TESTEQUALS(near_health(20.9), int64_t{100});
+	// Combat ticks every 0.2 seconds, so later shots may land a tick late.
+	loop->reach_time(at(21.9), state);
+	TESTEQUALS(alive(near->get_id()), false);
+	TESTEQUALS(alive(edge->get_id()), true);
+	loop->reach_time(at(23.1), state);
+	TESTEQUALS(alive(edge->get_id()), false);
+	loop->reach_time(at(25), state);
+	// Beyond 10 tiles is safe, towers are never targeted, and the Hunter
+	// tower earns no kill credit.
+	TESTEQUALS(alive(outside->get_id()), true);
+	TESTEQUALS(alive(tower), true);
+	TESTEQUALS(fvd->get_kills(3), kills);
+
+	// Nothing can damage it: horses never target their own side's tower.
+	auto horse = spawn(1, "Horse", {70.5, 64.5, 0}, 25);
+	TESTEQUALS(fvd->issue_focus_attack(state, 1, {horse->get_id()}, central, at(25)), false);
+	// Builders cannot demolish it either.
+	for (player_id_t builder_player = 2; builder_player <= 3; ++builder_player) {
+		TESTEQUALS(fvd->demolish_owned_tower(state, builder_player, {central}, at(25)), false);
+	}
+	TESTEQUALS(alive(central), true);
+	auto health = std::dynamic_pointer_cast<component::Live>(
+		state->get_game_entity(central)->get_component(component::component_t::LIVE));
+	TESTEQUALS(health->get_attribute(at(25), "fvd.data.entities.Health")->get(at(25)), int64_t{1000});
+	// It gives the Hunter vision across its 15-tile reach and no further.
+	TESTEQUALS(fvd->tile_visible(state, FVDTeam::HUNTER, {64, 78}, at(25)), true);
+	TESTEQUALS(fvd->tile_visible(state, FVDTeam::HUNTER, {64, 81}, at(25)), false);
+
+	// Horses appear on the free tile beside the tower, which is solid.
+	const auto spawn_point = fvd->get_horse_spawn_point();
+	TESTEQUALS(spawn_point, (coord::phys3{64.5, 65.5, 0}));
+	auto grid = state->get_map()->get_pathfinder()->get_grid(
+		state->get_map()->get_grid_id("fvd.data.terrain.Land"));
+	auto cost_at = [&](coord::tile tile) {
+		auto sector = grid->get_sector(tile.ne / grid->get_sector_size(), tile.se / grid->get_sector_size());
+		return sector->get_cost_field()->get_cost(tile - sector->get_position().to_tile(grid->get_sector_size()));
+	};
+	TESTEQUALS(cost_at({64, 64}), path::COST_IMPASSABLE);
+	TESTEQUALS(cost_at(spawn_point.to_tile()) < path::COST_IMPASSABLE, true);
+	// The first horse appeared on that tile at 20 seconds.
+	bool spawned_beside = false;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Horse") {
+			auto position = std::dynamic_pointer_cast<component::Position>(
+				entity->get_component(component::component_t::POSITION))->get_positions().get(at(20));
+			spawned_beside = spawned_beside or position.to_tile() == spawn_point.to_tile();
+		}
+	}
+	TESTEQUALS(spawned_beside, true);
+}
+
+void fvd_hunter_rally_point() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto alive = [&](entity_id_t id) { return state->get_game_entities().contains(id); };
+	auto spawn = [&](player_id_t owner, const char *definition, coord::phys3 position, double seconds) {
+		return entities->spawn_game_entity(
+			loop, state, owner, std::string{"fvd.data.entities."} + definition, position, at(seconds));
+	};
+	auto position_of = [&](entity_id_t id, double seconds) {
+		return std::dynamic_pointer_cast<component::Position>(
+			state->get_game_entity(id)->get_component(component::component_t::POSITION))
+		    ->get_positions().get(at(seconds));
+	};
+	auto markers = [&]() {
+		size_t count = 0;
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			count += entity->get_definition() == fvd->get_hunter_rally_marker_definition();
+		}
+		return count;
+	};
+	const auto central = *fvd->get_hunter_tower();
+	auto horse = spawn(1, "Horse", {70.5, 70.5, 0}, 0);
+	const coord::phys3 rally{80.5, 64.5, 0};
+
+	// Only the Hunter may set it, through its tower alone, on reachable ground.
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 2, {central}, rally, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {horse->get_id()}, rally, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central, horse->get_id()}, rally, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {200, 5, 0}, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {80.5, 64.5, 1}, at(0)), false);
+	TESTEQUALS(fvd->get_hunter_rally_point().has_value(), false);
+	TESTEQUALS(markers(), size_t{0});
+
+	// Moving it leaves one marker, in the new place. It cannot be selected.
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {50.5, 64.5, 0}, at(0)), true);
+	const auto first_marker = *fvd->get_hunter_rally_marker();
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, rally, at(1)), true);
+	TESTEQUALS(alive(first_marker), false);
+	const auto marker = *fvd->get_hunter_rally_marker();
+	TESTEQUALS(markers(), size_t{1});
+	TESTEQUALS(position_of(marker, 1), rally);
+	TESTEQUALS(*fvd->get_hunter_rally_point(), rally);
+	TESTEQUALS(state->get_game_entity(marker)->has_component(component::component_t::SELECTABLE), false);
+
+	// A box selection that also caught the tower still orders the horses;
+	// the tower on its own cannot be ordered about.
+	TESTEQUALS(fvd->can_command_units(state, 1, {horse->get_id(), central}, at(1)), true);
+	TESTEQUALS(fvd->can_command_units(state, 1, {central}, at(1)), false);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {central, horse->get_id()}, {70.5, 80.5, 0}, at(1)), true);
+
+	// New horses ride from beside the tower to the rally point.
+	fvd->start_hunter_wave(state, at(1));
+	loop->reach_time(at(21), state);
+	entity_id_t first_spawn = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Horse" and id != horse->get_id()
+		    and (first_spawn == 0 or id < first_spawn)) {
+			first_spawn = id;
+		}
+	}
+	TESTEQUALS(first_spawn != 0, true);
+	TESTEQUALS((position_of(first_spawn, 21) - fvd->get_horse_spawn_point()).length() < 1.0, true);
+	loop->reach_time(at(40), state);
+	TESTEQUALS((position_of(first_spawn, 40) - rally).length() < 2.5, true);
+
+	// Only the Hunter is sent the marker, even with a Builder standing beside it.
+	auto scout = spawn(2, "Builder", rally + coord::phys3_delta{1, 1, 0}, 40);
+	fvd->update_vision(state, at(40));
+	TESTEQUALS(fvd->can_see(state, FVDTeam::BUILDERS, marker, at(40)), true);
+	network::MatchConnectionState connections{fvd->get_player_count()};
+	auto sent_marker = [&](player_id_t recipient) {
+		auto world = network::capture_fvd_state(state, connections, at(40), 0, 1, recipient);
+		return std::any_of(world.entities.begin(), world.entities.end(),
+		                   [&](const auto &entity) { return entity.entity_id == marker; });
+	};
+	TESTEQUALS(sent_marker(1), true);
+	TESTEQUALS(sent_marker(2), false);
+	TESTEQUALS(alive(scout->get_id()), true);
+
+	// Builders wall in the centre. A new horse cannot reach the rally point,
+	// so it rides as close as it can get rather than standing at the spawn.
+	entity_id_t newest_before = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		newest_before = std::max(newest_before, id);
+	}
+	const nyan::fqon_t land{"fvd.data.terrain.Land"};
+	for (coord::tile_t ne = 59; ne <= 69; ++ne) {
+		for (coord::tile_t se = 59; se <= 70; ++se) {
+			if (ne == 59 or ne == 69 or se == 59 or se == 70) {
+				state->get_map()->set_path_cost(land, {ne, se}, path::COST_IMPASSABLE, at(40.5));
+			}
+		}
+	}
+	state->get_map()->rebuild_path_grid(land);
+	loop->reach_time(at(47), state);
+	entity_id_t walled_in = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Horse" and id > newest_before
+		    and (walled_in == 0 or id < walled_in)) {
+			walled_in = id;
+		}
+	}
+	TESTEQUALS(walled_in != 0, true);
+	const auto stopped = position_of(walled_in, 47);
+	// The reachable tile nearest the rally point is (68, 64), against the wall.
+	TESTEQUALS(stopped.ne.to_double() > 67.0 and stopped.ne.to_double() < 69.0, true);
+	TESTEQUALS(std::abs(stopped.se.to_double() - 64.5) < 1.5, true);
+	// Ordering it out of the walled-in centre is refused, not a crash: the
+	// pathfinder used to throw when no portal route reached the target.
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {walled_in}, {100.5, 100.5, 0}, at(47)), false);
+	// Setting a rally point behind the wall is allowed, as in AoE2.
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {90.5, 90.5, 0}, at(47)), true);
 }
 }

@@ -25,3 +25,5 @@
   5. Check that AttackMove behaviour is unchanged and that Patrol waypoint switching remains reliable after each encounter.
 
   **Pass:** with otherwise identical enemy arrangements, the stance determines acquisition, engagement and disengagement in both stationary and patrolling cases; Patrol determines only the route, not a forced aggression policy. Record the Linux developer's fix and graphical rerun before checking 1.12.
+
+  **Fix (Linux developer):** Patrol now only sets the route; the stance decides engagement. Observe never engages. Defensive engages within 4 tiles, gives up 6 tiles (the stationary leash) from where it left the route, returns there and resumes. Aggressive chases with no leash while the target stays in its sight, and resumes the patrol after the target dies or escapes. Aggressive acquisition is capped at the horse's 7-tile sight by fog of war, not 8. Covered by `fvd_hunter_patrol_stances`. Graphical rerun still pending.

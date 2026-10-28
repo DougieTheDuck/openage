@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <unordered_set>
 #include <utility>
 
 #include "error/error.h"
@@ -44,6 +45,8 @@ gamestate::component::command::command_t simulation_command(CommandKind kind) {
 		return gamestate::component::command::command_t::PATROL;
 	case CommandKind::DEMOLISH_TOWER:
 		return gamestate::component::command::command_t::DEMOLISH_TOWER;
+	case CommandKind::SET_RALLY_POINT:
+		return gamestate::component::command::command_t::SET_RALLY_POINT;
 	default:
 		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
 		                     << static_cast<uint16_t>(kind)};
@@ -214,6 +217,16 @@ WorldState capture_fvd_presentation_state(
 			order.focus_target,
 		});
 	}
+	// Local presentation shows whichever side is controlled, so keep both.
+	for (auto team : {gamestate::FVDTeam::HUNTER, gamestate::FVDTeam::BUILDERS}) {
+		auto vision = fvd->get_vision(team);
+		TeamFog fog{team == gamestate::FVDTeam::HUNTER ? PlayerRole::HUNTER : PlayerRole::BUILDER,
+		            std::move(vision.explored), std::move(vision.visible), {}};
+		for (const auto &building : vision.remembered) {
+			fog.remembered.push_back(building.entity_id);
+		}
+		result.fog.push_back(std::move(fog));
+	}
 	return result;
 }
 
@@ -234,6 +247,40 @@ WorldState capture_fvd_state(
 	if (connections.get_player_count() != fvd->get_player_count()) {
 		throw Error{MSG(err) << "FVD connection state does not match the playable player count"};
 	}
+	// Only send what the recipient's side can see. Its own side is always
+	// visible; enemy buildings seen before stay as remembered markers.
+	const auto team = gamestate::FVD::team_of(recipient);
+	const auto role = team == gamestate::FVDTeam::HUNTER ? PlayerRole::HUNTER : PlayerRole::BUILDER;
+	auto vision = fvd->get_vision(team);
+	auto own_side = [&](gamestate::player_id_t owner) {
+		return owner != 0 and gamestate::FVD::team_of(owner) == team;
+	};
+	auto visible = [&](const coord::phys3 &position) {
+		return fog_tile_set(vision.visible, result.map_size, position.to_tile());
+	};
+	// The Hunter's rally point is its own business, even where Builders can see.
+	const auto &rally_marker = fvd->get_hunter_rally_marker_definition();
+	std::erase_if(result.entities, [&](const EntityState &entity) {
+		if (entity.definition == rally_marker) {
+			return team != gamestate::FVDTeam::HUNTER;
+		}
+		return not own_side(entity.owner_id) and not visible(entity.position);
+	});
+	std::unordered_set<gamestate::entity_id_t> sent;
+	for (const auto &entity : result.entities) {
+		sent.insert(entity.entity_id);
+	}
+	if (team == gamestate::FVDTeam::HUNTER) {
+		// Builder plans are only seen where the Hunter can see them.
+		std::erase_if(result.reservations, [&](const TileReservation &reservation) {
+			return not fog_tile_set(vision.visible, result.map_size, reservation.tile);
+		});
+		std::erase_if(result.constructions, [&](const ConstructionState &construction) {
+			return not sent.contains(construction.site_entity_id);
+		});
+	}
+	result.fog.clear();
+	result.fog.push_back({role, std::move(vision.explored), std::move(vision.visible), {}});
 	result.base_revision = base_revision;
 	result.world_revision = world_revision;
 	result.local_player_id = recipient;
@@ -297,6 +344,21 @@ WorldState capture_fvd_state(
 		    and entity_state.owner_id == recipient) {
 			entity_state.tower_kills = fvd->get_tower_kills(entity_state.entity_id, recipient);
 		}
+	}
+	for (const auto &building : vision.remembered) {
+		if (sent.contains(building.entity_id)) {
+			continue;
+		}
+		EntityState remembered{building.entity_id, building.owner, building.definition, building.position};
+		remembered.remembered = true;
+		result.entities.push_back(std::move(remembered));
+	}
+	std::sort(result.entities.begin(), result.entities.end(), [](const auto &left, const auto &right) {
+		return left.entity_id < right.entity_id;
+	});
+	// Builders never learn where the Hunter is sending its horses.
+	if (team != gamestate::FVDTeam::HUNTER) {
+		result.attack_orders.clear();
 	}
 	for (const auto &arrow : fvd->get_arrow_state(time, delivered_projectile_id)) {
 		result.arrows.push_back({

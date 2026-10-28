@@ -40,7 +40,10 @@ those within a given distance of a point.
 
 | Source | Acquisition radius | Anchor restriction | After the target is gone |
 |---|---|---|---|
-| AttackMove / Patrol | 4 tiles (firing range) | none | resume destination |
+| AttackMove | 4 tiles (firing range) | none | resume destination |
+| Patrol, Observe | never acquires | — | — |
+| Patrol, Defensive | 4 tiles | candidates within 6 tiles of where it left the route | walk back there, then resume the leg |
+| Patrol, Aggressive | 8 tiles (sight) | none | resume the leg once the target dies or escapes beyond its sight |
 | Aggressive | 8 tiles (sight) | none | drop the order where it stands; next tick rescans at 8 tiles |
 | Defensive | 4 tiles | candidates within 6 tiles of the anchor | walk back to the anchor, still defending; drop the order on arrival |
 
@@ -70,7 +73,11 @@ rejected, since a Patrol endpoint inside a blocked footprint can never be
 reached. Each horse's order stores its own starting position as
 `patrol_return`. On arrival the endpoints swap and the horse moves on,
 so the order never sets `reached_destination`. Engagements en route use
-the AttackMove path unchanged and the horse resumes its current leg.
+the AttackMove pursuit and firing code, with the stance choosing the
+acquisition radius and leash as in the table above. A Defensive patrol
+records `patrol_engagement` where it first left the route and walks back
+there before resuming its leg. Switching a patrolling horse to Observe
+drops its current target immediately.
 
 ## Commands and networking
 

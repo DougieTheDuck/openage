@@ -24,9 +24,12 @@ HealthAbbreviation(engine.util.language.translated.type.TranslatedString):
 
 Builder(engine.util.game_entity.GameEntity):
     GameEntity.types = {}
-    GameEntity.abilities = {Idle, Live, Move, Turn, Selectable}
+    GameEntity.abilities = {Idle, LineOfSight, Live, Move, Turn, Selectable}
     GameEntity.modifiers = {}
     GameEntity.variants = {}
+
+    LineOfSight(engine.ability.type.LineOfSight):
+        LineOfSight.range = 6.0
 
     Idle(engine.ability.type.Idle):
         Ability.properties = {engine.ability.property.type.Animated: Animated}
@@ -70,9 +73,12 @@ Builder(engine.util.game_entity.GameEntity):
 
 Horse(engine.util.game_entity.GameEntity):
     GameEntity.types = {}
-    GameEntity.abilities = {Idle, Live, Move, Attack, Turn, Selectable}
+    GameEntity.abilities = {Idle, LineOfSight, Live, Move, Attack, Turn, Selectable}
     GameEntity.modifiers = {}
     GameEntity.variants = {}
+
+    LineOfSight(engine.ability.type.LineOfSight):
+        LineOfSight.range = 7.0
 
     Idle(engine.ability.type.Idle):
         Ability.properties = {engine.ability.property.type.Animated: Animated}
@@ -163,11 +169,29 @@ TowerDemolition(engine.util.game_entity.GameEntity):
             Animation(engine.util.graphics.Animation):
                 Animation.sprite = "../../../fvd/graphics/fvd_stone_tower_demolition.sprite"
 
-Tower(engine.util.game_entity.GameEntity):
+HunterRallyPoint(engine.util.game_entity.GameEntity):
     GameEntity.types = {}
-    GameEntity.abilities = {Idle, Live, Pathable, Selectable}
+    GameEntity.abilities = {Idle}
     GameEntity.modifiers = {}
     GameEntity.variants = {}
+
+    Idle(engine.ability.type.Idle):
+        Ability.properties = {engine.ability.property.type.Animated: Animated}
+
+        Animated(engine.ability.property.type.Animated):
+            Animated.animations = {Animation}
+
+            Animation(engine.util.graphics.Animation):
+                Animation.sprite = "../../../fvd/graphics/hunter_rally_point.sprite"
+
+Tower(engine.util.game_entity.GameEntity):
+    GameEntity.types = {}
+    GameEntity.abilities = {Idle, LineOfSight, Live, Pathable, Selectable}
+    GameEntity.modifiers = {}
+    GameEntity.variants = {}
+
+    LineOfSight(engine.ability.type.LineOfSight):
+        LineOfSight.range = 8.0
 
     Idle(engine.ability.type.Idle):
         Ability.properties = {engine.ability.property.type.Animated: Animated}
@@ -195,6 +219,40 @@ Tower(engine.util.game_entity.GameEntity):
             Hitbox.radius_x = 0.5
             Hitbox.radius_y = 0.5
             Hitbox.radius_z = 1.0
+
+    Selectable(engine.ability.type.Selectable):
+        Selectable.selection_box = Box
+
+        Box(engine.util.selection_box.type.Rectangle):
+            Rectangle.width = 1.0
+            Rectangle.height = 1.0
+
+HunterTower(engine.util.game_entity.GameEntity):
+    GameEntity.types = {}
+    GameEntity.abilities = {Idle, LineOfSight, Live, Selectable}
+    GameEntity.modifiers = {}
+    GameEntity.variants = {}
+
+    LineOfSight(engine.ability.type.LineOfSight):
+        LineOfSight.range = 15.0
+
+    Idle(engine.ability.type.Idle):
+        Ability.properties = {engine.ability.property.type.Animated: Animated}
+
+        Animated(engine.ability.property.type.Animated):
+            Animated.animations = {Animation}
+
+            Animation(engine.util.graphics.Animation):
+                Animation.sprite = "../../../fvd/graphics/hunter_tower.sprite"
+
+    Live(engine.ability.type.Live):
+        Live.attributes = {HealthSetting}
+
+        HealthSetting(engine.util.attribute.AttributeSetting):
+            AttributeSetting.attribute = Health
+            AttributeSetting.min_value = 0
+            AttributeSetting.max_value = 1000
+            AttributeSetting.starting_value = 1000
 
     Selectable(engine.ability.type.Selectable):
         Selectable.selection_box = Box

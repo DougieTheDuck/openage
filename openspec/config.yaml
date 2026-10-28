@@ -20,7 +20,8 @@ context: |
   passive 2D contact separation when the spawn point is crowded, but only
   human Hunter Move or AttackMove orders initiate navigation and attacks.
   AttackMove engages eligible enemies encountered en route, then resumes
-  travel to the ordered destination. No rally/gather point is needed.
+  travel to the ordered destination. The Hunter may set a rally point on the
+  Hunter tower; new horses then ride there (or as close as they can get).
   Tower kills are credited to the tower's owner and displayed locally.
   Windows networking is required; cross-platform is optional.
   Follow openspec/ROADMAP.md as the product source of truth, including
@@ -37,7 +38,7 @@ rules:
     - Keep game rules independent of rendering and input.
     - Preserve host authority and authenticate client-to-player assignments.
     - Prioritize working Windows direct-IP/LAN networking; avoid unnecessary upstream compatibility work.
-    - Reuse game selection, input and movement infrastructure for Hunter AttackMove; do not auto-route spawned horses.
+    - Reuse game selection, input and movement infrastructure for Hunter AttackMove; only auto-route spawned horses to a Hunter-set rally point.
   tasks:
     - Test deterministic rules independently from rendering.
     - Verify UI behavior interactively and multiplayer on distinct processes.

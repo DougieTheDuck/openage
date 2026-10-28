@@ -104,8 +104,15 @@ stance, while an Observe horse SHALL keep the AttackMove's alert behaviour.
 
 A Patrol order SHALL move each selected horse to the clicked point and then
 back to its own starting position, repeating until another order replaces
-it. Horses on Patrol SHALL engage eligible enemies within 4 tiles using
-AttackMove rules and then resume their current leg. A Patrol command SHALL
+it. The horse's stance SHALL decide how it fights while patrolling:
+an Observe horse SHALL never attack; a Defensive horse SHALL engage
+enemies within 4 tiles, abandon a target once the horse or the target is
+more than 6 tiles from where it left its route (the same leash as a
+stationary Defensive horse), then return there and resume the patrol; an
+Aggressive horse SHALL engage enemies within its sight, with no leash, and
+SHALL resume the patrol once the target dies or escapes beyond that sight.
+Patrol SHALL decide only the route; a stance change during a patrol SHALL
+take effect immediately. A Patrol command SHALL
 be rejected entirely unless it comes from the Hunter, every horse is owned
 and alive or known dead, the destination is an in-bounds ground position
 outside completed tower footprints, and every horse has a path to it.
@@ -114,9 +121,21 @@ outside completed tower footprints, and every horse has a path to it.
 - **WHEN** a horse on Patrol reaches the clicked point
 - **THEN** it turns back toward its starting position, and on reaching that, heads out again
 
-#### Scenario: Enemy en route
-- **WHEN** a Builder comes within 4 tiles of a patrolling horse
-- **THEN** the horse attacks it and afterwards resumes its patrol leg
+#### Scenario: Observe patrol
+- **WHEN** a Builder comes within 2 tiles of an Observe horse on Patrol
+- **THEN** the horse keeps patrolling without attacking
+
+#### Scenario: Defensive patrol, enemy en route
+- **WHEN** a Builder comes within 4 tiles of a Defensive horse on Patrol
+- **THEN** the horse attacks it and afterwards resumes its patrol
+
+#### Scenario: Defensive patrol, enemy flees
+- **WHEN** a Defensive patrolling horse's target runs more than 6 tiles from where the horse left its route
+- **THEN** the horse gives up, returns to that point and resumes its patrol
+
+#### Scenario: Aggressive patrol, enemy escapes
+- **WHEN** an Aggressive patrolling horse's target moves beyond 8 tiles from it
+- **THEN** the horse gives up and carries on along its patrol route, still Aggressive
 
 #### Scenario: Unreachable destination
 - **WHEN** any selected horse has no path to the Patrol destination

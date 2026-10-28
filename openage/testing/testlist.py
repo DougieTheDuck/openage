@@ -89,6 +89,7 @@ def tests_cpp():
     yield "openage::job::tests::test_job_manager"
     yield "openage::network::tests::messages"
     yield "openage::network::tests::stance_messages", "FVD Hunter stance and patrol wire format"
+    yield "openage::network::tests::fog_messages", "FVD fog of war and remembered building wire format"
     yield "openage::network::tests::protocol"
     yield "openage::network::tests::handshake"
     yield "openage::network::tests::lobby"
@@ -175,6 +176,10 @@ def tests_cpp():
     yield "openage::testing::tests::comparison", "Const and non-printable comparison assertions"
     yield "openage::input::game::tests::tower_line_axis_lock"
     yield "openage::input::game::tests::tower_placement_mode"
+    yield (
+        "openage::input::game::tests::horse_selection_priority",
+        "Box selections keep horses and leave out the Hunter tower",
+    )
     yield "openage::presenter::tests::hud_mouse_capture"
     yield "openage::presenter::tests::guest_interpolation"
     yield "openage::presenter::tests::guest_clock_jitter"
@@ -227,6 +232,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_builder_delete_foundation",
+        "FVD Delete on queued, walked-to and abandoned foundations",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_hunter_spawning",
         "FVD Hunter horse spawn cadence and idle behavior",
         lambda env: env["has_assets"],
@@ -264,6 +274,26 @@ def tests_cpp():
     yield (
         "openage::gamestate::tests::fvd_hunter_stances",
         "FVD Hunter Observe/Aggressive/Defensive stances and Patrol",
+        lambda env: env["has_assets"],
+    )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_patrol_stances",
+        "FVD Patrol behaviour under Observe, Defensive and Aggressive stances",
+        lambda env: env["has_assets"],
+    )
+    yield (
+        "openage::gamestate::tests::fvd_fog_of_war",
+        "FVD per-side vision, hidden targets, explored memory and filtered replication",
+        lambda env: env["has_assets"],
+    )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_tower",
+        "FVD invulnerable central Hunter tower: 20-second gate, range, Builder-only targets and damage",
+        lambda env: env["has_assets"],
+    )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_rally_point",
+        "FVD Hunter tower rally point, Hunter-only marker and mixed horse/tower selections",
         lambda env: env["has_assets"],
     )
 

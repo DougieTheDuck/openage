@@ -47,6 +47,7 @@
 #include "pathfinding/grid.h"
 #include "pathfinding/sector.h"
 #include "pathfinding/pathfinder.h"
+#include "util/math_constants.h"
 
 namespace openage::gamestate {
 
@@ -173,6 +174,28 @@ public:
 };
 
 /** A launched arrow deals damage at its predicted impact time. */
+/** A Hunter tower shot deals its damage when the projectile lands. */
+class FVDHunterTowerHitHandler : public openage::event::OnceEventHandler {
+public:
+	FVDHunterTowerHitHandler() : OnceEventHandler{"game.fvd_hunter_tower_hit"} {}
+	void setup_event(const std::shared_ptr<openage::event::Event> &,
+	                 const std::shared_ptr<openage::event::State> &) override {}
+	void invoke(openage::event::EventLoop &,
+	            const std::shared_ptr<openage::event::EventEntity> &,
+	            const std::shared_ptr<openage::event::State> &state,
+	            const time::time_t &time, const param_map &params) override {
+		auto gstate = std::dynamic_pointer_cast<GameState>(state);
+		gstate->get_fvd()->hunter_tower_hit(gstate, params.get<entity_id_t>("target"),
+		                                  params.get<int64_t>("damage"), time);
+	}
+	time::time_t predict_invoke_time(
+		const std::shared_ptr<openage::event::EventEntity> &,
+		const std::shared_ptr<openage::event::State> &,
+		const time::time_t &at) override {
+		return at;
+	}
+};
+
 class FVDArrowHitHandler : public openage::event::OnceEventHandler {
 public:
 	FVDArrowHitHandler() : OnceEventHandler{"game.fvd_arrow_hit"} {}
@@ -273,6 +296,16 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	auto armor = settings.get_int("tower_armor");
 	auto melee_damage = settings.get_int("horse_melee_damage");
 	auto arrow_duration = settings.get_float("arrow_travel_time");
+	auto central_damage = settings.get_int("hunter_tower_damage");
+	auto central_range = settings.get_float("hunter_tower_range");
+	auto central_cooldown = settings.get_float("hunter_tower_cooldown");
+	auto start_radius = settings.get_float("builder_start_radius");
+	if (central_damage < 1 or central_range < 1.0 or central_range > 32.0
+	    or central_cooldown < 0.1 or central_cooldown > 60.0
+	    or start_radius <= central_range or start_radius > size / 2.0 - 2.0) {
+		throw Error{ERR << "Invalid FVD Hunter tower settings: damage >= 1, range 1..32 tiles, "
+		                << "cooldown 0.1..60 seconds, Builders starting outside its range on the map"};
+	}
 	if (size < 16 or size > 512 or chunk < 4 or chunk > size
 	    or chunk > MAX_CHUNK_WIDTH or chunk > MAX_CHUNK_HEIGHT
 	    or size % chunk != 0 or players < 2 or players > 8
@@ -302,6 +335,15 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->tower_armor = armor;
 	this->horse_damage = melee_damage;
 	this->arrow_travel = time::time_t::from_double(arrow_duration);
+	this->hunter_tower_damage = central_damage;
+	this->hunter_tower_range = central_range;
+	this->hunter_tower_cooldown = time::time_t::from_double(central_cooldown);
+	this->builder_start_radius = start_radius;
+	const size_t vision_words = (this->map_size * this->map_size + 63) / 64;
+	for (auto &team : this->team_vision) {
+		team.explored.assign(vision_words, 0);
+		team.visible.assign(vision_words, 0);
+	}
 	this->tower_cooldown = time::time_t::from_double(0.8);
 	this->horse_cooldown = time::time_t::from_double(0.6);
 	this->horse_hit_delay = time::time_t::from_double(
@@ -316,6 +358,8 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->foundation = settings.get_object("foundation").get_name();
 	this->tower_demolition = settings.get_object("tower_demolition").get_name();
 	this->tower = settings.get_object("tower").get_name();
+	this->hunter_tower = settings.get_object("hunter_tower").get_name();
+	this->hunter_rally_marker = settings.get_object("hunter_rally_point").get_name();
 	this->plains = settings.get_object("terrain").get_name();
 	auto horse_attack = state->get_db_view()->get_object(this->horse + ".Attack");
 	auto attack_property = api::APIAbility::get_property(
@@ -367,6 +411,7 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 	loop->add_event_handler(std::make_shared<FVDCombatHandler>());
 	loop->add_event_handler(std::make_shared<FVDArrowHitHandler>());
 	loop->add_event_handler(std::make_shared<FVDHorseHitHandler>());
+	loop->add_event_handler(std::make_shared<FVDHunterTowerHitHandler>());
 	loop->add_event_handler(std::make_shared<BuildProgressHandler>());
 	loop->add_event_handler(std::make_shared<TowerDemolitionExpiryHandler>());
 	loop->add_event_handler(std::make_shared<RefreshPathsHandler>());
@@ -388,17 +433,44 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 		auto setup = id == 0 ? "" : (id == 1 ? this->hunter : this->builders);
 		state->add_player(entities->add_player(loop, state, setup));
 		if (id >= 2) {
-			auto centre = this->get_centre();
-			auto offset = static_cast<int>(id) - static_cast<int>((this->player_count + 2) / 2);
+			// Builders start evenly around a ring outside the Hunter tower's reach.
+			const double angle = 2.0 * math::PI * static_cast<double>(id - 2)
+			                     / static_cast<double>(this->player_count - 1);
+			const auto centre = this->get_centre();
+			const coord::tile site{
+				static_cast<coord::tile_t>(std::floor(centre.ne.to_double()
+				                                      + this->builder_start_radius * std::cos(angle))),
+				static_cast<coord::tile_t>(std::floor(centre.se.to_double()
+				                                      + this->builder_start_radius * std::sin(angle)))};
 			auto entity = entities->spawn_game_entity(
-				loop, state, id, this->builder,
-				centre + coord::phys3_delta{offset, 1, 0}, time::TIME_ZERO);
+				loop, state, id, this->builder, site.to_phys3_center(), time::TIME_ZERO);
 			if (not refresh_target) {
 				refresh_target = entity;
 			}
 		}
 	}
+	this->hunter_tower_id = entities->spawn_game_entity(
+		loop, state, 1, this->hunter_tower, this->get_centre(), time::TIME_ZERO)->get_id();
+	// The Hunter tower is solid like a Builder tower. Horses appear on the
+	// first free tile beside it, on the side facing the camera.
+	auto map = state->get_map();
+	std::unordered_set<nyan::fqon_t> blocked_grids;
+	coord::tile_t spawn_se = this->get_centre().to_tile().se;
+	for (const auto &tile : this->get_tower_footprint(this->get_centre().to_tile())) {
+		for (const auto &[path_type, cost] : this->tower_path_costs) {
+			auto previous = map->set_path_cost(path_type, tile, cost, time::TIME_ZERO);
+			this->hunter_tower_cells.push_back(FootprintCell{tile, path_type, previous});
+			blocked_grids.insert(path_type);
+		}
+		spawn_se = std::max(spawn_se, tile.se);
+	}
+	for (const auto &path_type : blocked_grids) {
+		map->rebuild_path_grid(path_type);
+	}
+	this->horse_spawn_point = coord::tile{this->get_centre().to_tile().ne, spawn_se + 1}.to_phys3_center();
 	loop->create_event("game.fvd_refresh_paths", refresh_target->get_manager(), state, time::TIME_ZERO);
+	// Players see their starting surroundings before the first combat tick.
+	this->update_vision(state, time::TIME_ZERO);
 }
 
 bool FVD::tile_occupied(const std::shared_ptr<GameState> &state,
@@ -955,7 +1027,12 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 	}
 	this->build_orders.erase(it);
 	system::Idle::idle(entity, time);
+	this->start_next_queued_build(state, order->get_owner(), builder, time);
+}
 
+void FVD::start_next_queued_build(const std::shared_ptr<GameState> &state,
+                                  player_id_t owner, entity_id_t builder,
+                                  const time::time_t &time) {
 	// The queued foundation already exists and retains its render identity
 	// until this job begins constructing; skip unreachable abandoned sites.
 	auto pending = this->queued_builds.find(builder);
@@ -971,7 +1048,7 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 		if (pending->second.empty()) {
 			this->queued_builds.erase(pending);
 		}
-		if (this->start_build(state, order->get_owner(), {builder},
+		if (this->start_build(state, owner, {builder},
 		                      next.site.to_phys3_center(), time, next.foundation_id)) {
 			break;
 		}
@@ -1063,6 +1140,11 @@ bool FVD::demolish_owned_tower(const std::shared_ptr<GameState> &state,
 	}
 	const auto tower_id = ids.front();
 	auto found = state->get_game_entities().find(tower_id);
+	// Delete on a foundation removes that planned site instead.
+	if (found != state->get_game_entities().end()
+	    and found->second->get_definition() == this->foundation) {
+		return this->delete_owned_foundation(state, owner, tower_id, time);
+	}
 	if (found == state->get_game_entities().end()
 	    or found->second->get_definition() != this->tower
 	    or not found->second->has_component(component::component_t::OWNERSHIP)
@@ -1087,6 +1169,72 @@ bool FVD::demolish_owned_tower(const std::shared_ptr<GameState> &state,
 		return false;
 	}
 	return this->destroy_tower(state, tower_id, time);
+}
+
+bool FVD::delete_owned_foundation(const std::shared_ptr<GameState> &state,
+                                  player_id_t owner, entity_id_t foundation_id,
+                                  const time::time_t &time) {
+	auto found = state->get_game_entities().find(foundation_id);
+	if (owner < 2 or owner > this->player_count
+	    or found == state->get_game_entities().end()
+	    or found->second->get_definition() != this->foundation
+	    or not found->second->has_component(component::component_t::OWNERSHIP)) {
+		return false;
+	}
+	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+		found->second->get_component(component::component_t::OWNERSHIP));
+	if (not ownership or ownership->get_owners().get(time) != owner) {
+		return false;
+	}
+
+	// A site waiting in a Builder's queue leaves the queue and frees its tiles.
+	for (auto pending = this->queued_builds.begin(); pending != this->queued_builds.end(); ++pending) {
+		auto &sites = pending->second;
+		auto wanted = std::find_if(sites.begin(), sites.end(), [&](const QueuedBuildSite &entry) {
+			return entry.foundation_id == foundation_id;
+		});
+		if (wanted == sites.end()) {
+			continue;
+		}
+		for (const auto &tile : this->get_tower_footprint(wanted->site)) {
+			auto reserved = this->reserved_tiles.find(tile);
+			if (reserved != this->reserved_tiles.end() and reserved->second == pending->first) {
+				this->reserved_tiles.erase(reserved);
+			}
+		}
+		sites.erase(wanted);
+		if (sites.empty()) {
+			this->queued_builds.erase(pending);
+		}
+		break;
+	}
+
+	// The site a Builder is walking to: cancel that job, then carry on with
+	// the rest of the queue rather than abandoning it.
+	std::optional<entity_id_t> walking_builder{};
+	for (const auto &[builder_id, build] : this->build_orders) {
+		if (build.foundation_id == foundation_id and not build.tower_id) {
+			walking_builder = builder_id;
+			break;
+		}
+	}
+	if (walking_builder) {
+		std::deque<QueuedBuildSite> rest{};
+		if (auto pending = this->queued_builds.find(*walking_builder); pending != this->queued_builds.end()) {
+			rest = std::move(pending->second);
+			this->queued_builds.erase(pending);
+		}
+		this->cancel_build(state, *walking_builder, time, false);
+		if (not rest.empty()) {
+			this->queued_builds.emplace(*walking_builder, std::move(rest));
+		}
+	}
+
+	state->remove_game_entity(foundation_id, time);
+	if (walking_builder) {
+		this->start_next_queued_build(state, owner, *walking_builder, time);
+	}
+	return true;
 }
 
 bool FVD::destroy_tower(const std::shared_ptr<GameState> &state,
@@ -1396,6 +1544,7 @@ void FVD::start_hunter_wave(const std::shared_ptr<GameState> &state,
 		std::lock_guard lock{this->hunter_spawn_time_mutex};
 		this->first_hunter_spawn_time = spawn_time;
 	}
+	this->hunter_tower_active_from = spawn_time;
 	this->hunter_wave_started = true;
 	this->next_hunter_spawn_event = loop->create_event(
 		"game.fvd_spawn_horse", this->horse_spawn_target, state, spawn_time);
@@ -1468,8 +1617,17 @@ void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	if (not loop or not factory or not this->horse_spawn_target) {
 		throw Error{ERR << "Cannot spawn a Hunter horse without FVD services"};
 	}
-	auto spawned = factory->spawn_game_entity(loop, state, 1, this->horse, this->get_centre(), time);
+	auto spawned = factory->spawn_game_entity(loop, state, 1, this->horse, this->horse_spawn_point, time);
 	this->relax_horse_crowd(state, spawned->get_id(), time);
+	// New horses ride to the rally point like a Move order: a travelling
+	// horse does not stop to fight, then its stance applies on arrival.
+	if (this->hunter_rally_point) {
+		const auto from = std::dynamic_pointer_cast<component::Position>(
+			spawned->get_component(component::component_t::POSITION))->get_positions().get(time).to_tile();
+		if (auto destination = this->closest_reachable(state, from, *this->hunter_rally_point, time)) {
+			system::Move::move_default(spawned, state, *destination, time);
+		}
+	}
 	this->next_hunter_spawn_event = loop->create_event(
 		"game.fvd_spawn_horse", this->horse_spawn_target, state,
 		time + this->horse_spawn_interval);
@@ -1491,6 +1649,11 @@ std::optional<std::vector<entity_id_t>> FVD::resolve_command_units(
 		// Only a horse known to have died can be pruned from an old
 		// selection. An unknown or forged entity ID must still fail.
 		if (owner == 1 and this->dead_horses.contains(id)) {
+			continue;
+		}
+		// A box selection may sweep up the Hunter tower with the horses.
+		// It cannot move or fight, so the order applies to the horses alone.
+		if (owner == 1 and this->hunter_tower_id == id) {
 			continue;
 		}
 		auto found = state->get_game_entities().find(id);
@@ -1619,6 +1782,132 @@ bool FVD::issue_hunter_route(const std::shared_ptr<GameState> &state,
 		system::Move::move_default(entity, state, destination, time);
 	}
 	return true;
+}
+
+void FVD::remove_hunter_tower(const std::shared_ptr<GameState> &state, const time::time_t &time) {
+	auto map = state->get_map();
+	std::unordered_set<nyan::fqon_t> changed_grids;
+	for (const auto &cell : this->hunter_tower_cells) {
+		map->set_path_cost(cell.path_type, cell.tile, cell.previous_cost, time);
+		changed_grids.insert(cell.path_type);
+	}
+	for (const auto &path_type : changed_grids) {
+		map->rebuild_path_grid(path_type);
+	}
+	this->hunter_tower_cells.clear();
+	if (this->hunter_tower_id) {
+		state->remove_game_entity(*this->hunter_tower_id, time);
+	}
+	this->hunter_tower_id.reset();
+	this->horse_spawn_point = this->get_centre();
+	if (this->hunter_rally_marker_id and state->get_game_entities().contains(*this->hunter_rally_marker_id)) {
+		state->remove_game_entity(*this->hunter_rally_marker_id, time);
+	}
+	this->hunter_rally_marker_id.reset();
+	this->hunter_rally_point.reset();
+}
+
+bool FVD::set_hunter_rally_point(const std::shared_ptr<GameState> &state,
+                                 player_id_t owner, const std::vector<entity_id_t> &ids,
+                                 const coord::phys3 &point, const time::time_t &time) {
+	if (owner != 1 or not this->hunter_tower_id or ids.size() != 1
+	    or ids.front() != *this->hunter_tower_id
+	    or not state->get_game_entities().contains(*this->hunter_tower_id)
+	    or point.ne < 0 or point.se < 0
+	    or point.ne >= this->map_size or point.se >= this->map_size
+	    or point.up != 0) {
+		return false;
+	}
+	// Like AoE2, anywhere on the map is allowed, even behind a wall: horses
+	// ride as close as they can get whenever it cannot be reached.
+	auto loop = this->event_loop.lock();
+	auto factory = this->entity_factory.lock();
+	if (not loop or not factory) [[unlikely]] {
+		throw Error{ERR << "Cannot place a Hunter rally point without FVD services"};
+	}
+	// Replace the marker rather than moving it, so every client sees one
+	// entity appear in the new place without interpolating across the map.
+	if (this->hunter_rally_marker_id and state->get_game_entities().contains(*this->hunter_rally_marker_id)) {
+		state->remove_game_entity(*this->hunter_rally_marker_id, time);
+	}
+	auto marker = factory->spawn_game_entity(loop, state, 1, this->hunter_rally_marker, point, time);
+	system::Idle::idle(marker, time);
+	this->hunter_rally_marker_id = marker->get_id();
+	this->hunter_rally_point = point;
+	return true;
+}
+
+std::optional<coord::phys3> FVD::closest_reachable(const std::shared_ptr<GameState> &state,
+                                                   const coord::tile &from,
+                                                   const coord::phys3 &target,
+                                                   const time::time_t &time) const {
+	auto map = state->get_map();
+	auto pathfinder = map->get_pathfinder();
+	const auto grid_id = map->get_grid_id("fvd.data.terrain.Land");
+	if (pathfinder->get_path(path::PathRequest{grid_id, from, target.to_tile(), time}).status
+	    == path::PathResult::FOUND) {
+		return target;
+	}
+	// Flood the tiles reachable from the horse, in a fixed order, and keep
+	// the one nearest the target. Orthogonal steps only, so every tile found
+	// is one the pathfinder can reach too.
+	auto grid = pathfinder->get_grid(grid_id);
+	const auto sector_size = grid->get_sector_size();
+	const auto size = static_cast<coord::tile_t>(this->map_size);
+	auto passable = [&](const coord::tile &tile) {
+		if (tile.ne < 0 or tile.se < 0 or tile.ne >= size or tile.se >= size) {
+			return false;
+		}
+		auto sector = grid->get_sector(tile.ne / sector_size, tile.se / sector_size);
+		return sector->get_cost_field()->get_cost(tile - sector->get_position().to_tile(sector_size))
+		       < path::COST_IMPASSABLE;
+	};
+	if (not passable(from)) {
+		return std::nullopt;
+	}
+	auto distance = [&](const coord::tile &tile) {
+		const auto delta = tile.to_phys3_center() - target;
+		const double ne = delta.ne.to_double();
+		const double se = delta.se.to_double();
+		return ne * ne + se * se;
+	};
+	std::vector<bool> seen(static_cast<size_t>(size) * size, false);
+	auto index = [&](const coord::tile &tile) { return static_cast<size_t>(tile.ne) * size + tile.se; };
+	std::deque<coord::tile> frontier{from};
+	seen[index(from)] = true;
+	coord::tile best = from;
+	double best_distance = distance(from);
+	while (not frontier.empty()) {
+		const auto tile = frontier.front();
+		frontier.pop_front();
+		if (const auto d = distance(tile); d < best_distance) {
+			best = tile;
+			best_distance = d;
+		}
+		for (const auto &next : {coord::tile{tile.ne + 1, tile.se}, coord::tile{tile.ne - 1, tile.se},
+		                         coord::tile{tile.ne, tile.se + 1}, coord::tile{tile.ne, tile.se - 1}}) {
+			if (passable(next) and not seen[index(next)]) {
+				seen[index(next)] = true;
+				frontier.push_back(next);
+			}
+		}
+	}
+	if (best == from) {
+		return std::nullopt;
+	}
+	return best.to_phys3_center();
+}
+
+std::optional<coord::phys3> FVD::get_hunter_rally_point() const {
+	return this->hunter_rally_point;
+}
+
+std::optional<entity_id_t> FVD::get_hunter_rally_marker() const {
+	return this->hunter_rally_marker_id;
+}
+
+const std::string &FVD::get_hunter_rally_marker_definition() const {
+	return this->hunter_rally_marker;
 }
 
 coord::phys3 FVD::get_centre() const {

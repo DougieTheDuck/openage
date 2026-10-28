@@ -7,12 +7,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <nyan/nyan.h>
@@ -91,6 +93,31 @@ struct FVDArrowState {
 	coord::phys3 destination;
 	time::time_t launch_time;
 	time::time_t impact_time;
+};
+
+/** Side whose shared vision a player uses. */
+enum class FVDTeam : uint8_t {
+	HUNTER = 1,
+	BUILDERS = 2,
+};
+
+/** Last seen state of an enemy building now hidden by fog. */
+struct FVDRememberedBuilding {
+	entity_id_t entity_id;
+	player_id_t owner;
+	std::string definition;
+	coord::phys3 position;
+};
+
+/**
+ * One side's view of the map: one bit per tile in row-major (ne, se) order,
+ * bit i of word i / 64 for tile index i = ne * map_size + se.
+ */
+struct FVDTeamVision {
+	std::vector<uint64_t> explored;
+	std::vector<uint64_t> visible;
+	/** Enemy buildings seen before and not yet seen gone, in ID order. */
+	std::vector<FVDRememberedBuilding> remembered;
 };
 
 /**
@@ -187,6 +214,15 @@ public:
 	                         player_id_t owner, const std::vector<entity_id_t> &ids,
 	                         const time::time_t &time);
 
+	/**
+	 * Remove one of a Builder player's foundations: a queued site, the site
+	 * a Builder is walking to (who then moves on to his next queued site), or
+	 * an abandoned one. Construction already started is a tower instead.
+	 */
+	bool delete_owned_foundation(const std::shared_ptr<GameState> &state,
+	                             player_id_t owner, entity_id_t foundation_id,
+	                             const time::time_t &time);
+
 	/** Destroy a tower and restore the path costs under its footprint. */
 	bool destroy_tower(const std::shared_ptr<GameState> &state,
 	                   entity_id_t tower_id,
@@ -279,6 +315,41 @@ public:
 	               player_id_t owner, entity_id_t firing_tower,
 	               int64_t damage, const time::time_t &time);
 
+	/** Apply a Hunter tower shot when its projectile lands. */
+	void hunter_tower_hit(const std::shared_ptr<GameState> &state, entity_id_t target,
+	                      int64_t damage, const time::time_t &time);
+
+	/** The Hunter's central tower, if this scenario has one. */
+	std::optional<entity_id_t> get_hunter_tower() const;
+
+	/** Where new Hunter horses appear, beside the Hunter tower. */
+	coord::phys3 get_horse_spawn_point() const;
+
+	/**
+	 * Set where newly spawned horses ride to, like an AoE2 rally point.
+	 * Only the Hunter may set it, through its tower (the single entry of
+	 * @p ids), on an in-bounds ground point horses can reach from their
+	 * spawn point. A red marker shows it to the Hunter only.
+	 */
+	bool set_hunter_rally_point(const std::shared_ptr<GameState> &state,
+	                            player_id_t owner, const std::vector<entity_id_t> &ids,
+	                            const coord::phys3 &point, const time::time_t &time);
+
+	/** The Hunter's rally point; without one, new horses stay where they spawn. */
+	std::optional<coord::phys3> get_hunter_rally_point() const;
+
+	/** The marker entity showing the rally point, while one is set. */
+	std::optional<entity_id_t> get_hunter_rally_marker() const;
+
+	/** Definition of the rally point marker, which only the Hunter may see. */
+	const std::string &get_hunter_rally_marker_definition() const;
+
+	/**
+	 * Play without the Hunter tower: remove it, free its tile and spawn
+	 * horses at the centre again. Used by scenarios built before it existed.
+	 */
+	void remove_hunter_tower(const std::shared_ptr<GameState> &state, const time::time_t &time);
+
 	/** Apply a Hunter horse's pending strike at its animation's hit frame. */
 	void horse_hit(const std::shared_ptr<GameState> &state,
 	               entity_id_t horse, entity_id_t target,
@@ -316,6 +387,29 @@ public:
 	/** Capture active Hunter orders in horse-ID order. */
 	std::vector<FVDAttackOrderState> get_attack_order_state() const;
 
+	/** The side whose vision a player shares: the Hunter, or all Builders. */
+	static FVDTeam team_of(player_id_t player);
+
+	/**
+	 * Whether any of a side's units or completed towers sees the centre of
+	 * this tile at this time. Out-of-map tiles are never visible.
+	 */
+	bool tile_visible(const std::shared_ptr<GameState> &state, FVDTeam team,
+	                  const coord::tile &tile, const time::time_t &time) const;
+
+	/**
+	 * Whether a side may currently see, target or interact with an entity:
+	 * its own side's entities always, others only on a visible tile.
+	 */
+	bool can_see(const std::shared_ptr<GameState> &state, FVDTeam team,
+	             entity_id_t entity, const time::time_t &time) const;
+
+	/** Recompute both sides' visible and explored tiles and remembered buildings. */
+	void update_vision(const std::shared_ptr<GameState> &state, const time::time_t &time);
+
+	/** One side's view as of the last update_vision. */
+	FVDTeamVision get_vision(FVDTeam team) const;
+
 	/** Capture at most 2048 immutable launches, oldest undelivered first.
 	 * Passing no cursor retains only the recent presentation window. */
 	std::vector<FVDArrowState> get_arrow_state(
@@ -348,6 +442,21 @@ private:
 		const std::shared_ptr<GameEntity> &builder,
 		const coord::tile &site, const time::time_t &time) const;
 
+	/** Start the Builder's next reachable queued site, if any. */
+	void start_next_queued_build(const std::shared_ptr<GameState> &state,
+	                             player_id_t owner, entity_id_t builder,
+	                             const time::time_t &time);
+
+	/**
+	 * Where a horse spawned at @p from should ride to reach @p target:
+	 * the target itself if a path exists, otherwise the reachable tile
+	 * closest to it. Nothing if the horse cannot move at all.
+	 */
+	std::optional<coord::phys3> closest_reachable(const std::shared_ptr<GameState> &state,
+	                                              const coord::tile &from,
+	                                              const coord::phys3 &target,
+	                                              const time::time_t &time) const;
+
 	/** Abandon queued orders and release their reservations, retaining foundations. */
 	void clear_queued_builds(const std::shared_ptr<GameState> &state,
 	                        entity_id_t builder, const time::time_t &time);
@@ -362,6 +471,8 @@ private:
 		std::optional<time::time_t> pending_hit{};
 		/** Patrol's other endpoint, swapped with the destination on arrival. */
 		std::optional<coord::phys3> patrol_return{};
+		/** Where a Defensive patrol left its route to chase; it returns here. */
+		std::optional<coord::phys3> patrol_engagement{};
 		/** Started by an Aggressive or Defensive stance rather than a command. */
 		bool stance_engagement = false;
 	};
@@ -393,6 +504,17 @@ private:
 	std::optional<std::vector<entity_id_t>> resolve_command_units(
 		const std::shared_ptr<GameState> &state, player_id_t owner,
 		const std::vector<entity_id_t> &ids, const time::time_t &time) const;
+
+	/**
+	 * Vision radius from an entity type's LineOfSight ability in tiles,
+	 * or zero for types that reveal nothing.
+	 */
+	double vision_range(const std::shared_ptr<GameState> &state,
+	                    const std::string &definition) const;
+
+	/** Living units and completed towers of a side, with their vision radius. */
+	std::vector<std::pair<coord::phys3, double>> vision_sources(
+		const std::shared_ptr<GameState> &state, FVDTeam team, const time::time_t &time) const;
 
 	/** Shared validation and order setup for AttackMove and Patrol. */
 	bool issue_hunter_route(const std::shared_ptr<GameState> &state,
@@ -481,6 +603,25 @@ private:
 	std::string foundation;
 	std::string tower_demolition;
 	std::string tower;
+	std::string hunter_tower;
+	std::string hunter_rally_marker;
+	int64_t hunter_tower_damage;
+	double hunter_tower_range;
+	time::time_t hunter_tower_cooldown;
+	double builder_start_radius;
+	/** Absent before the map exists or in scenarios without the tower. */
+	std::optional<entity_id_t> hunter_tower_id{};
+	/** Path costs under the Hunter tower before it blocked them. */
+	std::vector<FootprintCell> hunter_tower_cells;
+	/** Where new horses appear: the first free tile beside the Hunter tower. */
+	coord::phys3 horse_spawn_point{0, 0, 0};
+	time::time_t hunter_tower_next_shot{};
+	/** When the Hunter tower may first fire: the first horse's spawn time. */
+	std::optional<time::time_t> hunter_tower_active_from{};
+	/** Where new horses ride to after spawning, if the Hunter set one. */
+	std::optional<coord::phys3> hunter_rally_point{};
+	/** The entity marking the rally point. */
+	std::optional<entity_id_t> hunter_rally_marker_id{};
 	std::string plains;
 	double tower_radius_ne;
 	double tower_radius_se;
@@ -510,6 +651,19 @@ private:
 	uint64_t next_arrow_id = 1;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
+	/** Vision per side, indexed by FVDTeam value minus one. */
+	struct TeamVisionState {
+		std::vector<uint64_t> explored;
+		std::vector<uint64_t> visible;
+		std::map<entity_id_t, FVDRememberedBuilding> remembered;
+	};
+	std::array<TeamVisionState, 2> team_vision{};
+	/** Vision radius per entity type, read once from its nyan data. */
+	mutable std::unordered_map<std::string, double> vision_ranges;
+
+	/** Set only during a combat tick, whose visibility queries reuse the bitsets. */
+	std::optional<time::time_t> vision_cached_at{};
+
 	/** Hunter-chosen stances; absent horses are Observe. */
 	std::unordered_map<entity_id_t, HunterStance> hunter_stances;
 	std::unordered_set<entity_id_t> dead_horses;

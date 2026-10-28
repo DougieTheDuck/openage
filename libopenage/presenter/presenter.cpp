@@ -753,6 +753,97 @@ void Presenter::refresh_fvd_lobby_state() {
 	       and state.remote_player_id == 0 and state.phase == "playing");
 }
 
+network::WorldState Presenter::fvd_local_view(const network::WorldState &world, size_t controlled) {
+	const auto role = controlled == 1 ? network::PlayerRole::HUNTER : network::PlayerRole::BUILDER;
+	auto fog = std::find_if(world.fog.begin(), world.fog.end(), [&](const auto &entry) {
+		return entry.team == role;
+	});
+	if (fog == world.fog.end()) {
+		throw Error{MSG(err) << "FVD presentation snapshot lacks the viewer's fog"};
+	}
+	auto own_side = [&](gamestate::player_id_t owner) {
+		return owner != 0 and (owner == 1) == (controlled == 1);
+	};
+	auto visible = [&](const coord::phys3 &position) {
+		return network::fog_tile_set(fog->visible, world.map_size, position.to_tile());
+	};
+	const std::unordered_set<gamestate::entity_id_t> remembered{
+		fog->remembered.begin(), fog->remembered.end()};
+
+	network::WorldState view = world;
+	std::erase_if(view.entities, [&](const network::EntityState &entity) {
+		// Only the Hunter sees its rally point marker.
+		if (entity.definition == "fvd.data.entities.HunterRallyPoint") {
+			return role != network::PlayerRole::HUNTER;
+		}
+		return not own_side(entity.owner_id) and not visible(entity.position)
+		       and not remembered.contains(entity.entity_id);
+	});
+	// Draw only what this snapshot shows. An entity the simulation created
+	// after the snapshot appears once the next snapshot includes it.
+	std::unordered_set<uint32_t> shown;
+	for (const auto &entity : view.entities) {
+		shown.insert(static_cast<uint32_t>(entity.entity_id));
+	}
+	this->world_renderer->set_shown(std::move(shown));
+	// A guest only knows a remembered building's last place, not its state.
+	for (auto &entity : view.entities) {
+		if (not own_side(entity.owner_id) and not visible(entity.position)) {
+			entity = network::EntityState{entity.entity_id, entity.owner_id, entity.definition, entity.position};
+			entity.remembered = true;
+		}
+	}
+	if (role == network::PlayerRole::HUNTER) {
+		std::unordered_set<gamestate::entity_id_t> shown;
+		for (const auto &entity : view.entities) {
+			shown.insert(entity.entity_id);
+		}
+		std::erase_if(view.reservations, [&](const auto &reservation) {
+			return not network::fog_tile_set(fog->visible, world.map_size, reservation.tile);
+		});
+		std::erase_if(view.constructions, [&](const auto &construction) {
+			return not shown.contains(construction.site_entity_id);
+		});
+	}
+	else {
+		view.attack_orders.clear();
+	}
+	view.fog = {*fog};
+	view.fog.front().remembered.clear();
+	return view;
+}
+
+void Presenter::update_fvd_fog(const network::WorldState *world) {
+	std::unordered_set<uint32_t> dimmed;
+	if (world) {
+		for (const auto &entity : world->entities) {
+			if (entity.remembered) {
+				dimmed.insert(static_cast<uint32_t>(entity.entity_id));
+			}
+		}
+	}
+	this->world_renderer->set_dimmed(std::move(dimmed));
+	if (not world or world->fog.size() != 1) {
+		if (not this->fvd_fog_levels.empty()) {
+			this->fvd_fog_levels.clear();
+			this->terrain_renderer->set_fog(1, {});
+		}
+		return;
+	}
+	const auto &fog = world->fog.front();
+	const size_t tiles = static_cast<size_t>(world->map_size) * world->map_size;
+	std::vector<uint8_t> levels(tiles, 0);
+	for (size_t i = 0; i < tiles; ++i) {
+		const bool explored = (fog.explored[i / 64] >> (i % 64)) & 1;
+		const bool visible = (fog.visible[i / 64] >> (i % 64)) & 1;
+		levels[i] = visible ? 255 : explored ? 128 : 0;
+	}
+	if (levels != this->fvd_fog_levels) {
+		this->terrain_renderer->set_fog(world->map_size, levels);
+		this->fvd_fog_levels = std::move(levels);
+	}
+}
+
 void Presenter::record_confirmed_combat_effects(
 	const network::WorldState &world, bool reset) {
 	if (reset) {
@@ -818,6 +909,8 @@ void Presenter::refresh_fvd_guest_visuals() {
 		if (entity.definition != "fvd.data.entities.Builder"
 		    and entity.definition != "fvd.data.entities.Horse"
 		    and entity.definition != "fvd.data.entities.Tower"
+		    and entity.definition != "fvd.data.entities.HunterTower"
+		    and entity.definition != "fvd.data.entities.HunterRallyPoint"
 		    and entity.definition != "fvd.data.entities.TowerDemolition"
 		    and entity.definition != "fvd.data.entities.Foundation") {
 			continue;
@@ -866,7 +959,9 @@ void Presenter::refresh_fvd_guest_visuals() {
 		auto &visual = this->fvd_guest_entities[entity.entity_id];
 		const bool new_entity = not visual;
 		if (not visual) {
-			visual = std::make_shared<renderer::world::RenderEntity>();
+			// Clicks pass through the rally point marker, as on the host.
+			const bool pickable = entity.definition != "fvd.data.entities.HunterRallyPoint";
+			visual = std::make_shared<renderer::world::RenderEntity>(pickable);
 			this->world_renderer->add_render_entity(visual);
 			// Replicated proxies do not pass through the simulation's normal
 			// health-bar registration path.
@@ -1151,6 +1246,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("controlled", static_cast<int>(game_controller->get_controlled()));
 			this->fvd_hud_state->insert("selection", QString{"No unit selected"});
 			this->fvd_hud_state->insert("isTower", false);
+			this->fvd_hud_state->insert("isFoundation", false);
 			this->fvd_hud_state->insert("health", QString{"—"});
 			this->fvd_hud_state->insert("damage", QString{"Not defined"});
 			this->fvd_hud_state->insert("armor", QString{"Not defined"});
@@ -1283,7 +1379,8 @@ void Presenter::render() {
 	if (this->game_controller) {
 		auto selected = this->game_controller->get_selection_details();
 		if (this->fvd_hud_state
-		    and selected.kind == input::game::SelectionKind::TOWER
+		    and (selected.kind == input::game::SelectionKind::TOWER
+		         or selected.kind == input::game::SelectionKind::FOUNDATION)
 		    and selected.ids.size() == 1) {
 			// A demolished (or combat-destroyed) tower can remain selected
 			// until the next click. Clear it only after authoritative state
@@ -1319,6 +1416,12 @@ void Presenter::render() {
 			}
 			else if (tower) {
 				selection_label = QString{"Tower"};
+			}
+			else if (selected.kind == input::game::SelectionKind::FOUNDATION) {
+				selection_label = QString{"Foundation"};
+			}
+			else if (selected.kind == input::game::SelectionKind::HUNTER_TOWER) {
+				selection_label = QString{"Hunter tower — right-click to set rally point"};
 			}
 			else if (hunter_horse) {
 				selection_label = QString{"Horse"};
@@ -1358,6 +1461,8 @@ void Presenter::render() {
 			this->fvd_hud_state->insert("controlled", static_cast<int>(controlled));
 			this->fvd_hud_state->insert("selection", selection_label);
 			this->fvd_hud_state->insert("isTower", tower);
+			this->fvd_hud_state->insert("isFoundation",
+				selected.kind == input::game::SelectionKind::FOUNDATION);
 			this->fvd_hud_state->insert("health", health);
 			this->fvd_hud_state->insert("canBuild", controlled >= 2 and builder);
 			this->fvd_hud_state->insert("canAttack", controlled == 1 and hunter_horse);
@@ -1372,10 +1477,18 @@ void Presenter::render() {
 				auto now = this->time_loop->get_clock()->get_time();
 				auto replica_for_hud = this->fvd_replication ? this->fvd_replication->get_world_state() : std::nullopt;
 				const auto local_hud = this->fvd_replication ? nullptr : this->simulation->get_fvd_presentation_state();
-				const network::WorldState *construction_world = replica_for_hud ? &*replica_for_hud : local_hud.get();
-				if (not this->fvd_replication and local_hud) {
-					this->record_confirmed_combat_effects(*local_hud, false);
+				// Show the local player only what their side can see, exactly as
+				// a guest of the host would; hidden entities are not drawn.
+				std::optional<network::WorldState> local_view{};
+				if (local_hud) {
+					local_view = this->fvd_local_view(*local_hud, controlled);
 				}
+				const network::WorldState *construction_world = replica_for_hud ? &*replica_for_hud
+				                                              : local_view ? &*local_view : nullptr;
+				if (not this->fvd_replication and local_view) {
+					this->record_confirmed_combat_effects(*local_view, false);
+				}
+				this->update_fvd_fog(construction_world);
 				// The Hunter's own horse stances arrive in the same snapshot locally
 				// and on guests; a group with different stances reads as Mixed.
 				QString stance_label{};

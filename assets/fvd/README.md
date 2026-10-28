@@ -28,7 +28,7 @@ Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
 `bin/run test openage::gamestate::tests::fvd_animation_phase`,
 `bin/run test openage::network::tests::messages` and
 `bin/run test openage::network::tests::world_delta`.
-Multiplayer protocol v15 adds Builder tower demolition commands; all participating clients and the relay must use compatible builds.
+Multiplayer protocol v16 adds fog of war (v15 added Builder tower demolition commands); all participating clients and the relay must use compatible builds.
 
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
@@ -81,8 +81,14 @@ The [scenario settings](data/scenario.nyan) define a square 128 by 128 tile map 
 Every tile is flat, walkable plains using the generated grass texture.
 The FVD renderer draws the exact tile boundaries over the plains for placement reference.
 All eight players start with their camera centred at (64, 64).
-Player 1 has the Hunter civilisation, starts without units and cannot place buildings.
-Players 2 through 8 have the Builders civilisation and each receive exactly one Builder near the centre, with distinct starting positions.
+Player 1 has the Hunter civilisation, starts with only the Hunter tower at the map centre and cannot place buildings.
+Players 2 through 8 have the Builders civilisation and each receive exactly one Builder, spaced evenly on a ring 20 tiles from the centre, outside the Hunter tower's reach.
+The Hunter tower cannot be damaged or demolished. It stays silent for the Builders' 20-second head start; from the moment the first horse is due, it fires once per second at the nearest Builder unit it can see within 10 tiles, each arrow dealing 100 damage. It never shoots Builder towers.
+It also gives the Hunter vision 15 tiles around the centre. It is solid, and Hunter horses appear on the free tile just beside it rather than at the exact centre. Its damage, range, rate of fire and the Builders' starting ring are set in the scenario settings; its vision is its `LineOfSight` range.
+Select the Hunter tower and right-click to set a rally point: new horses ride there after spawning, or as close as they can get if Builders have walled it off, and a red arrow marks it for the Hunter only. A drag box that catches units selects only the units, so sweeping up a tower or foundation doesn't stop them from moving.
+Builders: select one of your towers or foundations and press Delete to remove it. A tower collapses; a foundation leaves its Builder's queue, and if the Builder was walking to it he moves on to the next queued site.
+The crimson tower graphic is a placeholder recoloured from the Builder tower.
+Run `bin/run test openage::gamestate::tests::fvd_hunter_tower` for its rules.
 A top-centre countdown shows the seconds remaining until the first Hunter horse, starting at 00:20 when the match begins and disappearing at the first spawn.
 It uses the same simulation-time deadline as spawning, so changing the clock speed or pausing the match does not desynchronize the display.
 After 20 seconds of match time, the first Hunter horse spawns at the centre of the map; one more spawns every second thereafter.
@@ -104,9 +110,21 @@ Each horse also has a stance for when it has no order, shown in the HUD for the 
 **Z** sets Aggressive: the horse engages the nearest completed tower within eight tiles, otherwise the nearest Builder, and pursues it.
 **X** sets Defensive: the horse engages enemies within its four-tile firing range, gives up once the fight moves more than six tiles from where it began, and walks back there.
 Orders always take precedence, so a Move travels past enemies; an arrived Attack-move hands over to an Aggressive or Defensive stance.
-Press **P** and left-click a point to Patrol: the horses loop between their starting positions and that point, fighting enemies within four tiles like Attack-move and then continuing.
-Run `bin/run test openage::gamestate::tests::fvd_hunter_stances` for the stance and Patrol rules.
+Press **P** and left-click a point to Patrol: the horses loop between their starting positions and that point, and their stance decides how they fight on the way.
+Observe horses never attack while patrolling.
+Defensive horses attack enemies within four tiles, give up once the chase is more than ten tiles from where they left the route, then return and carry on.
+Aggressive horses attack anything within eight tiles; if the target escapes beyond that, they stop patrolling and stay where they are.
+Run `bin/run test openage::gamestate::tests::fvd_hunter_stances` and `openage::gamestate::tests::fvd_hunter_patrol_stances` for the stance and Patrol rules.
 The gather point remains unimplemented.
+
+**Fog of war.** Each side shares one view: the Hunter sees what its horses see, and all Builders see what any Builder or completed tower sees.
+Vision ranges come from each type's `LineOfSight` ability in [entities.nyan](data/entities.nyan): Builder 6 tiles, horse 7, tower 8.
+Never-seen ground is black and ground seen before is dimmed. Enemy buildings stay where they were last seen, dimmed like the ground, until their site is scouted again; enemy units in the fog are not shown at all.
+Nothing hidden can be attacked: focus attacks on hidden targets are refused, chases end when the target disappears, Aggressive horses react only within their vision, and towers only shoot horses the Builders can see.
+Builders may still order towers anywhere; the Builder walks into the fog to build.
+The host sends each player only what their side can see, and the host's own view and solo play show the same.
+In solo play the fog follows the side you control, so switching between players 1 and 2 switches views.
+Run `bin/run test openage::gamestate::tests::fvd_fog_of_war` and `openage::network::tests::fog_messages` for the fog rules.
 Completed towers automatically target nearby horses and fire scheduled arrows.
 Only authoritative impacts damage health; killing blows credit the tower's Builder.
 Tower arrows now appear as brief camera-projected golden streaks with a small ballistic arc, drawn in the QML overlay from the authoritative launch time and flight duration. Visual shots are bounded for large battles, but all damage events still resolve normally.
