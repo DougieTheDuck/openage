@@ -13,13 +13,18 @@
 - Commands: `GARRISON` (Builder plus tower), `UNGARRISON` (tower),
   `SET_UNGARRISON_POINT` (tower plus point).
 
-## Open questions
+## Decisions (Dougie, 2026-10-28)
 
-- How many Builders fit in one tower? With one Builder per player, 1 is enough,
-  but allied Builders sharing a tower needs a decision.
-- What happens to a garrisoned Builder when the tower is destroyed (ejected
-  unharmed, damaged, or killed)? AoE2 ejects.
-- Can a garrisoned Builder still build? Does garrisoning change the tower
-  (e.g. more arrows)?
-- Does a garrisoned Builder count as alive for "all Builders dead"? Assumed yes.
-- Default ungarrison point when none is set: the tile the Builder entered from.
+- One Builder per tower. A hop into an occupied tower is refused and the
+  Builder ungarrisons to the point's closest free tile instead.
+- When a tower is destroyed (by horses or Delete) its Builder is ejected
+  unharmed onto a free adjacent tile before the collapse starts.
+- A garrisoned Builder cannot build: build orders for him are rejected, and
+  garrisoning cancels his current job (his queued foundations stay).
+- Garrisoning does not change the tower's damage, range, armour or rate of fire.
+
+## Still to decide
+
+- Default ungarrison point when none is set; proposed: the tile the Builder
+  entered from.
+- A garrisoned Builder counts as alive for "all Builders dead"; assumed yes.

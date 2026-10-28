@@ -11,10 +11,12 @@ delete a badly placed line.
   of your finished towers visible on screen.
 - Double-clicking one of your **foundations** selects all of your foundations
   visible on screen.
-- The two never mix: only the kind double-clicked is selected. Towers under
-  construction count as neither for now (open question).
+- Double-clicking one of your **towers under construction** selects all of
+  your towers under construction visible on screen.
+- The three groups never mix: only the kind double-clicked is selected.
 - A group of your towers or foundations can be deleted together with Delete.
-- The HUD shows "N towers selected" or "N foundations selected".
+- The HUD shows "N towers selected", "N towers under construction selected" or
+  "N foundations selected".
 
 ## Capabilities
 

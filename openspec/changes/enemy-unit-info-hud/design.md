@@ -8,5 +8,6 @@
   (`horse_melee_damage`) and the Hunter tower's damage and range. Send them in
   the match settings rather than per entity.
 - Deselect when the entity leaves the recipient's view.
-- Open question: should the Hunter be able to inspect Builders and towers the
-  same way? Easy to add with the same panel.
+- The Hunter inspects Builders and towers the same way (Dougie, 2026-10-28).
+  Tower figures: `tower_arrow_damage`, the 7-tile tower range and
+  `tower_armor`. Builders have no attack.
