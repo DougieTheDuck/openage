@@ -15,6 +15,7 @@ void world_delta() {
 	initial.world_revision = 10;
 	initial.simulation_time = time::time_t::from_int(20);
 	initial.local_kill_count = 4;
+	initial.first_hunter_spawn_time = time::time_t::from_int(40);
 	initial.players = {{1, PlayerRole::HUNTER}, {2, PlayerRole::BUILDER},
 	                   {3, PlayerRole::BUILDER}};
 	initial.entities = {
@@ -71,6 +72,7 @@ void world_delta() {
 	no_change.simulation_time = time::time_t::from_double(20.1);
 	auto heartbeat = host.advance(no_change);
 	TESTEQUALS(heartbeat.local_kills_changed, false);
+	TESTEQUALS(heartbeat.first_hunter_spawn_time_changed, false);
 	TESTEQUALS(heartbeat.changed.entities.empty(), true);
 	TESTEQUALS(heartbeat.changed.players.empty(), true);
 	TESTEQUALS(heartbeat.changed.arrows.empty(), true);
@@ -91,6 +93,7 @@ void world_delta() {
 	changed.world_revision = 12;
 	changed.simulation_time = time::time_t::from_double(20.2);
 	changed.local_kill_count = 5;
+	changed.first_hunter_spawn_time.reset();
 	changed.players[2].connected = false;
 	changed.entities.erase(changed.entities.begin());
 	changed.entities[0].tower_kills = 5;
@@ -104,6 +107,7 @@ void world_delta() {
 		time::time_t::from_double(20.2), time::time_t::from_double(20.4)});
 	auto delta = host.advance(changed);
 	TESTEQUALS(delta.local_kills_changed, true);
+	TESTEQUALS(delta.first_hunter_spawn_time_changed, true);
 	TESTEQUALS(delta.changed.local_kill_count, uint64_t{5});
 	TESTEQUALS(delta.changed.players.size(), size_t{1});
 	TESTEQUALS(delta.changed.entities.size(), size_t{2});
@@ -118,6 +122,7 @@ void world_delta() {
 	auto decoded = decode_world_delta(encoded);
 	auto applied = apply_world_delta(rebuilt, decoded);
 	TESTEQUALS(applied.local_kill_count, uint64_t{5});
+	TESTEQUALS(applied.first_hunter_spawn_time.has_value(), false);
 	TESTEQUALS(applied.players.at(2).connected, false);
 	TESTEQUALS(applied.entities.size(), size_t{4});
 	TESTEQUALS(applied.entities.at(0).entity_id, gamestate::entity_id_t{11});

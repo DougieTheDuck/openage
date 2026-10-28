@@ -24,6 +24,7 @@ add_sources(libopenage
 	match_disconnect_coordinator_test.cpp
 	messages.cpp
 	messages_test.cpp
+	order_presentation.cpp
 	protocol.cpp
 	protocol_test.cpp
 	relay.cpp

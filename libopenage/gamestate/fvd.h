@@ -30,6 +30,12 @@ class EventEntity;
 }
 
 namespace openage::gamestate {
+
+/** Seconds until a pending first Hunter spawn, rounded up for HUD display. */
+std::optional<int> hunter_spawn_countdown(
+	const std::optional<time::time_t> &spawn_time,
+	const time::time_t &now);
+
 class EntityFactory;
 class GameEntity;
 class GameState;
@@ -204,6 +210,12 @@ public:
 	 * exists before match start or after the first spawn deadline.
 	 */
 	std::optional<int> get_hunter_spawn_countdown(const time::time_t &now) const;
+
+	/**
+	 * Authoritative simulation deadline for the first Hunter spawn.
+	 * Empty before the wave starts and after the first horse spawns.
+	 */
+	std::optional<time::time_t> get_first_hunter_spawn_time() const;
 
 	/** Queue the first Hunter spawn immediately and replace its delayed schedule. */
 	void request_immediate_hunter_spawn(const std::shared_ptr<GameState> &state,

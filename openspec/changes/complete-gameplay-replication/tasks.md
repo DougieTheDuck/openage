@@ -113,8 +113,13 @@
     **Awaiting build/run and live visual acceptance.**
   - [ ] Visually verify all 2/4/8-player screens and real camera movement,
     conflicting reservations, cancellation and retasking on Windows/Linux.
-- [ ] 1.7 Replicate Hunter spawn timing, any future rally behavior, active
-  orders and target highlights via authoritative time-indexed state.
+- [x] 1.7 Replicate the first Hunter spawn deadline through snapshots and
+  deltas, evaluate the guest countdown on its synchronized presentation
+  clock, and derive active order lines and target highlights from the same
+  authoritative world state. Protocol v16 rejects clients without the new
+  timed field. No rally behavior exists yet; it must use this pipeline when
+  introduced. Wire, delta, presentation, loopback and spawn regressions pass
+  on Windows. **Awaiting live graphical and cross-platform verification.**
 - [ ] 1.8 Every new gameplay feature must add its wire/presentation
   representation and unit, loopback, multi-client and visual acceptance
   checks in the same task—not as later network polish.
@@ -134,7 +139,8 @@
 - Timed arrow launch events now remain available briefly after impact,
   including late guest visuals, but high-volume overflow, impact/death
   feedback and all-player visual verification remain outstanding. Attack
-  orders, construction states and private scores already have wire records.
+  orders now have authoritative target/destination overlays; construction
+  states and private scores already have wire records.
 - Network state still uses one recipient-oriented world capture at a time.
   Ensure update cadence and performance do not deteriorate with players.
 
@@ -144,10 +150,8 @@ The [FVD prototype verification matrix](../../../doc/code/network/FVD_PROTOTYPE_
 maps every outstanding OpenSpec acceptance item to its existing or new
 automated test and the remaining real-client manual checks.
 
-**2026-10-28:** Source and registration checks were reviewed. Two more
-automated regressions were added (same-action Hunter animation phase restart,
-and cancel-after-launch/no-authoritative-damage). This review environment
-cannot download/compile the whole engine or run its asset-backed tests.
-**No previously unexecuted test is marked as passed by this review.**
-The last reported Linux result was 82/86 before follow-up fixes, not
-a current verified pass rate.
+**2026-10-28:** A Windows MSVC RelWithDebInfo build completed and all 88
+registered tests passed with assets (`run.exe test -a --have-assets`). This
+includes the process, loopback, 2/4/8-session, world delta, presentation and
+asset-backed gameplay regressions. Linux execution and graphical/manual
+acceptance remain outstanding.

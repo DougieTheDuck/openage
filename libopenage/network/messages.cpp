@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <unordered_set>
 
 #include "error/error.h"
 #include "network/serialization.h"
@@ -26,6 +27,7 @@ constexpr const char *HORSE_DEFINITION = "fvd.data.entities.Horse";
 constexpr uint16_t ATTACK_HAS_TARGET = 1 << 0;
 constexpr uint16_t ATTACK_REACHED_DESTINATION = 1 << 1;
 constexpr uint16_t ATTACK_FOCUS_TARGET = 1 << 2;
+constexpr uint16_t WORLD_HAS_FIRST_HUNTER_SPAWN = 1 << 0;
 class PayloadReader {
 public:
 	explicit PayloadReader(const std::vector<uint8_t> &payload) :
@@ -530,6 +532,10 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 	if (state.local_player_id == 0) {
 		throw Error{MSG(err) << "FVD state requires a local player"};
 	}
+	if (state.first_hunter_spawn_time
+	    and *state.first_hunter_spawn_time < state.simulation_time) {
+		throw Error{MSG(err) << "FVD first Hunter spawn deadline is in the past"};
+	}
 	if (state.players.size() > MAX_STATE_PLAYERS
 	    or state.entities.size() > MAX_STATE_ENTITIES
 	    or state.reservations.size() > MAX_STATE_RESERVATIONS
@@ -546,6 +552,11 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 	append_u32(output, state.map_size);
 	append_u64(output, state.local_player_id);
 	append_u64(output, state.local_kill_count);
+	append_u16(output, state.first_hunter_spawn_time
+	                       ? WORLD_HAS_FIRST_HUNTER_SPAWN : 0);
+	append_u16(output, 0);
+	append_i64(output, state.first_hunter_spawn_time.value_or(time::TIME_ZERO)
+	                       .get_raw_value());
 	append_u32(output, static_cast<uint32_t>(state.players.size()));
 	append_u32(output, static_cast<uint32_t>(state.entities.size()));
 	append_u32(output, static_cast<uint32_t>(state.reservations.size()));
@@ -664,7 +675,14 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 		append_i64(output, construction.phase_start_time.get_raw_value());
 		append_u64(output, construction.site_entity_id);
 	}
+	std::unordered_set<gamestate::entity_id_t> ordered_horses{};
 	for (const auto &order : state.attack_orders) {
+		if (order.horse_id == 0
+		    or not ordered_horses.insert(order.horse_id).second
+		    or (order.target_id and *order.target_id == 0)
+		    or (order.focus_target and not order.target_id)) {
+			throw Error{MSG(err) << "FVD state contains an invalid Hunter attack order"};
+		}
 		uint16_t flags = order.target_id ? ATTACK_HAS_TARGET : 0;
 		flags |= order.reached_destination ? ATTACK_REACHED_DESTINATION : 0;
 		flags |= order.focus_target ? ATTACK_FOCUS_TARGET : 0;
@@ -707,6 +725,22 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 	state.local_kill_count = reader.u64();
 	if (state.local_player_id == 0) {
 		throw Error{MSG(err) << "FVD state requires a local player"};
+	}
+	const auto world_flags = reader.u16();
+	if ((world_flags & ~WORLD_HAS_FIRST_HUNTER_SPAWN) != 0
+	    or reader.u16() != 0) {
+		throw Error{MSG(err) << "Unsupported FVD world state flags"};
+	}
+	const auto first_hunter_spawn_time =
+		time::time_t::from_raw_value(reader.i64());
+	if ((world_flags & WORLD_HAS_FIRST_HUNTER_SPAWN) != 0) {
+		if (first_hunter_spawn_time < state.simulation_time) {
+			throw Error{MSG(err) << "FVD first Hunter spawn deadline is in the past"};
+		}
+		state.first_hunter_spawn_time = first_hunter_spawn_time;
+	}
+	else if (first_hunter_spawn_time != time::TIME_ZERO) {
+		throw Error{MSG(err) << "FVD Hunter spawn deadline is present without its flag"};
 	}
 	auto player_count = reader.u32();
 	auto entity_count = reader.u32();
@@ -870,6 +904,7 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		state.constructions.push_back(construction);
 	}
 	state.attack_orders.reserve(attack_order_count);
+	std::unordered_set<gamestate::entity_id_t> ordered_horses{};
 	for (uint32_t i = 0; i < attack_order_count; ++i) {
 		AttackOrderState order{};
 		order.horse_id = reader.u64();
@@ -890,6 +925,12 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		}
 		order.reached_destination = (flags & ATTACK_REACHED_DESTINATION) != 0;
 		order.focus_target = (flags & ATTACK_FOCUS_TARGET) != 0;
+		if (order.horse_id == 0
+		    or not ordered_horses.insert(order.horse_id).second
+		    or (order.target_id and *order.target_id == 0)
+		    or (order.focus_target and not order.target_id)) {
+			throw Error{MSG(err) << "FVD state contains an invalid Hunter attack order"};
+		}
 		state.attack_orders.push_back(order);
 	}
 	state.arrows.reserve(arrow_count);

@@ -40,9 +40,10 @@
 #include "input/input_context.h"
 #include "input/input_manager.h"
 #include "log/log.h"
-#include "network/replication.h"
 #include "network/construction_presentation.h"
 #include "network/lobby_relay_client.h"
+#include "network/order_presentation.h"
+#include "network/replication.h"
 #include "renderer/camera/camera.h"
 #include "renderer/gui/gui.h"
 #include "renderer/gui/guisys/public/gui_input.h"
@@ -1171,6 +1172,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("killsLabel", QString{});
 			this->fvd_hud_state->insert("arrowStreaks", QVariantList{});
 			this->fvd_hud_state->insert("combatEffects", QVariantList{});
+			this->fvd_hud_state->insert("attackOrderMarkers", QVariantList{});
 			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->gui->set_context_property("fvdHud", this->fvd_hud_state.get());
 			if (this->fvd_lobby_enabled) {
@@ -1565,10 +1567,7 @@ void Presenter::render() {
 				const Eigen::Matrix4f camera_matrix =
 					this->camera->get_projection_matrix() * this->camera->get_view_matrix();
 				const auto viewport = this->camera->get_viewport_size();
-				auto project_tile = [&](double ne, double se) {
-					const auto position = coord::phys3{
-						coord::phys_t::from_double(ne),
-						coord::phys_t::from_double(se), 0};
+				auto project_position = [&](const coord::phys3 &position) {
 					const auto world = position.to_scene3().to_world_space();
 					const Eigen::Vector4f clip = camera_matrix
 						* Eigen::Vector4f{world.x(), world.y(), world.z(), 1.0f};
@@ -1576,6 +1575,39 @@ void Presenter::render() {
 						(clip.x() / clip.w() * 0.5f + 0.5f) * viewport[0],
 						(0.5f - clip.y() / clip.w() * 0.5f) * viewport[1]};
 				};
+				auto project_tile = [&](double ne, double se) {
+					return project_position({
+						coord::phys_t::from_double(ne),
+						coord::phys_t::from_double(se), 0});
+				};
+				QVariantList attack_order_markers;
+				if (construction_world
+				    and (not this->fvd_lobby_enabled or this->fvd_gameplay_active)) {
+					for (const auto &order : network::make_attack_order_presentation(
+					         *construction_world, guest_time.value_or(now))) {
+						const auto horse = project_position(order.horse_position);
+						const auto marker = project_position(order.marker_position);
+						if ((horse.x() < -90 or horse.y() < -90
+						     or horse.x() > viewport[0] + 90
+						     or horse.y() > viewport[1] + 90)
+						    and (marker.x() < -90 or marker.y() < -90
+						         or marker.x() > viewport[0] + 90
+						         or marker.y() > viewport[1] + 90)) {
+							continue;
+						}
+						attack_order_markers.push_back(QVariantMap{
+							{"x0", horse.x()}, {"y0", horse.y()},
+							{"x1", marker.x()}, {"y1", marker.y()},
+							{"target", order.target_id.has_value()},
+							{"focus", order.focus_target},
+							{"reached", order.reached_destination},
+						});
+					}
+				}
+				if (not attack_order_markers.isEmpty()
+				    or not this->fvd_hud_state->value("attackOrderMarkers").toList().empty()) {
+					this->fvd_hud_state->insert("attackOrderMarkers", attack_order_markers);
+				}
 				QVariantList footprint;
 				bool valid = false;
 				if ((this->game_controller->is_tower_placement_active() or preview_line)
@@ -1721,8 +1753,10 @@ void Presenter::render() {
 				this->fvd_hud_state->insert("queuedTowers", queued_towers);
 				this->fvd_hud_state->insert("constructionStatus", construction_status);
 				this->fvd_hud_state->insert("constructionPercent", construction_percent);
-				auto countdown = fvd->get_hunter_spawn_countdown(
-					replica_for_hud ? replica_for_hud->simulation_time : now);
+				auto countdown = replica_for_hud
+					? gamestate::hunter_spawn_countdown(
+						replica_for_hud->first_hunter_spawn_time, *guest_time)
+					: fvd->get_hunter_spawn_countdown(now);
 				this->fvd_hud_state->insert("hunterCountdown",
 					countdown.value_or(0));
 				QString kills_label{};

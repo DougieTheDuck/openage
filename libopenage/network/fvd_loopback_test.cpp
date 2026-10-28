@@ -157,6 +157,8 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 	lifecycle_coordinator.register_remote(session.get_identity(), builder_outbound);
 	CommandMailbox command_mailbox{16};
 	auto initial_state = capture_fvd_state(state, connections, time::TIME_ZERO, 0, 0, 2);
+	TESTEQUALS(initial_state.first_hunter_spawn_time.value(),
+	           time::time_t::from_int(20));
 	WorldDeltaBaseline builder_baseline{};
 	builder_baseline.accept_snapshot(initial_state);
 	lifecycle_coordinator.record_snapshot(initial_state);
@@ -211,6 +213,8 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			capture_fvd_state(state, connections, before_wave_time, 0, 1, 2)));
 		TESTEQUALS(count_defined_entities(
 			before_wave, "fvd.data.entities.Horse"), size_t{1});
+		TESTEQUALS(before_wave.first_hunter_spawn_time.value(),
+		           time::time_t::from_int(20));
 		before_wave.attack_orders.empty() or TESTFAIL;
 
 		auto first_spawn_time = time::time_t::from_int(20);
@@ -219,6 +223,7 @@ void run_host(TcpListener &listener, bool test_hunter_session) {
 			capture_fvd_state(state, connections, first_spawn_time, 0, 1, 2)));
 		TESTEQUALS(count_defined_entities(
 			first_spawn, "fvd.data.entities.Horse"), size_t{2});
+		TESTEQUALS(first_spawn.first_hunter_spawn_time.has_value(), false);
 		first_spawn.attack_orders.empty() or TESTFAIL;
 
 		auto second_spawn_time = time::time_t::from_int(21);

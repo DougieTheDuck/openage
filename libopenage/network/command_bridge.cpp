@@ -149,6 +149,7 @@ WorldState capture_fvd_presentation_state(
 	WorldState result{};
 	result.simulation_time = time;
 	result.map_size = static_cast<uint32_t>(fvd->get_map_size());
+	result.first_hunter_spawn_time = fvd->get_first_hunter_spawn_time();
 
 	std::vector<gamestate::entity_id_t> entity_ids{};
 	entity_ids.reserve(state->get_game_entities().size());
@@ -202,6 +203,15 @@ WorldState capture_fvd_presentation_state(
 			construction.phase_end_time,
 			construction.phase_start_time,
 			construction.site_entity_id,
+		});
+	}
+	for (const auto &order : fvd->get_attack_order_state()) {
+		result.attack_orders.push_back({
+			order.horse_id,
+			order.destination,
+			order.target_id,
+			order.reached_destination,
+			order.focus_target,
 		});
 	}
 	return result;
@@ -287,15 +297,6 @@ WorldState capture_fvd_state(
 		    and entity_state.owner_id == recipient) {
 			entity_state.tower_kills = fvd->get_tower_kills(entity_state.entity_id, recipient);
 		}
-	}
-	for (const auto &order : fvd->get_attack_order_state()) {
-		result.attack_orders.push_back({
-			order.horse_id,
-			order.destination,
-			order.target_id,
-			order.reached_destination,
-			order.focus_target,
-		});
 	}
 	for (const auto &arrow : fvd->get_arrow_state(time, delivered_projectile_id)) {
 		result.arrows.push_back({

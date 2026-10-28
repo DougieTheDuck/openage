@@ -258,6 +258,8 @@ struct WorldState {
 	uint32_t map_size{0};
 	gamestate::player_id_t local_player_id{0};
 	uint64_t local_kill_count{0};
+	/** Pending first Hunter spawn deadline, authored by the simulation. */
+	std::optional<time::time_t> first_hunter_spawn_time{};
 	std::vector<PlayerState> players{};
 	std::vector<EntityState> entities{};
 	std::vector<TileReservation> reservations{};

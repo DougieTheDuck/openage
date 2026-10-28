@@ -3,6 +3,7 @@
 #include "replication.h"
 
 #include "construction_presentation.h"
+#include "order_presentation.h"
 
 #include "testing/testing.h"
 
@@ -218,6 +219,49 @@ void replication() {
 	auto mismatched = retasked_world;
 	mismatched.constructions[0].owner_id = 3;
 	TESTTHROWS(make_construction_presentation(mismatched));
+
+	// Active order overlays resolve target positions from the same accepted
+	// world as movement and health, so a moving target cannot leave a stale
+	// client-authored marker behind.
+	WorldState order_world{};
+	order_world.entities = {
+		{0, 0, "fvd.data.entities.Placeholder", {0, 0, 0}},
+		{100, 1, "fvd.data.entities.Horse", {10, 11, 0}},
+		{101, 1, "fvd.data.entities.Horse", {12, 13, 0}},
+		{200, 2, "fvd.data.entities.Tower", {20, 21, 0}},
+	};
+	order_world.attack_orders = {
+		{100, {18, 19, 0}, 200, false, true},
+		{101, {30, 31, 0}, std::nullopt, false, false},
+	};
+	order_world.entities[1].motion_keys = {
+		{time::time_t::from_int(1), {12, 13, 0}},
+	};
+	const auto order_view = make_attack_order_presentation(
+		order_world, time::time_t::from_double(0.5));
+	TESTEQUALS(order_view.size(), size_t{2});
+	TESTEQUALS(order_view[0].horse_position, (coord::phys3{11, 12, 0}));
+	TESTEQUALS(order_view[0].marker_position, (coord::phys3{20, 21, 0}));
+	TESTEQUALS(order_view[0].focus_target, true);
+	TESTEQUALS(order_view[1].marker_position, (coord::phys3{30, 31, 0}));
+	auto missing_target = order_world;
+	missing_target.attack_orders.front().target_id = 999;
+	TESTTHROWS(make_attack_order_presentation(
+		missing_target, time::TIME_ZERO));
+	auto invalid_focus = order_world;
+	invalid_focus.attack_orders.front().target_id.reset();
+	TESTTHROWS(make_attack_order_presentation(
+		invalid_focus, time::TIME_ZERO));
+
+	WorldState startup_world{};
+	startup_world.entities = {
+		{0, 0, "fvd.data.entities.Placeholder", {0, 0, 0}},
+		{0, 0, "fvd.data.entities.Placeholder", {1, 1, 0}},
+	};
+	TESTEQUALS(make_attack_order_presentation(
+		           startup_world, time::TIME_ZERO)
+		           .size(),
+	           size_t{0});
 }
 
 } // namespace openage::network::tests

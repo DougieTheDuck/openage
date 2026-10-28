@@ -15,24 +15,6 @@
 
 namespace openage::network {
 
-namespace {
-
-using player_id = gamestate::player_id_t;
-using entity_id = gamestate::entity_id_t;
-
-auto player_key = [](const PlayerState &r) { return r.player_id; };
-auto entity_key = [](const EntityState &r) { return r.entity_id; };
-auto reservation_key = [](const TileReservation &r) { return r.tile; };
-auto construction_key = [](const ConstructionState &r) { return r.order_id; };
-auto attack_key = [](const AttackOrderState &r) { return r.horse_id; };
-auto arrow_key = [](const ArrowState &r) { return r.arrow_id; };
-
-bool same(const PlayerState &a, const PlayerState &b) {
-	return a.player_id == b.player_id and a.role == b.role and a.connected == b.connected;
-}
-// Evaluate the last transmitted linear movement plan without running any
-// gameplay systems on the guest. The host uses exactly the same prediction
-// to decide whether a fresh sampled position really needs transmission.
 coord::phys3 position_at(const EntityState &entity,
                          time::time_t origin, time::time_t now) {
 	auto from = entity.position;
@@ -50,6 +32,21 @@ coord::phys3 position_at(const EntityState &entity,
 	return from;
 }
 
+namespace {
+
+using player_id = gamestate::player_id_t;
+using entity_id = gamestate::entity_id_t;
+
+auto player_key = [](const PlayerState &r) { return r.player_id; };
+auto entity_key = [](const EntityState &r) { return r.entity_id; };
+auto reservation_key = [](const TileReservation &r) { return r.tile; };
+auto construction_key = [](const ConstructionState &r) { return r.order_id; };
+auto attack_key = [](const AttackOrderState &r) { return r.horse_id; };
+auto arrow_key = [](const ArrowState &r) { return r.arrow_id; };
+
+bool same(const PlayerState &a, const PlayerState &b) {
+	return a.player_id == b.player_id and a.role == b.role and a.connected == b.connected;
+}
 coord::phys_angle_t facing_at(const EntityState &entity, time::time_t now) {
 	auto angle = entity.angle;
 	for (const auto &key : entity.facing_keys) {
@@ -243,6 +240,7 @@ constexpr uint32_t MAX_REMOVALS[] = {
 };
 constexpr size_t DELTA_HEADER_BYTES = 28;
 constexpr uint16_t LOCAL_KILLS_CHANGED = 1;
+constexpr uint16_t FIRST_HUNTER_SPAWN_TIME_CHANGED = 1 << 1;
 
 void check_count(size_t count, uint32_t limit) {
 	if (count > limit) {
@@ -298,6 +296,11 @@ WorldDelta make_world_delta(const WorldState &previous, const WorldState &curren
 	if (delta.local_kills_changed) {
 		delta.changed.local_kill_count = current.local_kill_count;
 	}
+	delta.first_hunter_spawn_time_changed =
+		previous.first_hunter_spawn_time != current.first_hunter_spawn_time;
+	if (delta.first_hunter_spawn_time_changed) {
+		delta.changed.first_hunter_spawn_time = current.first_hunter_spawn_time;
+	}
 	difference(previous.players, current.players,
 	           delta.changed.players, delta.removed_players, player_key);
 	difference_entities(previous, current,
@@ -333,7 +336,9 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	const auto &changed = delta.changed;
 	validate_header(previous, changed);
 	if (changed.base_revision != previous.world_revision
-	    or (not delta.local_kills_changed and changed.local_kill_count != 0)) {
+	    or (not delta.local_kills_changed and changed.local_kill_count != 0)
+	    or (not delta.first_hunter_spawn_time_changed
+	        and changed.first_hunter_spawn_time)) {
 		throw Error{MSG(err) << "FVD delta is not contiguous or its score flags are invalid"};
 	}
 	WorldState next = previous; // Apply to a copy; malformed patches never mutate the baseline.
@@ -342,6 +347,13 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 	next.simulation_time = changed.simulation_time;
 	if (delta.local_kills_changed) {
 		next.local_kill_count = changed.local_kill_count;
+	}
+	if (delta.first_hunter_spawn_time_changed) {
+		next.first_hunter_spawn_time = changed.first_hunter_spawn_time;
+	}
+	if (next.first_hunter_spawn_time
+	    and *next.first_hunter_spawn_time <= next.simulation_time) {
+		throw Error{MSG(err) << "FVD delta retained an expired Hunter spawn deadline"};
 	}
 	patch(next.players, changed.players, delta.removed_players, player_key);
 	// Advance the already-authoritative movement plan before applying
@@ -379,7 +391,8 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 			throw Error{MSG(err) << "FVD delta includes a future or duplicate projectile"};
 		}
 	}
-	patch(next.arrows, changed.arrows, std::vector<uint64_t>{}, arrow_key);
+	static const std::vector<uint64_t> no_removed_arrows{};
+	patch(next.arrows, changed.arrows, no_removed_arrows, arrow_key);
 	std::erase_if(next.arrows, [&](const ArrowState &arrow) {
 		return arrow.impact_time + event_grace <= changed.simulation_time
 		    and not newly_received_arrows.contains(arrow.arrow_id);
@@ -405,7 +418,9 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 std::vector<uint8_t> encode_world_delta(const WorldDelta &delta) {
 	if (delta.changed.local_player_id == 0
 	    or delta.changed.world_revision <= delta.changed.base_revision
-	    or (not delta.local_kills_changed and delta.changed.local_kill_count != 0)) {
+	    or (not delta.local_kills_changed and delta.changed.local_kill_count != 0)
+	    or (not delta.first_hunter_spawn_time_changed
+	        and delta.changed.first_hunter_spawn_time)) {
 		throw Error{MSG(err) << "Invalid FVD world delta header"};
 	}
 	auto body = encode_world_state(delta.changed, true);
@@ -420,7 +435,10 @@ std::vector<uint8_t> encode_world_delta(const WorldDelta &delta) {
 		check_count(counts[i], MAX_REMOVALS[i]);
 	}
 	std::vector<uint8_t> bytes;
-	append_u16(bytes, delta.local_kills_changed ? LOCAL_KILLS_CHANGED : 0);
+	append_u16(bytes,
+	           (delta.local_kills_changed ? LOCAL_KILLS_CHANGED : 0)
+	               | (delta.first_hunter_spawn_time_changed
+	                      ? FIRST_HUNTER_SPAWN_TIME_CHANGED : 0));
 	append_u16(bytes, 0);
 	append_u32(bytes, static_cast<uint32_t>(body.size()));
 	for (auto count : counts) {
@@ -444,7 +462,8 @@ std::vector<uint8_t> encode_world_delta(const WorldDelta &delta) {
 WorldDelta decode_world_delta(const std::vector<uint8_t> &bytes) {
 	check_room(bytes, 0, DELTA_HEADER_BYTES);
 	const auto flags = read_u16(bytes.data());
-	if ((flags & ~LOCAL_KILLS_CHANGED) != 0 or read_u16(bytes.data() + 2) != 0) {
+	if ((flags & ~(LOCAL_KILLS_CHANGED | FIRST_HUNTER_SPAWN_TIME_CHANGED)) != 0
+	    or read_u16(bytes.data() + 2) != 0) {
 		throw Error{MSG(err) << "Unsupported FVD world delta flags"};
 	}
 	const size_t body_size = read_u32(bytes.data() + 4);
@@ -464,9 +483,13 @@ WorldDelta decode_world_delta(const std::vector<uint8_t> &bytes) {
 	                         bytes.begin() + DELTA_HEADER_BYTES + body_size);
 	WorldDelta delta{};
 	delta.local_kills_changed = (flags & LOCAL_KILLS_CHANGED) != 0;
+	delta.first_hunter_spawn_time_changed =
+		(flags & FIRST_HUNTER_SPAWN_TIME_CHANGED) != 0;
 	delta.changed = decode_world_state(body, true);
 	if (delta.changed.world_revision <= delta.changed.base_revision
-	    or (not delta.local_kills_changed and delta.changed.local_kill_count != 0)) {
+	    or (not delta.local_kills_changed and delta.changed.local_kill_count != 0)
+	    or (not delta.first_hunter_spawn_time_changed
+	        and delta.changed.first_hunter_spawn_time)) {
 		throw Error{MSG(err) << "Invalid FVD world delta revision or score"};
 	}
 	size_t offset = DELTA_HEADER_BYTES + body_size;

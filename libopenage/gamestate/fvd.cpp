@@ -1402,16 +1402,27 @@ void FVD::start_hunter_wave(const std::shared_ptr<GameState> &state,
 	loop->create_event("game.fvd_combat_tick", this->horse_spawn_target, state, match_start);
 }
 
-std::optional<int> FVD::get_hunter_spawn_countdown(const time::time_t &now) const {
-	std::lock_guard lock{this->hunter_spawn_time_mutex};
-	if (not this->first_hunter_spawn_time or now >= *this->first_hunter_spawn_time) {
+std::optional<int> hunter_spawn_countdown(
+	const std::optional<time::time_t> &spawn_time,
+	const time::time_t &now) {
+	if (not spawn_time or now >= *spawn_time) {
 		return std::nullopt;
 	}
-	const auto remaining = *this->first_hunter_spawn_time - now;
+	const auto remaining = *spawn_time - now;
 	const auto whole_seconds = remaining.to_int();
 	// Round up so 00:01 remains visible until the first spawn deadline.
 	return static_cast<int>(whole_seconds
 	                        + (remaining > time::time_t::from_int(whole_seconds) ? 1 : 0));
+}
+
+std::optional<int> FVD::get_hunter_spawn_countdown(const time::time_t &now) const {
+	std::lock_guard lock{this->hunter_spawn_time_mutex};
+	return hunter_spawn_countdown(this->first_hunter_spawn_time, now);
+}
+
+std::optional<time::time_t> FVD::get_first_hunter_spawn_time() const {
+	std::lock_guard lock{this->hunter_spawn_time_mutex};
+	return this->first_hunter_spawn_time;
 }
 
 void FVD::request_immediate_hunter_spawn(const std::shared_ptr<GameState> &state,

@@ -1,10 +1,8 @@
 # FVD prototype verification matrix
 
-**Last audited:** 2026-10-28, branch `FVD`. **Evidence status:** tests and
-wire paths reviewed, not executed here. The reviewing environment cannot
-clone/build openage or run the FVD asset-backed binary. A registered test
-is **not** a test pass. Do not mark hardware/visual acceptance complete
-from these test names alone.
+**Last audited:** 2026-10-28, branch `FVD`. **Evidence status:** the Windows
+MSVC RelWithDebInfo build and all 88 registered tests passed with FVD assets.
+Linux execution and real graphical-client acceptance remain outstanding.
 
 ## Automated preflight — Linux and Windows
 
@@ -24,17 +22,17 @@ If the full run fails, rerun the relevant named tests, with `-a --have-assets`
 for asset-backed tests:
 
 ```sh
-bin/run test openage::network::tests::world_delta
-bin/run test openage::network::tests::messages
-bin/run test openage::network::tests::replication
-bin/run test openage::network::tests::lobby_capacity
-bin/run test openage::network::tests::lobby_relay_client
-bin/run test openage::network::tests::fvd_loopback
-bin/run test openage::network::tests::fvd_multi_session -a --have-assets
-bin/run test openage::gamestate::tests::fvd_hunter_spawning -a --have-assets
-bin/run test openage::gamestate::tests::fvd_hunter_focus_attack -a --have-assets
-bin/run test openage::gamestate::tests::fvd_hunter_combat -a --have-assets
-bin/run test openage::gamestate::tests::fvd_scenario -a --have-assets
+bin/run test network::tests::world_delta
+bin/run test network::tests::messages
+bin/run test network::tests::replication
+bin/run test network::tests::lobby_capacity
+bin/run test network::tests::lobby_relay_client
+bin/run test network::tests::fvd_loopback
+bin/run test network::tests::fvd_multi_session -a --have-assets
+bin/run test gamestate::tests::fvd_hunter_spawning -a --have-assets
+bin/run test gamestate::tests::fvd_hunter_focus_attack -a --have-assets
+bin/run test gamestate::tests::fvd_hunter_combat -a --have-assets
+bin/run test gamestate::tests::fvd_scenario -a --have-assets
 ```
 
 Use the installed launcher path appropriate to each machine. Repeat
@@ -47,14 +45,14 @@ configured.
 
 | OpenSpec scope | Automated evidence currently present | Status |
 |---|---|---|
-| Movement curves / sparse traffic (1.1–1.3a) | `world_delta` (512 horses, 2/4/8 player rosters, changed routes, packet size), `messages`, `replication` | Written; execute on both OSes |
-| Facing and animation (1.4a–b) | `messages`, `world_delta`, `fvd_animation_phase` (includes same-action ATTACK restart and recovery) | Written; execute; visual parity still required |
-| Projectile sequencing / late playback (1.5a–b) | `world_delta` (4,096 launches in two 2,048 batches), `messages`, `fvd_hunter_combat`, `fvd_hunter_focus_attack` (cancel after shot launch; no HP loss), `fvd_loopback` | Written; execute; live congestion unverified |
-| Construction and HUD state (1.6a–b) | `fvd_network_builder_count`, `fvd_construction`, `fvd_build_queue`, `fvd_build_line_order`, `fvd_retask_foundation`, `fvd_presentation_snapshot`, `replication` | Written; execute; Qt input/visual checks remain |
-| Hunter spawns, targeting and orders (1.7) | `fvd_hunter_spawning` (19.999/20/21/22 seconds), `fvd_hunter_attack_move_regressions`, `fvd_hunter_focus_attack`, `fvd_hunter_stances`, `world_delta` | Written; execute; target highlighting still needs human inspection |
-| 2–8 player protocol / recovery (1.9) | `lobby_capacity`, `lobby_relay_client`, `fvd_multi_session`, `fvd_loopback`, `replication`, `world_delta`, `authority_succession` | Written; execute; real Windows/Linux processes remain |
-| HUD input / cancel (build-menu 1.6) | `tower_placement_mode`, `hud_mouse_capture`, construction tests | Written; execute; mouse/QML behavior requires game |
-| Tower kill credit (combat 1.9) | `fvd_hunter_combat`, `replication` | Written; execute; selected-tower kill label needs visual check |
+| Movement curves / sparse traffic (1.1–1.3a) | `world_delta` (512 horses, 2/4/8 player rosters, changed routes, packet size), `messages`, `replication` | Windows pass; Linux and measured real-client performance remain |
+| Facing and animation (1.4a–b) | `messages`, `world_delta`, `fvd_animation_phase` (includes same-action ATTACK restart and recovery) | Windows pass; visual parity still required |
+| Projectile sequencing / late playback (1.5a–b) | `world_delta` (4,096 launches in two 2,048 batches), `messages`, `fvd_hunter_combat`, `fvd_hunter_focus_attack` (cancel after shot launch; no HP loss), `fvd_loopback` | Windows pass; live congestion unverified |
+| Construction and HUD state (1.6a–b) | `fvd_network_builder_count`, `fvd_construction`, `fvd_build_queue`, `fvd_build_line_order`, `fvd_retask_foundation`, `fvd_presentation_snapshot`, `replication` | Windows pass; Qt input/visual checks remain |
+| Hunter spawns, targeting and orders (1.7) | `messages`, `world_delta`, `replication` (authoritative order-marker resolution), `fvd_loopback`, `fvd_hunter_spawning`, `fvd_hunter_attack_move_regressions`, `fvd_hunter_focus_attack`, `fvd_hunter_stances` | Windows pass; target highlighting needs graphical inspection |
+| 2–8 player protocol / recovery (1.9) | `lobby_capacity`, `lobby_relay_client`, `fvd_multi_session`, `fvd_loopback`, `replication`, `world_delta`, `authority_succession` | Windows pass; real Windows/Linux graphical processes remain |
+| HUD input / cancel (build-menu 1.6) | `tower_placement_mode`, `hud_mouse_capture`, construction tests | Windows pass; mouse/QML behavior requires game |
+| Tower kill credit (combat 1.9) | `fvd_hunter_combat`, `replication` | Windows pass; selected-tower kill label needs visual check |
 | Endgame (1.10) | No victory/defeat system implemented yet | Not verifiable |
 
 **Important boundaries:** `lobby_capacity` runs real relay-client workers
@@ -107,13 +105,16 @@ These are **user-reported** gameplay observations, not automated test executions
 | 4. Disconnects and host migration | **PASS** | User confirmed the instructed hands-on disconnect / host-migration smoke check; leave repeated starts, multi-client and cross-platform coverage open. |
 | 5. Building destruction and rendering | **PASS** | User confirmed the instructed hands-on destruction / depth / shadow smoke check; not a substitute for full graphical parity and recovery tests. |
 
-No tests were run by this documentation update. Do not mark the original broad OpenSpec implementation/acceptance milestones complete solely on this smoke-check evidence.
+The Windows build and all 88 automated tests passed on 2026-10-28. Do not
+mark the broad graphical or cross-platform acceptance milestones complete
+solely from that automated run or the smoke-check evidence above.
 
 ## Outstanding implementation versus verification
 
-**Still implementation:** 1.7 any missing network target-highlight/rally
-behavior; 1.10 authoritative victory/defeat and result feedback; optional
-legacy mid-match Builder-owned host takeover, if retained as a requirement.
+**Still implementation:** 1.10 authoritative victory/defeat and result
+feedback; optional legacy mid-match Builder-owned host takeover, if retained
+as a requirement. Rally behavior does not exist yet and must enter the
+authoritative order pipeline if introduced.
 
 **Still verification:** 1.3b measured CPU/bandwidth/jitter; 1.4c sprite
 phase/parity; 1.5b live projectile volume/backpressure and damage FX;

@@ -228,6 +228,7 @@ void messages() {
 	state.map_size = 128;
 	state.local_player_id = 2;
 	state.local_kill_count = 3;
+	state.first_hunter_spawn_time = time::time_t::from_int(20);
 	state.players = {
 		{1, PlayerRole::HUNTER},
 		{2, PlayerRole::BUILDER, false},
@@ -265,6 +266,8 @@ void messages() {
 	TESTEQUALS(decoded_state.map_size, state.map_size);
 	TESTEQUALS(decoded_state.local_player_id, state.local_player_id);
 	TESTEQUALS(decoded_state.local_kill_count, state.local_kill_count);
+	TESTEQUALS(decoded_state.first_hunter_spawn_time,
+	           state.first_hunter_spawn_time);
 	TESTEQUALS(decoded_state.players.size(), state.players.size());
 	for (size_t i = 0; i < state.players.size(); ++i) {
 		TESTEQUALS(decoded_state.players[i].player_id, state.players[i].player_id);
@@ -354,6 +357,15 @@ void messages() {
 	TESTEQUALS(roundtrip_hunter.arrows.back().owner_id, gamestate::player_id_t{1});
 	TESTEQUALS(roundtrip_hunter.arrows.back().impact_time,
 	           time::time_t::from_double(3.70));
+	auto expired_spawn = state;
+	expired_spawn.first_hunter_spawn_time = time::time_t::from_int(3);
+	TESTTHROWS(encode_world_state(expired_spawn));
+	auto invalid_focus_order = state;
+	invalid_focus_order.attack_orders.front().target_id.reset();
+	TESTTHROWS(encode_world_state(invalid_focus_order));
+	auto duplicate_horse_order = state;
+	duplicate_horse_order.attack_orders.push_back(state.attack_orders.front());
+	TESTTHROWS(encode_world_state(duplicate_horse_order));
 
 	// Curves cannot include past, simultaneous, unordered or unbounded
 	// keyframes; this is checked before transmission to every client.

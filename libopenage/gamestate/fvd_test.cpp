@@ -1103,6 +1103,7 @@ void fvd_hunter_spawning() {
 	TESTEQUALS(count_horses(), size_t{0});
 	fvd->start_hunter_wave(state, at(0));
 	fvd->start_hunter_wave(state, at(0));
+	TESTEQUALS(fvd->get_first_hunter_spawn_time().value(), at(20));
 	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(0)).value(), 20);
 	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(0.01)).value(), 20);
 	TESTEQUALS(fvd->get_hunter_spawn_countdown(at(1)).value(), 19);
@@ -1115,6 +1116,7 @@ void fvd_hunter_spawning() {
 	TESTEQUALS(count_horses(), size_t{0});
 	loop->reach_time(at(20), state);
 	TESTEQUALS(count_horses(), size_t{1});
+	TESTEQUALS(fvd->get_first_hunter_spawn_time().has_value(), false);
 	loop->reach_time(at(20.999), state);
 	TESTEQUALS(count_horses(), size_t{1});
 	loop->reach_time(at(21), state);

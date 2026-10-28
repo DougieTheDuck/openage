@@ -17,6 +17,7 @@ namespace openage::network {
 struct WorldDelta {
 	WorldState changed{};
 	bool local_kills_changed{false};
+	bool first_hunter_spawn_time_changed{false};
 	std::vector<gamestate::player_id_t> removed_players{};
 	std::vector<gamestate::entity_id_t> removed_entities{};
 	std::vector<coord::tile> removed_reservations{};
@@ -26,6 +27,11 @@ struct WorldDelta {
 
 /** An arrow is a timed visual: no new network data is needed for expiry. */
 bool arrow_visible_at(const ArrowState &arrow, const time::time_t &time);
+
+/** Evaluate a transmitted movement curve without running gameplay systems. */
+coord::phys3 position_at(const EntityState &entity,
+	                     time::time_t origin,
+	                     time::time_t now);
 
 /** Compare two complete, recipient-specific states and produce a true patch. */
 WorldDelta make_world_delta(const WorldState &previous, const WorldState &current);

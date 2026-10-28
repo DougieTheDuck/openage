@@ -26,6 +26,7 @@ Item {
 	readonly property int hunterCountdown: hud === null ? 0 : hud.hunterCountdown
 	readonly property var arrowStreaks: hud === null ? [] : hud.arrowStreaks
 	readonly property var combatEffects: hud === null ? [] : hud.combatEffects
+	readonly property var attackOrderMarkers: hud === null ? [] : hud.attackOrderMarkers
 
 	Text {
 		anchors.top: parent.top
@@ -166,6 +167,56 @@ Item {
 				ctx.fill()
 				ctx.stroke()
 			}
+		}
+	}
+
+	// Active orders come from the authoritative world snapshot. Target rings
+	// follow replicated entities; ground rings use the authored destination.
+	Canvas {
+		id: attackOrders
+		anchors.fill: parent
+		z: -1
+		visible: root.attackOrderMarkers.length > 0
+		onVisibleChanged: if (visible) requestPaint()
+		Connections {
+			target: root
+			function onAttackOrderMarkersChanged() {
+				if (attackOrders.visible)
+					attackOrders.requestPaint()
+			}
+		}
+		onPaint: {
+			var ctx = getContext("2d")
+			ctx.clearRect(0, 0, width, height)
+			var orders = root.attackOrderMarkers
+			for (var i = 0; i < orders.length; ++i) {
+				var order = orders[i]
+				var color = order.focus ? "#ff766d"
+				          : order.target ? "#f4bc63" : "#72dce8"
+				ctx.globalAlpha = order.reached ? 0.38 : 0.7
+				ctx.strokeStyle = color
+				ctx.lineWidth = order.focus ? 2 : 1.5
+				ctx.beginPath()
+				ctx.moveTo(order.x0, order.y0)
+				ctx.lineTo(order.x1, order.y1)
+				ctx.stroke()
+				var radius = order.target ? 11 : 8
+				ctx.beginPath()
+				ctx.arc(order.x1, order.y1, radius, 0, Math.PI * 2)
+				ctx.stroke()
+				ctx.beginPath()
+				ctx.moveTo(order.x1 - radius - 4, order.y1)
+				ctx.lineTo(order.x1 + radius + 4, order.y1)
+				ctx.moveTo(order.x1, order.y1 - radius - 4)
+				ctx.lineTo(order.x1, order.y1 + radius + 4)
+				ctx.stroke()
+				if (order.focus) {
+					ctx.beginPath()
+					ctx.arc(order.x1, order.y1, radius + 4, 0, Math.PI * 2)
+					ctx.stroke()
+				}
+			}
+			ctx.globalAlpha = 1
 		}
 	}
 
