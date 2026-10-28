@@ -12,3 +12,16 @@
 - [x] 1.10 Verify interactively in solo, then on two processes with the Hunter as a guest.
 - [x] 1.11a Document the stances, Patrol and protocol v14 in `assets/fvd/README.md`.
 - [ ] 1.11b Update the Hunter rule in `openspec/config.yaml` and `openspec/ROADMAP.md` once this proposal is accepted.
+
+## Patrol/stance regression (manual acceptance 2026-10-28)
+
+- [ ] 1.12 Decouple Hunter stance behaviour from the Patrol order. A horse on Patrol must obey its selected Observe/Aggressive/Defensive stance **the same as when stationary**, while retaining its patrol route; implement and rerun the regression on solo and guest-Hunter multiplayer clients. The 2026-10-28 manual Hunter combat/stances session **failed**; implementation fix assigned to Linux developer (not yet made here).
+
+  Manual regression (repeat each stance first stationary, then while patrolling between two waypoints):
+  1. Observe (Z): no autonomous target acquisition or attack; a patrol continues without engaging unless given a separate explicit combat order.
+  2. Aggressive (X): acquire eligible enemies within 8 tiles, favour Towers, engage without a leash, and resume the patrol route after the engagement when still valid.
+  3. Defensive (C): acquire eligible enemies within 4 tiles, respect the 6-tile leash from the applicable patrol/engagement anchor, disengage and return when exceeded, then continue patrol. Confirm the exact anchor policy is deterministic and matches stationary Defensive semantics.
+  4. Switch Z/X/C during an active patrol and repeat near Towers and Builders. Verify stance changes take effect immediately rather than being overridden by the Patrol order, and replicate correctly to the guest Hunter.
+  5. Check that AttackMove behaviour is unchanged and that Patrol waypoint switching remains reliable after each encounter.
+
+  **Pass:** with otherwise identical enemy arrangements, the stance determines acquisition, engagement and disengagement in both stationary and patrolling cases; Patrol determines only the route, not a forced aggression policy. Record the Linux developer's fix and graphical rerun before checking 1.12.
