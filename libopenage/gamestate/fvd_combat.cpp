@@ -34,12 +34,9 @@ namespace {
 constexpr const char *HEALTH = "fvd.data.entities.Health";
 constexpr double HORSE_ATTACK_RANGE = 4.0;
 constexpr double HORSE_ATTACK_RANGE_SQUARED = HORSE_ATTACK_RANGE * HORSE_ATTACK_RANGE;
-/** Aggressive stance acquisition radius. */
-constexpr double HORSE_SIGHT_RANGE = 8.0;
 /** Furthest a Defensive engagement may stray from its engagement point. */
 constexpr double HORSE_LEASH_RANGE = 6.0;
 constexpr double HORSE_LEASH_RANGE_SQUARED = HORSE_LEASH_RANGE * HORSE_LEASH_RANGE;
-constexpr double HORSE_SIGHT_RANGE_SQUARED = HORSE_SIGHT_RANGE * HORSE_SIGHT_RANGE;
 /** Furthest a Defensive patrol chases from where it left its route. */
 constexpr double PATROL_LEASH_RANGE = 10.0;
 constexpr double PATROL_LEASH_RANGE_SQUARED = PATROL_LEASH_RANGE * PATROL_LEASH_RANGE;
@@ -417,7 +414,8 @@ bool FVD::issue_focus_attack(const std::shared_ptr<GameState> &state,
 	}
 	auto target_it = state->get_game_entities().find(enemy_id);
 	if (target_it == state->get_game_entities().end()
-	    or not alive(target_it->second, time)) {
+	    or not alive(target_it->second, time)
+	    or not this->can_see(state, FVDTeam::HUNTER, enemy_id, time)) {
 		return false;
 	}
 	auto target = target_it->second;
@@ -518,7 +516,8 @@ HunterStance FVD::get_hunter_stance(entity_id_t horse) const {
 bool FVD::hunter_target_eligible(const std::shared_ptr<GameState> &state,
                                  entity_id_t candidate, const time::time_t &time) const {
 	auto other = state->get_game_entities().find(candidate);
-	if (other == state->get_game_entities().end() or not alive(other->second, time)) {
+	if (other == state->get_game_entities().end() or not alive(other->second, time)
+	    or not this->can_see(state, FVDTeam::HUNTER, candidate, time)) {
 		return false;
 	}
 	if (other->second->get_definition() == this->tower) {
@@ -576,7 +575,8 @@ bool FVD::begin_stance_engagement(const std::shared_ptr<GameState> &state,
 	const auto here = position_at(horse, time);
 	const auto target = stance == HunterStance::AGGRESSIVE
 		? this->nearest_hunter_target(state, horse, towers, builders,
-		                              HORSE_SIGHT_RANGE, std::nullopt, 0.0, time)
+		                              this->vision_range(state, horse->get_definition()),
+		                              std::nullopt, 0.0, time)
 		: this->nearest_hunter_target(state, horse, towers, builders,
 		                              HORSE_ATTACK_RANGE, here, HORSE_LEASH_RANGE, time);
 	if (not target) {
@@ -594,6 +594,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 	const auto horses = entities_by_definition(state, this->horse);
 	const auto builders = entities_by_definition(state, this->builder);
 	const auto towers = entities_by_definition(state, this->tower);
+	this->update_vision(state, time);
+	this->vision_cached_at = time;
 
 	// AttackMove searches within four tiles, including after arrival.
 	// Towers retain priority over Builders. Idle horses without an order
@@ -656,6 +658,14 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			}
 		}
 		if (order.target and not eligible(*order.target)) {
+			// An Aggressive patrol whose quarry slipped into the fog stops
+			// where it is; one whose quarry died carries on patrolling.
+			if (patrolling and stance == HunterStance::AGGRESSIVE
+			    and state->get_game_entities().contains(*order.target)) {
+				halt_for_engagement(horse, time);
+				this->attack_orders.erase(order_it);
+				continue;
+			}
 			// A destroyed target must not leave an orphaned approach route.
 			if (move->get_active_target() and move->get_active_arrival() > time) {
 				halt_for_engagement(horse, time);
@@ -687,7 +697,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			}
 			const auto nearest = this->nearest_hunter_target(
 				state, horse, towers, builders,
-				aggressive ? HORSE_SIGHT_RANGE : HORSE_ATTACK_RANGE,
+				aggressive ? this->vision_range(state, horse->get_definition()) : HORSE_ATTACK_RANGE,
 				anchor, anchor_radius, time);
 			if (nearest) {
 				order.target = nearest;
@@ -700,7 +710,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		if (patrolling and order.target) {
 			const auto enemy_at = position_at(state->get_game_entity(*order.target), time);
 			if (stance == HunterStance::AGGRESSIVE
-			    and distance_squared(current, enemy_at) > HORSE_SIGHT_RANGE_SQUARED) {
+			    and std::sqrt(distance_squared(current, enemy_at))
+			            > this->vision_range(state, horse->get_definition())) {
 				// An Aggressive patrol that loses its quarry stops where it is.
 				halt_for_engagement(horse, time);
 				this->attack_orders.erase(order_it);
@@ -878,7 +889,8 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		for (auto horse_id : horses) {
 			auto horse_it = state->get_game_entities().find(horse_id);
 			if (horse_it == state->get_game_entities().end()
-			    or not alive(horse_it->second, time)) {
+			    or not alive(horse_it->second, time)
+			    or not this->can_see(state, FVDTeam::BUILDERS, horse_id, time)) {
 				continue;
 			}
 			const double d = distance_squared(tower_it->second, horse_it->second, time);
@@ -925,6 +937,7 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		                    {"damage", this->tower_damage}});
 		this->tower_next_shot.insert_or_assign(tower_id, time + this->tower_cooldown);
 	}
+	this->vision_cached_at.reset();
 }
 
 } // namespace openage::gamestate

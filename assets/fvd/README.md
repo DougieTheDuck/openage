@@ -28,7 +28,7 @@ Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
 `bin/run test openage::gamestate::tests::fvd_animation_phase`,
 `bin/run test openage::network::tests::messages` and
 `bin/run test openage::network::tests::world_delta`.
-Multiplayer protocol v15 adds Builder tower demolition commands; all participating clients and the relay must use compatible builds.
+Multiplayer protocol v16 adds fog of war (v15 added Builder tower demolition commands); all participating clients and the relay must use compatible builds.
 
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
@@ -110,6 +110,15 @@ Defensive horses attack enemies within four tiles, give up once the chase is mor
 Aggressive horses attack anything within eight tiles; if the target escapes beyond that, they stop patrolling and stay where they are.
 Run `bin/run test openage::gamestate::tests::fvd_hunter_stances` and `openage::gamestate::tests::fvd_hunter_patrol_stances` for the stance and Patrol rules.
 The gather point remains unimplemented.
+
+**Fog of war.** Each side shares one view: the Hunter sees what its horses see, and all Builders see what any Builder or completed tower sees.
+Vision ranges come from each type's `LineOfSight` ability in [entities.nyan](data/entities.nyan): Builder 6 tiles, horse 7, tower 8.
+Never-seen ground is black and ground seen before is dimmed. Enemy buildings stay where they were last seen, dimmed like the ground, until their site is scouted again; enemy units in the fog are not shown at all.
+Nothing hidden can be attacked: focus attacks on hidden targets are refused, chases end when the target disappears, Aggressive horses react only within their vision, and towers only shoot horses the Builders can see.
+Builders may still order towers anywhere; the Builder walks into the fog to build.
+The host sends each player only what their side can see, and the host's own view and solo play show the same.
+In solo play the fog follows the side you control, so switching between players 1 and 2 switches views.
+Run `bin/run test openage::gamestate::tests::fvd_fog_of_war` and `openage::network::tests::fog_messages` for the fog rules.
 Completed towers automatically target nearby horses and fire scheduled arrows.
 Only authoritative impacts damage health; killing blows credit the tower's Builder.
 Tower arrows now appear as brief camera-projected golden streaks with a small ballistic arc, drawn in the QML overlay from the authoritative launch time and flight duration. Visual shots are bounded for large battles, but all damage events still resolve normally.

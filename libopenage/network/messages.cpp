@@ -22,6 +22,9 @@ constexpr uint16_t PLAYER_CONNECTED = 1 << 0;
 constexpr uint16_t ENTITY_HAS_HEALTH = 1 << 0;
 constexpr uint16_t ENTITY_HAS_TOWER_KILLS = 1 << 1;
 constexpr uint16_t ENTITY_HAS_HUNTER_STANCE = 1 << 2;
+constexpr uint16_t ENTITY_REMEMBERED = 1 << 3;
+constexpr const char *TOWER_DEFINITION = "fvd.data.entities.Tower";
+constexpr const char *FOUNDATION_DEFINITION = "fvd.data.entities.Foundation";
 constexpr const char *HORSE_DEFINITION = "fvd.data.entities.Horse";
 constexpr uint16_t ATTACK_HAS_TARGET = 1 << 0;
 constexpr uint16_t ATTACK_REACHED_DESTINATION = 1 << 1;
@@ -107,6 +110,7 @@ bool is_known_hunter_stance(uint16_t value) {
 	return value <= static_cast<uint16_t>(gamestate::HunterStance::DEFENSIVE);
 }
 
+
 bool is_known_command_status(uint16_t value) {
 	return value >= static_cast<uint16_t>(CommandStatus::ACCEPTED)
 	    && value <= static_cast<uint16_t>(CommandStatus::REJECTED);
@@ -120,6 +124,41 @@ bool is_known_player_role(uint16_t value) {
 bool is_known_construction_phase(uint16_t value) {
 	return value >= static_cast<uint16_t>(ConstructionPhase::PLANNED)
 	    && value <= static_cast<uint16_t>(ConstructionPhase::UNDER_CONSTRUCTION);
+}
+
+/** A remembered entity is an enemy building with nothing but its last place. */
+bool valid_remembered(const EntityState &entity, gamestate::player_id_t local_player) {
+	return (entity.definition == TOWER_DEFINITION or entity.definition == FOUNDATION_DEFINITION)
+	   and entity.owner_id != local_player and not entity.health and not entity.tower_kills
+	   and not entity.hunter_stance and entity.motion_keys.empty() and entity.facing_keys.empty();
+}
+
+/** Fog sent on the wire belongs to one side and has well-formed bitsets. */
+void validate_fog(const WorldState &state, bool partial) {
+	if (state.fog.size() > 1) {
+		throw Error{MSG(err) << "FVD state carries more than one side's fog"};
+	}
+	for (const auto &fog : state.fog) {
+		const auto words = fog_word_count(state.map_size);
+		if (not is_known_player_role(static_cast<uint16_t>(fog.team))
+		    or fog.explored.size() != words or fog.visible.size() != words
+		    or not fog.remembered.empty()) {
+			throw Error{MSG(err) << "FVD state contains malformed fog"};
+		}
+		for (size_t i = 0; i < words; ++i) {
+			if ((fog.visible[i] & ~fog.explored[i]) != 0) {
+				throw Error{MSG(err) << "FVD fog shows a tile that was never explored"};
+			}
+		}
+		if (not partial) {
+			auto local = std::find_if(state.players.begin(), state.players.end(), [&](const auto &player) {
+				return player.player_id == state.local_player_id;
+			});
+			if (local == state.players.end() or local->role != fog.team) {
+				throw Error{MSG(err) << "FVD fog may only describe the recipient's own side"};
+			}
+		}
+	}
 }
 
 void append_position(std::vector<uint8_t> &output, const coord::phys3 &position) {
@@ -588,13 +627,17 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 		         or not is_known_hunter_stance(static_cast<uint16_t>(*entity.hunter_stance)))) {
 			throw Error{MSG(err) << "FVD Hunter stances may only be sent to their owner"};
 		}
+		if (entity.remembered and not valid_remembered(entity, state.local_player_id)) {
+			throw Error{MSG(err) << "FVD remembered entity must be a plain enemy building"};
+		}
 		append_u64(output, entity.entity_id);
 		append_u64(output, entity.owner_id);
 		append_string(output, entity.definition, MAX_ENTITY_DEFINITION_SIZE);
 		append_position(output, entity.position);
 		append_u16(output, (entity.health ? ENTITY_HAS_HEALTH : 0)
 		                   | (entity.tower_kills ? ENTITY_HAS_TOWER_KILLS : 0)
-		                   | (entity.hunter_stance ? ENTITY_HAS_HUNTER_STANCE : 0));
+		                   | (entity.hunter_stance ? ENTITY_HAS_HUNTER_STANCE : 0)
+		                   | (entity.remembered ? ENTITY_REMEMBERED : 0));
 		append_u16(output, static_cast<uint16_t>(
 			entity.hunter_stance.value_or(gamestate::HunterStance::OBSERVE)));
 		append_i64(output, entity.health.value_or(0));
@@ -687,6 +730,18 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 		append_i64(output, arrow.launch_time.get_raw_value());
 		append_i64(output, arrow.impact_time.get_raw_value());
 	}
+	validate_fog(state, partial);
+	append_u32(output, static_cast<uint32_t>(state.fog.size()));
+	for (const auto &fog : state.fog) {
+		append_u16(output, static_cast<uint16_t>(fog.team));
+		append_u16(output, 0);
+		for (auto word : fog.explored) {
+			append_u64(output, word);
+		}
+		for (auto word : fog.visible) {
+			append_u64(output, word);
+		}
+	}
 	if (output.size() > MAX_PAYLOAD_SIZE) {
 		throw Error{MSG(err) << "FVD state exceeds the maximum frame payload"};
 	}
@@ -755,7 +810,8 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		auto position = read_position(reader);
 		auto flags = reader.u16();
 		const auto hunter_stance = reader.u16();
-		if ((flags & ~(ENTITY_HAS_HEALTH | ENTITY_HAS_TOWER_KILLS | ENTITY_HAS_HUNTER_STANCE)) != 0
+		if ((flags & ~(ENTITY_HAS_HEALTH | ENTITY_HAS_TOWER_KILLS | ENTITY_HAS_HUNTER_STANCE
+		               | ENTITY_REMEMBERED)) != 0
 		    or ((flags & ENTITY_HAS_HUNTER_STANCE) == 0 and hunter_stance != 0)) {
 			throw Error{MSG(err) << "Unsupported FVD entity state flags"};
 		}
@@ -836,6 +892,10 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		if (entity.animation_started_at > state.simulation_time) {
 			throw Error{MSG(err) << "FVD animation cannot begin in the future"};
 		}
+		entity.remembered = (flags & ENTITY_REMEMBERED) != 0;
+		if (entity.remembered and not valid_remembered(entity, state.local_player_id)) {
+			throw Error{MSG(err) << "FVD remembered entity must be a plain enemy building"};
+		}
 		state.entities.push_back(std::move(entity));
 	}
 	state.reservations.reserve(reservation_count);
@@ -908,6 +968,28 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		}
 		state.arrows.push_back(arrow);
 	}
+	const auto fog_count = reader.u32();
+	if (fog_count > 1) {
+		throw Error{MSG(err) << "FVD state carries more than one side's fog"};
+	}
+	for (uint32_t i = 0; i < fog_count; ++i) {
+		TeamFog fog{};
+		fog.team = static_cast<PlayerRole>(reader.u16());
+		if (reader.u16() != 0) {
+			throw Error{MSG(err) << "Unsupported FVD fog flags"};
+		}
+		const auto words = fog_word_count(state.map_size);
+		fog.explored.reserve(words);
+		fog.visible.reserve(words);
+		for (size_t j = 0; j < words; ++j) {
+			fog.explored.push_back(reader.u64());
+		}
+		for (size_t j = 0; j < words; ++j) {
+			fog.visible.push_back(reader.u64());
+		}
+		state.fog.push_back(std::move(fog));
+	}
+	validate_fog(state, partial);
 	reader.finish();
 	return state;
 }
@@ -960,6 +1042,21 @@ ParticipantDisconnected decode_participant_disconnected(
 		throw Error{MSG(err) << "Disconnected FVD participant ID must be nonzero"};
 	}
 	return disconnected;
+}
+
+size_t fog_word_count(uint32_t map_size) {
+	return (static_cast<size_t>(map_size) * map_size + 63) / 64;
+}
+
+bool fog_tile_set(const std::vector<uint64_t> &bits, uint32_t map_size, const coord::tile &tile) {
+	if (tile.ne < 0 or tile.se < 0 or tile.ne >= map_size or tile.se >= map_size) {
+		return false;
+	}
+	const auto index = static_cast<size_t>(tile.ne) * map_size + static_cast<size_t>(tile.se);
+	if (index / 64 >= bits.size()) {
+		return false;
+	}
+	return (bits[index / 64] >> (index % 64)) & 1;
 }
 
 } // namespace openage::network

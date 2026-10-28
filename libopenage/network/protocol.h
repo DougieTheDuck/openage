@@ -16,10 +16,11 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 /**
  * Current protocol version.
  */
-// Builder tower demolition adds a command kind that earlier clients reject.
-// Refuse incompatible clients at the handshake rather than mid-match.
+// Fog of war appends each side's map view to world state and adds
+// remembered buildings, which older clients cannot parse (v15 added Builder
+// tower demolition). Refuse them at the handshake rather than mid-match.
 // Minor versions continue to gate compatible relay features.
-constexpr uint16_t PROTOCOL_MAJOR = 15;
+constexpr uint16_t PROTOCOL_MAJOR = 16;
 constexpr uint16_t PROTOCOL_MINOR = 4;
 
 /** Oldest protocol minor version compatible with this implementation. */

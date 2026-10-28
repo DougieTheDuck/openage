@@ -90,6 +90,15 @@ public:
 	/** Whether pixel picking may return this object. */
 	bool is_pickable() const;
 
+	/** Hide an entity the viewer cannot see, without deactivating it. */
+	void set_concealed(bool concealed);
+
+	/** Whether the viewer currently cannot see this entity. */
+	bool is_concealed() const;
+
+	/** Draw darker, for a building remembered in explored fog. */
+	void set_dimmed(bool dimmed);
+
 	/** Get the object's role in structure occlusion rendering. */
 	occlusion_mode get_occlusion_mode() const;
 
@@ -206,6 +215,12 @@ private:
 	 * Stores whether the \p update() call changed the object.
 	 */
 	bool changed;
+
+	/** Hidden from the local viewer by fog of war. */
+	bool concealed = false;
+
+	/** Remembered in explored fog rather than currently seen. */
+	bool dimmed = false;
 
 	/**
 	 * Asset manager for central accessing and loading asset resources.

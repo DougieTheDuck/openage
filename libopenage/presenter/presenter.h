@@ -254,6 +254,15 @@ protected:
 	GuestClock fvd_guest_clock{};
 	/** Process only host-confirmed HP changes and entity deaths for visuals. */
 	void record_confirmed_combat_effects(const network::WorldState &world, bool reset);
+	/**
+	 * Reduce a local snapshot to what the controlled player's side can see,
+	 * as a remote guest would receive it, and hide everything else.
+	 */
+	network::WorldState fvd_local_view(const network::WorldState &world, size_t controlled);
+	/** Draw the viewer's fog on the terrain, or remove it without one. */
+	void update_fvd_fog(const network::WorldState *world);
+	/** Fog levels last sent to the terrain renderer. */
+	std::vector<uint8_t> fvd_fog_levels{};
 	std::optional<network::WorldState> fvd_previous_combat_world{};
 	struct CombatVisual {
 		coord::phys3 position;

@@ -302,6 +302,11 @@ FVD::FVD(const std::shared_ptr<GameState> &state) {
 	this->tower_armor = armor;
 	this->horse_damage = melee_damage;
 	this->arrow_travel = time::time_t::from_double(arrow_duration);
+	const size_t vision_words = (this->map_size * this->map_size + 63) / 64;
+	for (auto &team : this->team_vision) {
+		team.explored.assign(vision_words, 0);
+		team.visible.assign(vision_words, 0);
+	}
 	this->tower_cooldown = time::time_t::from_double(0.8);
 	this->horse_cooldown = time::time_t::from_double(0.6);
 	this->horse_hit_delay = time::time_t::from_double(
@@ -399,6 +404,8 @@ void FVD::initialise(const std::shared_ptr<GameState> &state,
 		}
 	}
 	loop->create_event("game.fvd_refresh_paths", refresh_target->get_manager(), state, time::TIME_ZERO);
+	// Players see their starting surroundings before the first combat tick.
+	this->update_vision(state, time::TIME_ZERO);
 }
 
 bool FVD::tile_occupied(const std::shared_ptr<GameState> &state,

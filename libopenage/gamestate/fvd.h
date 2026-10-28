@@ -7,12 +7,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <nyan/nyan.h>
@@ -85,6 +87,31 @@ struct FVDArrowState {
 	coord::phys3 destination;
 	time::time_t launch_time;
 	time::time_t impact_time;
+};
+
+/** Side whose shared vision a player uses. */
+enum class FVDTeam : uint8_t {
+	HUNTER = 1,
+	BUILDERS = 2,
+};
+
+/** Last seen state of an enemy building now hidden by fog. */
+struct FVDRememberedBuilding {
+	entity_id_t entity_id;
+	player_id_t owner;
+	std::string definition;
+	coord::phys3 position;
+};
+
+/**
+ * One side's view of the map: one bit per tile in row-major (ne, se) order,
+ * bit i of word i / 64 for tile index i = ne * map_size + se.
+ */
+struct FVDTeamVision {
+	std::vector<uint64_t> explored;
+	std::vector<uint64_t> visible;
+	/** Enemy buildings seen before and not yet seen gone, in ID order. */
+	std::vector<FVDRememberedBuilding> remembered;
 };
 
 /**
@@ -304,6 +331,29 @@ public:
 	/** Capture active Hunter orders in horse-ID order. */
 	std::vector<FVDAttackOrderState> get_attack_order_state() const;
 
+	/** The side whose vision a player shares: the Hunter, or all Builders. */
+	static FVDTeam team_of(player_id_t player);
+
+	/**
+	 * Whether any of a side's units or completed towers sees the centre of
+	 * this tile at this time. Out-of-map tiles are never visible.
+	 */
+	bool tile_visible(const std::shared_ptr<GameState> &state, FVDTeam team,
+	                  const coord::tile &tile, const time::time_t &time) const;
+
+	/**
+	 * Whether a side may currently see, target or interact with an entity:
+	 * its own side's entities always, others only on a visible tile.
+	 */
+	bool can_see(const std::shared_ptr<GameState> &state, FVDTeam team,
+	             entity_id_t entity, const time::time_t &time) const;
+
+	/** Recompute both sides' visible and explored tiles and remembered buildings. */
+	void update_vision(const std::shared_ptr<GameState> &state, const time::time_t &time);
+
+	/** One side's view as of the last update_vision. */
+	FVDTeamVision get_vision(FVDTeam team) const;
+
 	/** Capture at most 2048 immutable launches, oldest undelivered first.
 	 * Passing no cursor retains only the recent presentation window. */
 	std::vector<FVDArrowState> get_arrow_state(
@@ -383,6 +433,17 @@ private:
 	std::optional<std::vector<entity_id_t>> resolve_command_units(
 		const std::shared_ptr<GameState> &state, player_id_t owner,
 		const std::vector<entity_id_t> &ids, const time::time_t &time) const;
+
+	/**
+	 * Vision radius from an entity type's LineOfSight ability in tiles,
+	 * or zero for types that reveal nothing.
+	 */
+	double vision_range(const std::shared_ptr<GameState> &state,
+	                    const std::string &definition) const;
+
+	/** Living units and completed towers of a side, with their vision radius. */
+	std::vector<std::pair<coord::phys3, double>> vision_sources(
+		const std::shared_ptr<GameState> &state, FVDTeam team, const time::time_t &time) const;
 
 	/** Shared validation and order setup for AttackMove and Patrol. */
 	bool issue_hunter_route(const std::shared_ptr<GameState> &state,
@@ -500,6 +561,19 @@ private:
 	uint64_t next_arrow_id = 1;
 	uint64_t next_build_id = 1;
 	std::unordered_map<entity_id_t, AttackOrder> attack_orders;
+	/** Vision per side, indexed by FVDTeam value minus one. */
+	struct TeamVisionState {
+		std::vector<uint64_t> explored;
+		std::vector<uint64_t> visible;
+		std::map<entity_id_t, FVDRememberedBuilding> remembered;
+	};
+	std::array<TeamVisionState, 2> team_vision{};
+	/** Vision radius per entity type, read once from its nyan data. */
+	mutable std::unordered_map<std::string, double> vision_ranges;
+
+	/** Set only during a combat tick, whose visibility queries reuse the bitsets. */
+	std::optional<time::time_t> vision_cached_at{};
+
 	/** Hunter-chosen stances; absent horses are Observe. */
 	std::unordered_map<entity_id_t, HunterStance> hunter_stances;
 	std::unordered_set<entity_id_t> dead_horses;

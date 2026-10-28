@@ -89,6 +89,7 @@ def tests_cpp():
     yield "openage::job::tests::test_job_manager"
     yield "openage::network::tests::messages"
     yield "openage::network::tests::stance_messages", "FVD Hunter stance and patrol wire format"
+    yield "openage::network::tests::fog_messages", "FVD fog of war and remembered building wire format"
     yield "openage::network::tests::protocol"
     yield "openage::network::tests::handshake"
     yield "openage::network::tests::lobby"
@@ -269,6 +270,11 @@ def tests_cpp():
     yield (
         "openage::gamestate::tests::fvd_hunter_patrol_stances",
         "FVD Patrol behaviour under Observe, Defensive and Aggressive stances",
+        lambda env: env["has_assets"],
+    )
+    yield (
+        "openage::gamestate::tests::fvd_fog_of_war",
+        "FVD per-side vision, hidden targets, explored memory and filtered replication",
         lambda env: env["has_assets"],
     )
 

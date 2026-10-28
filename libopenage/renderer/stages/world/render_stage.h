@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <shared_mutex>
+#include <unordered_set>
 #include <vector>
 
 #include "coord/pixel.h"
@@ -104,6 +105,20 @@ public:
 	void update(std::optional<time::time_t> presentation_time = std::nullopt);
 
 	/**
+	 * Draw and pick only these entities, e.g. what the local side can see.
+	 * Anything else, including entities created after the set was taken,
+	 * stays hidden, so a new enemy in fog never flashes up for a frame.
+	 * std::nullopt shows every entity. Replaces the previous set.
+	 */
+	void set_shown(std::optional<std::unordered_set<uint32_t>> ids);
+
+	/**
+	 * Draw these entities darker, e.g. buildings remembered in explored fog.
+	 * Replaces the previous set.
+	 */
+	void set_dimmed(std::unordered_set<uint32_t> ids);
+
+	/**
 	 * Resize the FBO for the world rendering. This basically updates the output
 	 * texture size.
 	 *
@@ -157,6 +172,12 @@ private:
 	 * Render entities requested by the game world.
 	 */
 	std::vector<std::shared_ptr<WorldObject>> render_objects;
+
+	/** Entity IDs the local viewer can see; std::nullopt shows everything. */
+	std::optional<std::unordered_set<uint32_t>> shown_ids;
+
+	/** Entity IDs drawn darker because they are only remembered. */
+	std::unordered_set<uint32_t> dimmed_ids;
 
 	/**
 	 * Shader for rendering the world objects.

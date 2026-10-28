@@ -2,6 +2,8 @@
 
 #include "messages.h"
 
+#include "network/world_delta.h"
+
 #include <string>
 #include <vector>
 
@@ -527,6 +529,78 @@ void stance_messages() {
 	auto tower_stance = hunter;
 	tower_stance.entities[1].definition = "fvd.data.entities.Tower";
 	TESTTHROWS(encode_world_state(tower_stance));
+}
+
+void fog_messages() {
+	WorldState builder{};
+	builder.base_revision = 1;
+	builder.world_revision = 2;
+	builder.map_size = 16;
+	builder.local_player_id = 2;
+	builder.players = {{1, PlayerRole::HUNTER}, {2, PlayerRole::BUILDER}};
+	TESTEQUALS(fog_word_count(16), size_t{4});
+	TESTEQUALS(fog_word_count(128), size_t{256});
+	TeamFog fog{PlayerRole::BUILDER, std::vector<uint64_t>(4, 0), std::vector<uint64_t>(4, 0), {}};
+	fog.explored[0] = 0b111;
+	fog.visible[0] = 0b011;
+	builder.fog = {fog};
+	builder.entities = {{300, 1, "fvd.data.entities.Horse", {1.0, 1.0, 0}}};
+	auto decoded = decode_world_state(encode_world_state(builder));
+	TESTEQUALS(decoded.fog.size(), size_t{1});
+	TESTEQUALS(decoded.fog.front() == fog, true);
+	TESTEQUALS(fog_tile_set(decoded.fog.front().visible, 16, {0, 1}), true);
+	TESTEQUALS(fog_tile_set(decoded.fog.front().visible, 16, {0, 2}), false);
+	TESTEQUALS(fog_tile_set(decoded.fog.front().explored, 16, {0, 2}), true);
+	TESTEQUALS(fog_tile_set(decoded.fog.front().explored, 16, {16, 0}), false);
+
+	// A visible tile is always explored, bitsets match the map, and a
+	// recipient only ever receives its own side's fog.
+	auto unexplored = builder;
+	unexplored.fog.front().visible[1] = 1;
+	TESTTHROWS(encode_world_state(unexplored));
+	auto short_fog = builder;
+	short_fog.fog.front().explored.pop_back();
+	TESTTHROWS(encode_world_state(short_fog));
+	auto both_sides = builder;
+	both_sides.fog.push_back(fog);
+	TESTTHROWS(encode_world_state(both_sides));
+	auto hunter_fog = builder;
+	hunter_fog.fog.front().team = PlayerRole::HUNTER;
+	TESTTHROWS(encode_world_state(hunter_fog));
+	auto local_only = builder;
+	local_only.fog.front().remembered = {300};
+	TESTTHROWS(encode_world_state(local_only));
+
+	// Remembered entities are bare enemy buildings.
+	WorldState hunter = builder;
+	hunter.local_player_id = 1;
+	hunter.fog.front().team = PlayerRole::HUNTER;
+	hunter.entities = {{400, 2, "fvd.data.entities.Tower", {5.0, 5.0, 0}}};
+	hunter.entities.front().remembered = true;
+	auto remembered = decode_world_state(encode_world_state(hunter));
+	TESTEQUALS(remembered.entities.front().remembered, true);
+	auto with_health = hunter;
+	with_health.entities.front().health = 50;
+	with_health.entities.front().maximum_health = 100;
+	TESTTHROWS(encode_world_state(with_health));
+	auto own_building = hunter;
+	own_building.entities.front().owner_id = 1;
+	TESTTHROWS(encode_world_state(own_building));
+	auto remembered_unit = hunter;
+	remembered_unit.entities.front().definition = "fvd.data.entities.Builder";
+	TESTTHROWS(encode_world_state(remembered_unit));
+
+	// A delta carries fog only when it changed.
+	auto next = builder;
+	next.world_revision = 3;
+	next.base_revision = 0;
+	auto unchanged = make_world_delta(builder, next);
+	TESTEQUALS(unchanged.changed.fog.empty(), true);
+	next.fog.front().explored[2] = 1;
+	auto changed = make_world_delta(builder, next);
+	TESTEQUALS(changed.changed.fog.size(), size_t{1});
+	auto applied = apply_world_delta(builder, decode_world_delta(encode_world_delta(changed)));
+	TESTEQUALS(applied.fog.front() == next.fog.front(), true);
 }
 
 } // namespace openage::network::tests

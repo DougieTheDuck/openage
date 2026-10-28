@@ -2,17 +2,21 @@
 
 #include "render_stage.h"
 
+#include "error/error.h"
+
 #include "renderer/camera/camera.h"
 #include "renderer/opengl/context.h"
 #include "renderer/render_pass.h"
 #include "renderer/render_target.h"
 #include "renderer/renderer.h"
 #include "renderer/resources/shader_source.h"
+#include "renderer/resources/texture_data.h"
 #include "renderer/resources/texture_info.h"
 #include "renderer/shader_program.h"
 #include "renderer/stages/terrain/chunk.h"
 #include "renderer/stages/terrain/mesh.h"
 #include "renderer/stages/terrain/model.h"
+#include "renderer/texture.h"
 #include "renderer/uniform_input.h"
 #include "renderer/window.h"
 #include "time/clock.h"
@@ -37,6 +41,9 @@ TerrainRenderStage::TerrainRenderStage(const std::shared_ptr<Window> &window,
 
 	auto size = window->get_size();
 	this->initialize_render_pass(size[0], size[1], shaderdir);
+	this->fog_texture = this->renderer->add_texture(resources::Texture2dData{
+		resources::Texture2dInfo{1, 1, resources::pixel_format::rgba8},
+		std::vector<uint8_t>{255, 255, 255, 255}});
 
 	window->add_resize_callback([this](size_t width, size_t height, double /*scale*/) {
 		this->resize(width, height);
@@ -62,6 +69,44 @@ void TerrainRenderStage::set_grid_enabled(bool enabled) {
 			}
 		}
 	}
+}
+
+void TerrainRenderStage::set_fog(size_t map_size, const std::vector<uint8_t> &levels) {
+	std::unique_lock lock{this->mutex};
+
+	this->fog_enabled = not levels.empty();
+	if (this->fog_enabled) {
+		if (levels.size() != map_size * map_size) {
+			throw Error{MSG(err) << "Terrain fog needs one level per tile of a "
+			                     << map_size << "x" << map_size << " map"};
+		}
+		std::vector<uint8_t> pixels(levels.size() * 4, 255);
+		for (size_t i = 0; i < levels.size(); ++i) {
+			pixels[i * 4] = levels[i];
+		}
+		resources::Texture2dInfo info{map_size, map_size, resources::pixel_format::rgba8};
+		resources::Texture2dData data{info, std::move(pixels)};
+		if (this->fog_map_size == map_size and this->fog_texture) {
+			this->fog_texture->upload(data);
+		}
+		else {
+			this->fog_texture = this->renderer->add_texture(data);
+		}
+		this->fog_map_size = map_size;
+	}
+	for (auto &chunk : this->model->get_chunks()) {
+		for (auto &mesh : chunk->get_meshes()) {
+			if (mesh->get_uniforms()) {
+				this->apply_fog(mesh->get_uniforms());
+			}
+		}
+	}
+}
+
+void TerrainRenderStage::apply_fog(const std::shared_ptr<renderer::UniformInput> &uniforms) const {
+	uniforms->update("fog", this->fog_texture);
+	uniforms->update("fog_enabled", this->fog_enabled);
+	uniforms->update("fog_map_size", static_cast<float>(this->fog_map_size));
 }
 
 void TerrainRenderStage::add_render_entity(const std::shared_ptr<RenderEntity> entity,
@@ -93,6 +138,7 @@ void TerrainRenderStage::update() {
 				auto geometry = this->renderer->add_mesh_geometry(mesh->get_mesh());
 				auto transform_unifs = this->display_shader->create_empty_input();
 				transform_unifs->update("show_grid", this->grid_enabled);
+				this->apply_fog(transform_unifs);
 
 				Renderable display_obj{
 					transform_unifs,

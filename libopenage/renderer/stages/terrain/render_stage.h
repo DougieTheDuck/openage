@@ -2,8 +2,10 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <shared_mutex>
+#include <vector>
 
 #include "coord/scene.h"
 #include "util/path.h"
@@ -20,6 +22,7 @@ namespace renderer {
 class Renderer;
 class RenderPass;
 class ShaderProgram;
+class UniformInput;
 class Texture2d;
 class Window;
 
@@ -72,6 +75,16 @@ public:
 	 * @param enabled Whether grid lines are rendered.
 	 */
 	void set_grid_enabled(bool enabled);
+
+	/**
+	 * Darken the terrain by fog of war, or turn fog off with empty levels.
+	 * Call from the render thread.
+	 *
+	 * @param map_size Width and height of the square map in tiles.
+	 * @param levels One byte per tile in row-major (ne, se) order:
+	 *               0 unexplored, 128 explored, 255 visible.
+	 */
+	void set_fog(size_t map_size, const std::vector<uint8_t> &levels);
 
 	/**
 	 * Add a new render entity to the terrain renderer.
@@ -153,6 +166,14 @@ private:
 	 * Whether terrain tile boundaries are rendered.
 	 */
 	bool grid_enabled;
+
+	/** Current fog of war; a 1x1 visible placeholder while disabled. */
+	std::shared_ptr<renderer::Texture2d> fog_texture;
+	bool fog_enabled = false;
+	size_t fog_map_size = 1;
+
+	/** Apply the fog uniforms to one terrain mesh's uniform input. */
+	void apply_fog(const std::shared_ptr<renderer::UniformInput> &uniforms) const;
 
 	/**
 	 * Simulation clock for timing animations.

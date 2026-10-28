@@ -106,7 +106,7 @@ void WorldRenderStage::pick_entity(
 	std::optional<uint32_t> selected_id;
 	std::optional<WorldObject::HitTestResult> selected_hit;
 	for (const auto &object : this->render_objects) {
-		if (not object->is_active() or not object->is_pickable()) {
+		if (not object->is_active() or not object->is_pickable() or object->is_concealed()) {
 			continue;
 		}
 		auto hit = object->hit_test(position, this->camera);
@@ -134,6 +134,8 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 	auto &camera_frustum = this->camera->get_frustum_2d();
 	for (auto &obj : this->render_objects) {
 		obj->fetch_updates(current_time);
+		obj->set_concealed(this->shown_ids and not this->shown_ids->contains(obj->get_id()));
+		obj->set_dimmed(this->dimmed_ids.contains(obj->get_id()));
 		if (not obj->is_active()) {
 			obj->update_uniforms(current_time);
 			continue;
@@ -223,6 +225,16 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 		}
 		obj->update_uniforms(current_time);
 	}
+}
+
+void WorldRenderStage::set_shown(std::optional<std::unordered_set<uint32_t>> ids) {
+	std::unique_lock lock{this->mutex};
+	this->shown_ids = std::move(ids);
+}
+
+void WorldRenderStage::set_dimmed(std::unordered_set<uint32_t> ids) {
+	std::unique_lock lock{this->mutex};
+	this->dimmed_ids = std::move(ids);
 }
 
 void WorldRenderStage::resize(size_t width, size_t height) {

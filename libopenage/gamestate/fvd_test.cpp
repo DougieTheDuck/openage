@@ -2449,7 +2449,7 @@ void fvd_hunter_stances() {
 	auto observer = spawn(1, "Horse", {12, 12, 0});
 	auto observed = spawn(2, "Builder", {14, 12, 0});
 	auto aggressor = spawn(1, "Horse", {30, 12, 0});
-	auto prey = spawn(2, "Builder", {37, 12, 0});
+	auto prey = spawn(2, "Builder", {36, 12, 0});
 	auto far_sighted = spawn(1, "Horse", {30, 30, 0});
 	auto distant = spawn(2, "Builder", {39, 30, 0});
 	auto guard = spawn(1, "Horse", {12, 40, 0});
@@ -2457,9 +2457,9 @@ void fvd_hunter_stances() {
 	auto leashed = spawn(1, "Horse", {12, 90, 0});
 	auto runner = spawn(2, "Builder", {15, 90, 0});
 	auto arriving = spawn(1, "Horse", {80, 12, 0});
-	auto awaited = spawn(2, "Builder", {90, 12, 0});
+	auto awaited = spawn(2, "Builder", {89, 12, 0});
 	auto arriving_observer = spawn(1, "Horse", {80, 40, 0});
-	auto unnoticed = spawn(2, "Builder", {90, 40, 0});
+	auto unnoticed = spawn(2, "Builder", {89, 40, 0});
 	auto patroller = spawn(1, "Horse", {100, 100, 0});
 	auto ambusher = spawn(1, "Horse", {100, 120, 0});
 	auto ambushed = spawn(2, "Builder", {103, 122, 0});
@@ -2526,7 +2526,7 @@ void fvd_hunter_stances() {
 	// Observe never starts a fight, even with an enemy two tiles away.
 	TESTEQUALS(has_order(observer), false);
 	TESTEQUALS(health_of(observed, now), int64_t{25});
-	// Aggressive sees seven tiles away and closes in; nine is out of sight.
+	// Aggressive acts on anything its seven-tile vision reveals; nine is out of sight.
 	TESTEQUALS(has_order(aggressor), true);
 	TESTEQUALS(position_of(aggressor, now).ne.to_double() > 30.0, true);
 	TESTEQUALS(has_order(far_sighted), false);
@@ -2556,7 +2556,7 @@ void fvd_hunter_stances() {
 	TESTEQUALS((position_of(leashed, now) - coord::phys3{12, 90, 0}).length() < 0.2, true);
 	TESTEQUALS(has_order(leashed), false);
 	TESTEQUALS(state->get_game_entities().contains(runner->get_id()), true);
-	// The arrived Aggressive horse found an enemy seven tiles from its
+	// The arrived Aggressive horse found an enemy six tiles from its
 	// destination; the Observe horse kept waiting at its own.
 	TESTEQUALS(health_of(awaited, now) < 25, true);
 	TESTEQUALS(health_of(unnoticed, now), int64_t{25});
@@ -2614,7 +2614,7 @@ void fvd_hunter_patrol_stances() {
 	auto guard = spawn(1, "Horse", {20, 60, 0});
 	auto fleeing = spawn(2, "Builder", {23, 63, 0});
 	auto hunter = spawn(1, "Horse", {20, 100, 0});
-	auto quarry = spawn(2, "Builder", {23, 107, 0});
+	auto quarry = spawn(2, "Builder", {23, 106, 0});
 	TESTEQUALS(fvd->set_hunter_stance(state, 1, {guard->get_id()}, HunterStance::DEFENSIVE, at(0)), true);
 	TESTEQUALS(fvd->set_hunter_stance(state, 1, {hunter->get_id()}, HunterStance::AGGRESSIVE, at(0)), true);
 	TESTEQUALS(fvd->issue_patrol(state, 1, {watcher->get_id()}, {26, 20, 0}, at(0)), true);
@@ -2640,7 +2640,7 @@ void fvd_hunter_patrol_stances() {
 		}
 	};
 
-	// The Aggressive patrol sees a Builder seven tiles off its route and
+	// The Aggressive patrol sees a Builder six tiles off its route and
 	// leaves the route for it; a Defensive one would ignore it.
 	run_until(1.0);
 	TESTEQUALS(has_order(hunter), true);
@@ -2672,5 +2672,140 @@ void fvd_hunter_patrol_stances() {
 	// The Aggressive horse stayed where it lost its quarry.
 	TESTEQUALS((position_of(hunter, now) - hunter_stopped).length() < 0.2, true);
 	TESTEQUALS(has_order(hunter), false);
+}
+
+void fvd_fog_of_war() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto spawn = [&](player_id_t owner, const char *definition, coord::phys3 position, double seconds) {
+		return entities->spawn_game_entity(
+			loop, state, owner, std::string{"fvd.data.entities."} + definition, position, at(seconds));
+	};
+	auto teleport = [&](const std::shared_ptr<GameEntity> &entity, coord::phys3 position, double seconds) {
+		std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION))->set_position(at(seconds), position);
+	};
+	auto has_order = [&](const std::shared_ptr<GameEntity> &horse) {
+		const auto orders = fvd->get_attack_order_state();
+		return std::any_of(orders.begin(), orders.end(), [&](const auto &order) {
+			return order.horse_id == horse->get_id();
+		});
+	};
+
+	TESTEQUALS(FVD::team_of(1) == FVDTeam::HUNTER, true);
+	TESTEQUALS(FVD::team_of(2) == FVDTeam::BUILDERS, true);
+	TESTEQUALS(FVD::team_of(8) == FVDTeam::BUILDERS, true);
+	TESTEQUALS(fvd->tile_visible(state, FVDTeam::BUILDERS, {-1, 4}, at(0)), false);
+
+	// Vision ranges come from each type's LineOfSight: Builders see six
+	// tiles, horses seven. Distances below are to tile centres.
+	auto scout = spawn(2, "Builder", {10.5, 10.5, 0}, 0);
+	auto near_horse = spawn(1, "Horse", {15.5, 10.5, 0}, 0);
+	auto far_horse = spawn(1, "Horse", {17.5, 10.5, 0}, 0);
+	auto hidden_builder = spawn(3, "Builder", {30.5, 10.5, 0}, 0);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::BUILDERS, near_horse->get_id(), at(0)), true);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::BUILDERS, far_horse->get_id(), at(0)), false);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::HUNTER, scout->get_id(), at(0)), true);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::HUNTER, hidden_builder->get_id(), at(0)), false);
+	// A side always sees its own units, wherever they are.
+	TESTEQUALS(fvd->can_see(state, FVDTeam::BUILDERS, hidden_builder->get_id(), at(0)), true);
+	TESTEQUALS(fvd->can_see(state, FVDTeam::HUNTER, far_horse->get_id(), at(0)), true);
+
+	// Nothing hidden may be targeted.
+	TESTEQUALS(fvd->issue_focus_attack(state, 1, {near_horse->get_id()},
+	                                   hidden_builder->get_id(), at(0)), false);
+	TESTEQUALS(has_order(near_horse), false);
+	TESTEQUALS(fvd->issue_focus_attack(state, 1, {near_horse->get_id()}, scout->get_id(), at(0)), true);
+	fvd->update_vision(state, at(0));
+	auto builders_view = fvd->get_vision(FVDTeam::BUILDERS);
+	TESTEQUALS(network::fog_tile_set(builders_view.visible, 128, {8, 8}), true);
+	TESTEQUALS(network::fog_tile_set(builders_view.explored, 128, {8, 8}), true);
+
+	// The scout escapes beyond every horse's sight: the focus attack ends,
+	// and the Builders keep the ground they explored, now unseen.
+	teleport(scout, {10.5, 60.5, 0}, 0.1);
+	fvd->combat_tick(state, at(0.2));
+	TESTEQUALS(has_order(near_horse), false);
+	builders_view = fvd->get_vision(FVDTeam::BUILDERS);
+	TESTEQUALS(network::fog_tile_set(builders_view.visible, 128, {8, 8}), false);
+	TESTEQUALS(network::fog_tile_set(builders_view.explored, 128, {8, 8}), true);
+	TESTEQUALS(network::fog_tile_set(builders_view.explored, 128, {120, 120}), false);
+
+	// The Hunter remembers an enemy tower it has seen until it sees the
+	// tower's site again without it.
+	entity_id_t builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (entity->get_definition() == "fvd.data.entities.Builder"
+		    and ownership->get_owners().get(time::TIME_ZERO) == player_id_t{5}) {
+			builder = id;
+		}
+	}
+	TESTEQUALS(fvd->request_build(state, 5, {builder}, {68, 69, 0}, at(1)), true);
+	loop->reach_time(at(15), state);
+	entity_id_t tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
+			tower = id;
+		}
+	}
+	TESTEQUALS(tower != 0, true);
+	auto remembers_tower = [&]() {
+		const auto view = fvd->get_vision(FVDTeam::HUNTER);
+		return std::any_of(view.remembered.begin(), view.remembered.end(), [&](const auto &building) {
+			return building.entity_id == tower;
+		});
+	};
+	auto watcher = spawn(1, "Horse", {72.5, 69.5, 0}, 15);
+	fvd->update_vision(state, at(15));
+	TESTEQUALS(remembers_tower(), true);
+	teleport(watcher, {110.5, 110.5, 0}, 15.1);
+	fvd->update_vision(state, at(15.2));
+	TESTEQUALS(remembers_tower(), true);
+
+	// Each recipient receives only its own side's view.
+	network::MatchConnectionState connections{fvd->get_player_count()};
+	auto hunter_world = network::decode_world_state(network::encode_world_state(
+		network::capture_fvd_state(state, connections, at(15.2), 0, 1, 1)));
+	TESTEQUALS(hunter_world.fog.size(), size_t{1});
+	(hunter_world.fog.front().team == network::PlayerRole::HUNTER) or TESTFAIL;
+	auto sent_tower = std::find_if(hunter_world.entities.begin(), hunter_world.entities.end(),
+	                               [&](const auto &entity) { return entity.entity_id == tower; });
+	sent_tower != hunter_world.entities.end() or TESTFAIL;
+	TESTEQUALS(sent_tower->remembered, true);
+	TESTEQUALS(sent_tower->health.has_value(), false);
+	auto sent_hidden = std::find_if(hunter_world.entities.begin(), hunter_world.entities.end(),
+	                                [&](const auto &entity) { return entity.entity_id == hidden_builder->get_id(); });
+	TESTEQUALS(sent_hidden == hunter_world.entities.end(), true);
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {watcher->get_id()}, {112, 110, 0}, at(15.2)), true);
+	auto builder_world = network::decode_world_state(network::encode_world_state(
+		network::capture_fvd_state(state, connections, at(15.2), 0, 1, 2)));
+	(builder_world.fog.front().team == network::PlayerRole::BUILDER) or TESTFAIL;
+	TESTEQUALS(builder_world.attack_orders.empty(), true);
+	auto sent_watcher = std::find_if(builder_world.entities.begin(), builder_world.entities.end(),
+	                                 [&](const auto &entity) { return entity.entity_id == watcher->get_id(); });
+	TESTEQUALS(sent_watcher == builder_world.entities.end(), true);
+
+	// Destroyed while unseen, the tower stays remembered until seen gone.
+	TESTEQUALS(fvd->destroy_tower(state, tower, at(15.3)), true);
+	fvd->update_vision(state, at(15.4));
+	TESTEQUALS(remembers_tower(), true);
+	fvd->cancel_attack_move(watcher->get_id());
+	teleport(watcher, {72.5, 69.5, 0}, 15.5);
+	fvd->update_vision(state, at(15.6));
+	TESTEQUALS(remembers_tower(), false);
 }
 }

@@ -149,7 +149,7 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 	if (this->layer_uniforms.empty()) [[unlikely]] {
 		return;
 	}
-	if (not this->render_entity->is_active()) {
+	if (not this->render_entity->is_active() or this->concealed) {
 		for (size_t i = 0; i < this->layer_uniforms.size(); ++i) {
 			this->layer_uniforms[i]->update(this->scale, 0.0f);
 			if (i < this->occlusion_uniforms.size()) {
@@ -230,6 +230,8 @@ void WorldObject::update_uniforms(const time::time_t &time) {
 		// Scales the subtex up or down in the shader
 		auto scale = animation_info->get_scalefactor();
 		layer_unifs->update(this->scale, scale);
+		// Match the 45% brightness of explored terrain.
+		layer_unifs->update("brightness", this->dimmed ? 0.45f : 1.0f);
 
 		// Subtexture size in pixels
 		auto subtex_size = tex_info->get_subtex_info(subtex_idx).get_size();
@@ -282,6 +284,18 @@ bool WorldObject::is_active() const {
 
 bool WorldObject::is_pickable() const {
 	return this->render_entity->is_pickable();
+}
+
+void WorldObject::set_concealed(bool concealed) {
+	this->concealed = concealed;
+}
+
+bool WorldObject::is_concealed() const {
+	return this->concealed;
+}
+
+void WorldObject::set_dimmed(bool dimmed) {
+	this->dimmed = dimmed;
 }
 
 occlusion_mode WorldObject::get_occlusion_mode() const {

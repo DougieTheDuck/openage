@@ -159,6 +159,11 @@ struct EntityState {
 	time::time_t animation_started_at{time::TIME_ZERO};
 	/** Stance of the receiving Hunter's own horses; omitted for other entities. */
 	std::optional<gamestate::HunterStance> hunter_stance{};
+	/**
+	 * An enemy building last seen here, now hidden by fog. It may have
+	 * changed or been destroyed since; it carries no health or motion.
+	 */
+	bool remembered{false};
 };
 
 /** FVD role assigned to one playable player. */
@@ -194,6 +199,26 @@ struct StartMatch {
 	uint64_t host_participant_id{0};
 	std::vector<LobbyAssignment> assignments{};
 };
+
+/**
+ * One side's view of the map, one bit per tile: bit i of word i / 64 for
+ * tile index i = ne * map_size + se. Visible tiles are always explored.
+ */
+struct TeamFog {
+	PlayerRole team{PlayerRole::BUILDER};
+	std::vector<uint64_t> explored{};
+	std::vector<uint64_t> visible{};
+	/** Enemy buildings remembered in fog; local presentation only, never sent. */
+	std::vector<gamestate::entity_id_t> remembered{};
+
+	bool operator==(const TeamFog &other) const = default;
+};
+
+/** Number of 64-bit words holding one bit per tile of a square map. */
+size_t fog_word_count(uint32_t map_size);
+
+/** Whether a tile is set in a fog bitset; out-of-map tiles never are. */
+bool fog_tile_set(const std::vector<uint64_t> &bits, uint32_t map_size, const coord::tile &tile);
 
 /** One playable player in authoritative world state. */
 struct PlayerState {
@@ -264,6 +289,11 @@ struct WorldState {
 	std::vector<ConstructionState> constructions{};
 	std::vector<AttackOrderState> attack_orders{};
 	std::vector<ArrowState> arrows{};
+	/**
+	 * The recipient's side's view on the wire (in a delta: only when it
+	 * changed); both sides in a local presentation snapshot.
+	 */
+	std::vector<TeamFog> fog{};
 };
 
 /** Request for a full snapshot after a client cannot apply a world delta. */
