@@ -23,7 +23,7 @@ namespace renderer::resources {
  * Largest alpha value treated as fully transparent by world rendering and
  * sprite hit testing.
  */
-inline constexpr uint8_t ALPHA_MASK_CUTOFF = 16;
+inline constexpr uint8_t ALPHA_MASK_CUTOFF = 20;
 
 /// Stores 2D texture data in a CPU-accessible byte buffer. Provides methods for loading from
 /// and storing onto disk, as well as sending to and receiving from graphics hardware.

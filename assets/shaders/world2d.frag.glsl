@@ -20,7 +20,7 @@ void main() {
 	int alpha = int(round(tex_val.a * 255));
 	// Texture export noise must not write depth through transparent sprite padding.
 	// Keep this cutoff synchronized with ALPHA_MASK_CUTOFF in texture_data.h.
-	if (alpha <= 16) {
+	if (alpha <= 20) {
 		discard;
 	}
 	// Translucent shadows and effects belong behind opaque sprite pixels.
