@@ -208,6 +208,15 @@ public:
 	                         player_id_t owner, const std::vector<entity_id_t> &ids,
 	                         const time::time_t &time);
 
+	/**
+	 * Remove one of a Builder player's foundations: a queued site, the site
+	 * a Builder is walking to (who then moves on to his next queued site), or
+	 * an abandoned one. Construction already started is a tower instead.
+	 */
+	bool delete_owned_foundation(const std::shared_ptr<GameState> &state,
+	                             player_id_t owner, entity_id_t foundation_id,
+	                             const time::time_t &time);
+
 	/** Destroy a tower and restore the path costs under its footprint. */
 	bool destroy_tower(const std::shared_ptr<GameState> &state,
 	                   entity_id_t tower_id,
@@ -420,6 +429,21 @@ private:
 		const std::shared_ptr<GameState> &state,
 		const std::shared_ptr<GameEntity> &builder,
 		const coord::tile &site, const time::time_t &time) const;
+
+	/** Start the Builder's next reachable queued site, if any. */
+	void start_next_queued_build(const std::shared_ptr<GameState> &state,
+	                             player_id_t owner, entity_id_t builder,
+	                             const time::time_t &time);
+
+	/**
+	 * Where a horse spawned at @p from should ride to reach @p target:
+	 * the target itself if a path exists, otherwise the reachable tile
+	 * closest to it. Nothing if the horse cannot move at all.
+	 */
+	std::optional<coord::phys3> closest_reachable(const std::shared_ptr<GameState> &state,
+	                                              const coord::tile &from,
+	                                              const coord::phys3 &target,
+	                                              const time::time_t &time) const;
 
 	/** Abandon queued orders and release their reservations, retaining foundations. */
 	void clear_queued_builds(const std::shared_ptr<GameState> &state,

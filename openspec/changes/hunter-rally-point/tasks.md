@@ -7,4 +7,6 @@
 - [x] 1.5 Hide the marker from Builder recipients and the local Builder view; let guests draw the Hunter tower and marker.
 - [x] 1.6 Select a lone Hunter tower as `HUNTER_TOWER`; right-click sets the rally point; boxes prefer horses; the host skips the tower in horse orders.
 - [x] 1.7 Tests: `fvd_hunter_rally_point`, `horse_selection_priority`, rally wire format in `stance_messages`.
-- [ ] 1.8 Playtest on a guest Hunter client.
+- [x] 1.8 Ride to the closest reachable tile when the rally point is walled off; allow setting it anywhere.
+- [x] 1.9 Return `NOT_FOUND` from the pathfinder instead of throwing when no portal route exists.
+- [ ] 1.10 Playtest on a guest Hunter client.

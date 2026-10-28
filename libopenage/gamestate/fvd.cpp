@@ -1027,7 +1027,12 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 	}
 	this->build_orders.erase(it);
 	system::Idle::idle(entity, time);
+	this->start_next_queued_build(state, order->get_owner(), builder, time);
+}
 
+void FVD::start_next_queued_build(const std::shared_ptr<GameState> &state,
+                                  player_id_t owner, entity_id_t builder,
+                                  const time::time_t &time) {
 	// The queued foundation already exists and retains its render identity
 	// until this job begins constructing; skip unreachable abandoned sites.
 	auto pending = this->queued_builds.find(builder);
@@ -1043,7 +1048,7 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 		if (pending->second.empty()) {
 			this->queued_builds.erase(pending);
 		}
-		if (this->start_build(state, order->get_owner(), {builder},
+		if (this->start_build(state, owner, {builder},
 		                      next.site.to_phys3_center(), time, next.foundation_id)) {
 			break;
 		}
@@ -1135,6 +1140,11 @@ bool FVD::demolish_owned_tower(const std::shared_ptr<GameState> &state,
 	}
 	const auto tower_id = ids.front();
 	auto found = state->get_game_entities().find(tower_id);
+	// Delete on a foundation removes that planned site instead.
+	if (found != state->get_game_entities().end()
+	    and found->second->get_definition() == this->foundation) {
+		return this->delete_owned_foundation(state, owner, tower_id, time);
+	}
 	if (found == state->get_game_entities().end()
 	    or found->second->get_definition() != this->tower
 	    or not found->second->has_component(component::component_t::OWNERSHIP)
@@ -1159,6 +1169,72 @@ bool FVD::demolish_owned_tower(const std::shared_ptr<GameState> &state,
 		return false;
 	}
 	return this->destroy_tower(state, tower_id, time);
+}
+
+bool FVD::delete_owned_foundation(const std::shared_ptr<GameState> &state,
+                                  player_id_t owner, entity_id_t foundation_id,
+                                  const time::time_t &time) {
+	auto found = state->get_game_entities().find(foundation_id);
+	if (owner < 2 or owner > this->player_count
+	    or found == state->get_game_entities().end()
+	    or found->second->get_definition() != this->foundation
+	    or not found->second->has_component(component::component_t::OWNERSHIP)) {
+		return false;
+	}
+	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+		found->second->get_component(component::component_t::OWNERSHIP));
+	if (not ownership or ownership->get_owners().get(time) != owner) {
+		return false;
+	}
+
+	// A site waiting in a Builder's queue leaves the queue and frees its tiles.
+	for (auto pending = this->queued_builds.begin(); pending != this->queued_builds.end(); ++pending) {
+		auto &sites = pending->second;
+		auto wanted = std::find_if(sites.begin(), sites.end(), [&](const QueuedBuildSite &entry) {
+			return entry.foundation_id == foundation_id;
+		});
+		if (wanted == sites.end()) {
+			continue;
+		}
+		for (const auto &tile : this->get_tower_footprint(wanted->site)) {
+			auto reserved = this->reserved_tiles.find(tile);
+			if (reserved != this->reserved_tiles.end() and reserved->second == pending->first) {
+				this->reserved_tiles.erase(reserved);
+			}
+		}
+		sites.erase(wanted);
+		if (sites.empty()) {
+			this->queued_builds.erase(pending);
+		}
+		break;
+	}
+
+	// The site a Builder is walking to: cancel that job, then carry on with
+	// the rest of the queue rather than abandoning it.
+	std::optional<entity_id_t> walking_builder{};
+	for (const auto &[builder_id, build] : this->build_orders) {
+		if (build.foundation_id == foundation_id and not build.tower_id) {
+			walking_builder = builder_id;
+			break;
+		}
+	}
+	if (walking_builder) {
+		std::deque<QueuedBuildSite> rest{};
+		if (auto pending = this->queued_builds.find(*walking_builder); pending != this->queued_builds.end()) {
+			rest = std::move(pending->second);
+			this->queued_builds.erase(pending);
+		}
+		this->cancel_build(state, *walking_builder, time, false);
+		if (not rest.empty()) {
+			this->queued_builds.emplace(*walking_builder, std::move(rest));
+		}
+	}
+
+	state->remove_game_entity(foundation_id, time);
+	if (walking_builder) {
+		this->start_next_queued_build(state, owner, *walking_builder, time);
+	}
+	return true;
 }
 
 bool FVD::destroy_tower(const std::shared_ptr<GameState> &state,
@@ -1535,7 +1611,11 @@ void FVD::spawn_hunter_horse(const std::shared_ptr<GameState> &state,
 	// New horses ride to the rally point like a Move order: a travelling
 	// horse does not stop to fight, then its stance applies on arrival.
 	if (this->hunter_rally_point) {
-		system::Move::move_default(spawned, state, *this->hunter_rally_point, time);
+		const auto from = std::dynamic_pointer_cast<component::Position>(
+			spawned->get_component(component::component_t::POSITION))->get_positions().get(time).to_tile();
+		if (auto destination = this->closest_reachable(state, from, *this->hunter_rally_point, time)) {
+			system::Move::move_default(spawned, state, *destination, time);
+		}
 	}
 	this->next_hunter_spawn_event = loop->create_event(
 		"game.fvd_spawn_horse", this->horse_spawn_target, state,
@@ -1727,16 +1807,8 @@ bool FVD::set_hunter_rally_point(const std::shared_ptr<GameState> &state,
 	    or point.up != 0) {
 		return false;
 	}
-	// Horses must be able to get there; this also rules out tower footprints.
-	auto pathfinder = state->get_map()->get_pathfinder();
-	auto route = pathfinder->get_path(path::PathRequest{
-		state->get_map()->get_grid_id("fvd.data.terrain.Land"),
-		this->horse_spawn_point.to_tile(),
-		point.to_tile(),
-		time});
-	if (route.status != path::PathResult::FOUND) {
-		return false;
-	}
+	// Like AoE2, anywhere on the map is allowed, even behind a wall: horses
+	// ride as close as they can get whenever it cannot be reached.
 	auto loop = this->event_loop.lock();
 	auto factory = this->entity_factory.lock();
 	if (not loop or not factory) [[unlikely]] {
@@ -1752,6 +1824,67 @@ bool FVD::set_hunter_rally_point(const std::shared_ptr<GameState> &state,
 	this->hunter_rally_marker_id = marker->get_id();
 	this->hunter_rally_point = point;
 	return true;
+}
+
+std::optional<coord::phys3> FVD::closest_reachable(const std::shared_ptr<GameState> &state,
+                                                   const coord::tile &from,
+                                                   const coord::phys3 &target,
+                                                   const time::time_t &time) const {
+	auto map = state->get_map();
+	auto pathfinder = map->get_pathfinder();
+	const auto grid_id = map->get_grid_id("fvd.data.terrain.Land");
+	if (pathfinder->get_path(path::PathRequest{grid_id, from, target.to_tile(), time}).status
+	    == path::PathResult::FOUND) {
+		return target;
+	}
+	// Flood the tiles reachable from the horse, in a fixed order, and keep
+	// the one nearest the target. Orthogonal steps only, so every tile found
+	// is one the pathfinder can reach too.
+	auto grid = pathfinder->get_grid(grid_id);
+	const auto sector_size = grid->get_sector_size();
+	const auto size = static_cast<coord::tile_t>(this->map_size);
+	auto passable = [&](const coord::tile &tile) {
+		if (tile.ne < 0 or tile.se < 0 or tile.ne >= size or tile.se >= size) {
+			return false;
+		}
+		auto sector = grid->get_sector(tile.ne / sector_size, tile.se / sector_size);
+		return sector->get_cost_field()->get_cost(tile - sector->get_position().to_tile(sector_size))
+		       < path::COST_IMPASSABLE;
+	};
+	if (not passable(from)) {
+		return std::nullopt;
+	}
+	auto distance = [&](const coord::tile &tile) {
+		const auto delta = tile.to_phys3_center() - target;
+		const double ne = delta.ne.to_double();
+		const double se = delta.se.to_double();
+		return ne * ne + se * se;
+	};
+	std::vector<bool> seen(static_cast<size_t>(size) * size, false);
+	auto index = [&](const coord::tile &tile) { return static_cast<size_t>(tile.ne) * size + tile.se; };
+	std::deque<coord::tile> frontier{from};
+	seen[index(from)] = true;
+	coord::tile best = from;
+	double best_distance = distance(from);
+	while (not frontier.empty()) {
+		const auto tile = frontier.front();
+		frontier.pop_front();
+		if (const auto d = distance(tile); d < best_distance) {
+			best = tile;
+			best_distance = d;
+		}
+		for (const auto &next : {coord::tile{tile.ne + 1, tile.se}, coord::tile{tile.ne - 1, tile.se},
+		                         coord::tile{tile.ne, tile.se + 1}, coord::tile{tile.ne, tile.se - 1}}) {
+			if (passable(next) and not seen[index(next)]) {
+				seen[index(next)] = true;
+				frontier.push_back(next);
+			}
+		}
+	}
+	if (best == from) {
+		return std::nullopt;
+	}
+	return best.to_phys3_center();
 }
 
 std::optional<coord::phys3> FVD::get_hunter_rally_point() const {

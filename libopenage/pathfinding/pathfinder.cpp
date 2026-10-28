@@ -125,6 +125,16 @@ const Path Pathfinder::get_path(const PathRequest &request) {
 	auto portal_result = this->portal_a_star(request, target_portal_ids, start_portal_ids);
 	auto portal_status = portal_result.first;
 	auto portal_path = portal_result.second;
+	if (portal_status != PathResult::FOUND) {
+		// The closest-portal fallback starts from the start side and need not
+		// touch the target sector, so the flow-field walk below would hit an
+		// invalid portal entry (e.g. a start walled in by buildings). Callers
+		// only follow FOUND paths, so report no path instead.
+		log::log(DBG << "Path not found (start = "
+		             << request.start << "; target = "
+		             << request.target << "): no portal route.");
+		return Path{request.grid_id, PathResult::NOT_FOUND, {}};
+	}
 
 	// Low-level pathfinding
 	// Find the path within the sectors

@@ -23,10 +23,10 @@ void horse_selection_priority() {
 	// 5 stands for the Hunter tower; 100+ are horses.
 	auto is_horse = [](gamestate::entity_id_t id) { return id >= 100; };
 	using ids = std::vector<gamestate::entity_id_t>;
-	TESTEQUALS(horses_take_priority({100, 5, 101}, is_horse), (ids{100, 101}));
-	TESTEQUALS(horses_take_priority({5, 102}, is_horse), (ids{102}));
-	TESTEQUALS(horses_take_priority({5}, is_horse), (ids{5}));
-	TESTEQUALS(horses_take_priority({}, is_horse), ids{});
+	TESTEQUALS(units_take_priority({100, 5, 101}, is_horse), (ids{100, 101}));
+	TESTEQUALS(units_take_priority({5, 102}, is_horse), (ids{102}));
+	TESTEQUALS(units_take_priority({5}, is_horse), (ids{5}));
+	TESTEQUALS(units_take_priority({}, is_horse), ids{});
 }
 
 void tower_placement_mode() {

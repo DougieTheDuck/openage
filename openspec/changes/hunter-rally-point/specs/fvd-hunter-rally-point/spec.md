@@ -4,10 +4,10 @@
 
 ### Requirement: Hunter rally point
 
-The Hunter SHALL be able to set a rally point by selecting the Hunter tower and
-right-clicking ground that horses can reach. Every horse spawned afterwards
-SHALL ride there as though given a Move order, then follow its stance on
-arrival. Setting the rally point again SHALL replace it. Without a rally point,
+The Hunter SHALL be able to set a rally point anywhere on the map by selecting
+the Hunter tower and right-clicking the ground. Every horse spawned afterwards
+SHALL ride there as though given a Move order, or to the closest reachable tile
+when it cannot get there, then follow its stance on arrival. Setting the rally point again SHALL replace it. Without a rally point,
 horses SHALL stay where they spawn. Only the Hunter SHALL be able to set it, and
 only through the Hunter tower.
 
@@ -16,8 +16,13 @@ only through the Hunter tower.
 - **THEN** a rally marker appears there and the next horse rides from beside the tower to it
 
 #### Scenario: Invalid rally point
-- **WHEN** the rally point is out of bounds, unreachable, inside a footprint, or requested by a Builder or without the Hunter tower
+- **WHEN** the rally point is out of bounds, off the ground, or requested by a Builder or without the Hunter tower
 - **THEN** the command is rejected and any existing rally point is unchanged
+
+#### Scenario: Centre walled in
+- **WHEN** Builders have walled in the centre so the rally point cannot be reached
+- **THEN** each new horse rides to the reachable tile closest to the rally point
+- **AND** ordering a walled-in horse to an unreachable point is rejected without error
 
 ### Requirement: Rally marker is private to the Hunter
 

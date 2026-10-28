@@ -18,6 +18,7 @@ Item {
 	readonly property int constructionPercent: hud === null ? -1 : hud.constructionPercent
 	readonly property bool canBuild: hud !== null && hud.canBuild
 	readonly property bool isTower: hud !== null && hud.isTower
+	readonly property bool isFoundation: hud !== null && hud.isFoundation === true
 	readonly property bool canAttack: hud !== null && hud.canAttack
 	readonly property bool attacking: hud !== null && hud.attacking
 	readonly property bool patrolling: hud !== null && hud.patrolling
@@ -309,8 +310,8 @@ Item {
 			      + "Stance: Z Aggressive | X Defensive | C Observe"
 			    : root.canBuild
 			    ? "Builder: right-click foundation to resume | B: Build Tower | Shift+drag: line"
-			    : root.isTower && !root.hunter
-			    ? "Builder: select your tower and press Delete to demolish it immediately"
+			    : (root.isTower || root.isFoundation) && !root.hunter
+			    ? "Builder: press Delete to remove your selected tower or foundation"
 			    : "Drag to select your units | Right-click to move"
 			horizontalAlignment: Text.AlignHCenter
 		}

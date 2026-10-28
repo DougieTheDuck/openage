@@ -85,7 +85,8 @@ Player 1 has the Hunter civilisation, starts with only the Hunter tower at the m
 Players 2 through 8 have the Builders civilisation and each receive exactly one Builder, spaced evenly on a ring 20 tiles from the centre, outside the Hunter tower's reach.
 The Hunter tower cannot be damaged or demolished. It stays silent for the Builders' 20-second head start; from the moment the first horse is due, it fires once per second at the nearest Builder unit it can see within 10 tiles, each arrow dealing 100 damage. It never shoots Builder towers.
 It also gives the Hunter vision 15 tiles around the centre. It is solid, and Hunter horses appear on the free tile just beside it rather than at the exact centre. Its damage, range, rate of fire and the Builders' starting ring are set in the scenario settings; its vision is its `LineOfSight` range.
-Select the Hunter tower and right-click to set a rally point: new horses ride there after spawning, and a red arrow marks it for the Hunter only. A drag box that catches horses selects only the horses, so sweeping up the tower doesn't stop the group from moving.
+Select the Hunter tower and right-click to set a rally point: new horses ride there after spawning, or as close as they can get if Builders have walled it off, and a red arrow marks it for the Hunter only. A drag box that catches units selects only the units, so sweeping up a tower or foundation doesn't stop them from moving.
+Builders: select one of your towers or foundations and press Delete to remove it. A tower collapses; a foundation leaves its Builder's queue, and if the Builder was walking to it he moves on to the next queued site.
 The crimson tower graphic is a placeholder recoloured from the Builder tower.
 Run `bin/run test openage::gamestate::tests::fvd_hunter_tower` for its rules.
 A top-centre countdown shows the seconds remaining until the first Hunter horse, starting at 00:20 when the match begins and disappearing at the first spawn.

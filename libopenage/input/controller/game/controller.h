@@ -45,6 +45,8 @@ enum class SelectionKind {
 	GROUP_HORSES,
 	/** The Hunter's central tower; right-click sets its rally point. */
 	HUNTER_TOWER,
+	/** A Builder's planned or queued tower site; Delete removes it. */
+	FOUNDATION,
 	OTHER,
 };
 
@@ -242,13 +244,14 @@ private:
 };
 
 /**
- * A box that catches horses selects only the horses, as in AoE2: buildings
- * swept up with them (the Hunter tower) are left out so the group can still
- * be ordered. A box with no horses keeps what it caught.
+ * A box that catches units selects only the units, as in AoE2: buildings
+ * and foundations swept up with them (the Hunter tower, a Builder's towers)
+ * are left out so the units can still be ordered. A box with no units keeps
+ * what it caught.
  */
-std::vector<gamestate::entity_id_t> horses_take_priority(
+std::vector<gamestate::entity_id_t> units_take_priority(
 	const std::vector<gamestate::entity_id_t> &ids,
-	const std::function<bool(gamestate::entity_id_t)> &is_horse);
+	const std::function<bool(gamestate::entity_id_t)> &is_unit);
 
 /** Ordered sites constrained to whichever isometric map axis spans the drag furthest. */
 std::vector<coord::tile> tower_line_sites(const coord::tile &start,

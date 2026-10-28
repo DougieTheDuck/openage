@@ -313,12 +313,12 @@ std::vector<coord::tile> tower_line_sites(const coord::tile &start,
 	return sites;
 }
 
-std::vector<gamestate::entity_id_t> horses_take_priority(
+std::vector<gamestate::entity_id_t> units_take_priority(
 	const std::vector<gamestate::entity_id_t> &ids,
-	const std::function<bool(gamestate::entity_id_t)> &is_horse) {
-	std::vector<gamestate::entity_id_t> horses;
-	std::copy_if(ids.begin(), ids.end(), std::back_inserter(horses), is_horse);
-	return horses.empty() ? ids : horses;
+	const std::function<bool(gamestate::entity_id_t)> &is_unit) {
+	std::vector<gamestate::entity_id_t> units;
+	std::copy_if(ids.begin(), ids.end(), std::back_inserter(units), is_unit);
+	return units.empty() ? ids : units;
 }
 
 namespace {
@@ -337,8 +337,14 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 		return found != state->get_game_entities().end()
 		    and found->second->get_definition() == "fvd.data.entities.Horse";
 	};
+	auto is_unit = [&](gamestate::entity_id_t id) {
+		auto found = state->get_game_entities().find(id);
+		return found != state->get_game_entities().end()
+		    and (found->second->get_definition() == "fvd.data.entities.Horse"
+		         or found->second->get_definition() == "fvd.data.entities.Builder");
+	};
 	if (ids.size() > 1) {
-		const auto chosen = horses_take_priority(ids, is_horse);
+		const auto chosen = units_take_priority(ids, is_unit);
 		if (chosen.size() > 1) {
 			bool all_horses = std::all_of(chosen.begin(), chosen.end(), is_horse);
 			controller->set_selected_if_current(
@@ -346,7 +352,7 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 				all_horses ? SelectionKind::GROUP_HORSES : SelectionKind::NONE);
 			return;
 		}
-		// One horse and the tower: select that horse on its own below.
+		// One unit and some buildings: select that unit on its own below.
 		apply_selection(controller, state, generation, chosen);
 		return;
 	}
@@ -373,6 +379,9 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 	else if (definition == "fvd.data.entities.HunterTower") {
 		kind = SelectionKind::HUNTER_TOWER;
 	}
+	else if (definition == "fvd.data.entities.Foundation") {
+		kind = SelectionKind::FOUNDATION;
+	}
 	controller->set_selected_if_current(
 		generation, ids, kind, found->second->get_render_entity());
 }
@@ -389,10 +398,11 @@ void apply_guest_selection(
 		return std::find_if(world.entities.begin(), world.entities.end(),
 			[id](const network::EntityState &entity) { return entity.entity_id == id; });
 	};
-	const auto candidates = horses_take_priority(ids, [&](gamestate::entity_id_t id) {
+	const auto candidates = units_take_priority(ids, [&](gamestate::entity_id_t id) {
 		auto found = find(id);
 		return found != world.entities.end() and found->owner_id == world.local_player_id
-		    and found->definition == "fvd.data.entities.Horse";
+		    and (found->definition == "fvd.data.entities.Horse"
+		         or found->definition == "fvd.data.entities.Builder");
 	});
 	for (auto id : candidates) {
 		auto found = find(id);
@@ -414,6 +424,10 @@ void apply_guest_selection(
 		else if (found->definition == "fvd.data.entities.HunterTower") {
 			if (not valid.empty()) continue;
 			kind = SelectionKind::HUNTER_TOWER;
+		}
+		else if (found->definition == "fvd.data.entities.Foundation") {
+			if (not valid.empty()) continue;
+			kind = SelectionKind::FOUNDATION;
 		}
 		else {
 			continue;
@@ -553,7 +567,10 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		                                        const std::shared_ptr<Controller> controller) {
 			const auto selection = controller->get_selection_details();
 			const auto owner = static_cast<gamestate::player_id_t>(controller->get_controlled());
-			if (owner < 2 or selection.kind != SelectionKind::TOWER or selection.ids.size() != 1) {
+			// Delete removes the selected tower (with its collapse animation)
+			// or the selected foundation; the host checks ownership.
+			if (owner < 2 or selection.ids.size() != 1
+			    or (selection.kind != SelectionKind::TOWER and selection.kind != SelectionKind::FOUNDATION)) {
 				return;
 			}
 			if (guest_world and guest_world().has_value()) {

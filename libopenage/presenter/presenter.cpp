@@ -1245,6 +1245,7 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("controlled", static_cast<int>(game_controller->get_controlled()));
 			this->fvd_hud_state->insert("selection", QString{"No unit selected"});
 			this->fvd_hud_state->insert("isTower", false);
+			this->fvd_hud_state->insert("isFoundation", false);
 			this->fvd_hud_state->insert("health", QString{"—"});
 			this->fvd_hud_state->insert("damage", QString{"Not defined"});
 			this->fvd_hud_state->insert("armor", QString{"Not defined"});
@@ -1376,7 +1377,8 @@ void Presenter::render() {
 	if (this->game_controller) {
 		auto selected = this->game_controller->get_selection_details();
 		if (this->fvd_hud_state
-		    and selected.kind == input::game::SelectionKind::TOWER
+		    and (selected.kind == input::game::SelectionKind::TOWER
+		         or selected.kind == input::game::SelectionKind::FOUNDATION)
 		    and selected.ids.size() == 1) {
 			// A demolished (or combat-destroyed) tower can remain selected
 			// until the next click. Clear it only after authoritative state
@@ -1412,6 +1414,9 @@ void Presenter::render() {
 			}
 			else if (tower) {
 				selection_label = QString{"Tower"};
+			}
+			else if (selected.kind == input::game::SelectionKind::FOUNDATION) {
+				selection_label = QString{"Foundation"};
 			}
 			else if (selected.kind == input::game::SelectionKind::HUNTER_TOWER) {
 				selection_label = QString{"Hunter tower — right-click to set rally point"};
@@ -1454,6 +1459,8 @@ void Presenter::render() {
 			this->fvd_hud_state->insert("controlled", static_cast<int>(controlled));
 			this->fvd_hud_state->insert("selection", selection_label);
 			this->fvd_hud_state->insert("isTower", tower);
+			this->fvd_hud_state->insert("isFoundation",
+				selected.kind == input::game::SelectionKind::FOUNDATION);
 			this->fvd_hud_state->insert("health", health);
 			this->fvd_hud_state->insert("canBuild", controlled >= 2 and builder);
 			this->fvd_hud_state->insert("canAttack", controlled == 1 and hunter_horse);

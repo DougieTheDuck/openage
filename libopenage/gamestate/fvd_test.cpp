@@ -1083,6 +1083,85 @@ void fvd_builder_demolition() {
 	TESTEQUALS(state->get_game_entities().contains(unfinished_demolition), false);
 }
 
+void fvd_builder_delete_foundation() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto alive = [&](entity_id_t id) { return state->get_game_entities().contains(id); };
+	std::optional<entity_id_t> found_builder{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (entity->get_definition() == "fvd.data.entities.Builder"
+		    and ownership->get_owners().get(time::TIME_ZERO) == player_id_t{2}) {
+			found_builder = id;
+		}
+	}
+	TESTEQUALS(found_builder.has_value(), true);
+	const auto builder = *found_builder;
+	auto foundation_at = [&](coord::tile site) {
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			if (entity->get_definition() != "fvd.data.entities.Foundation") continue;
+			auto position = std::dynamic_pointer_cast<component::Position>(
+				entity->get_component(component::component_t::POSITION));
+			if (position->get_positions().get(at(0.01)).to_tile() == site) return id;
+		}
+		return entity_id_t{0};
+	};
+
+	// The Builder walks to the first of three sites; two wait in its queue.
+	const coord::tile first{66, 72}, second{68, 72}, third{70, 72};
+	TESTEQUALS(fvd->request_build(state, 2, {builder}, first.to_phys3_center(), at(0)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, {builder}, second.to_phys3_center(), at(0)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, {builder}, third.to_phys3_center(), at(0)), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{2});
+	const auto first_site = foundation_at(first);
+	const auto second_site = foundation_at(second);
+	const auto third_site = foundation_at(third);
+	TESTEQUALS(first_site != 0 and second_site != 0 and third_site != 0, true);
+
+	// Only the owner may remove them.
+	TESTEQUALS(fvd->delete_owned_foundation(state, 1, second_site, at(0.01)), false);
+	TESTEQUALS(fvd->delete_owned_foundation(state, 3, second_site, at(0.01)), false);
+	TESTEQUALS(fvd->delete_owned_foundation(state, 2, builder, at(0.01)), false);
+
+	// A queued site leaves the queue, frees its tiles and lowers the count.
+	TESTEQUALS(fvd->delete_owned_foundation(state, 2, second_site, at(0.01)), true);
+	TESTEQUALS(alive(second_site), false);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{1});
+	TESTEQUALS(fvd->is_tile_reserved(second), false);
+
+	// The site being walked to: the Builder moves on to the next one.
+	TESTEQUALS(fvd->delete_owned_foundation(state, 2, first_site, at(0.02)), true);
+	TESTEQUALS(alive(first_site), false);
+	TESTEQUALS(fvd->is_tile_reserved(first), false);
+	TESTEQUALS(fvd->get_build_order(builder) != nullptr, true);
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), third);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+
+	// An abandoned foundation goes through the same Delete command as towers.
+	TESTEQUALS(fvd->cancel_build(state, builder, at(0.03)), true);
+	TESTEQUALS(alive(third_site), true);
+	TESTEQUALS(fvd->demolish_owned_tower(state, 3, {third_site}, at(0.04)), false);
+	TESTEQUALS(fvd->demolish_owned_tower(state, 2, {third_site}, at(0.04)), true);
+	TESTEQUALS(alive(third_site), false);
+	TESTEQUALS(foundation_at(third), entity_id_t{0});
+	loop->reach_time(at(5), state);
+	TESTEQUALS(fvd->get_build_order(builder) == nullptr, true);
+}
+
 void fvd_hunter_spawning() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
@@ -3012,7 +3091,7 @@ void fvd_hunter_rally_point() {
 	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {horse->get_id()}, rally, at(0)), false);
 	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central, horse->get_id()}, rally, at(0)), false);
 	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {200, 5, 0}, at(0)), false);
-	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {64.5, 64.5, 0}, at(0)), false);
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {80.5, 64.5, 1}, at(0)), false);
 	TESTEQUALS(fvd->get_hunter_rally_point().has_value(), false);
 	TESTEQUALS(markers(), size_t{0});
 
@@ -3061,5 +3140,39 @@ void fvd_hunter_rally_point() {
 	TESTEQUALS(sent_marker(1), true);
 	TESTEQUALS(sent_marker(2), false);
 	TESTEQUALS(alive(scout->get_id()), true);
+
+	// Builders wall in the centre. A new horse cannot reach the rally point,
+	// so it rides as close as it can get rather than standing at the spawn.
+	entity_id_t newest_before = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		newest_before = std::max(newest_before, id);
+	}
+	const nyan::fqon_t land{"fvd.data.terrain.Land"};
+	for (coord::tile_t ne = 59; ne <= 69; ++ne) {
+		for (coord::tile_t se = 59; se <= 70; ++se) {
+			if (ne == 59 or ne == 69 or se == 59 or se == 70) {
+				state->get_map()->set_path_cost(land, {ne, se}, path::COST_IMPASSABLE, at(40.5));
+			}
+		}
+	}
+	state->get_map()->rebuild_path_grid(land);
+	loop->reach_time(at(47), state);
+	entity_id_t walled_in = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Horse" and id > newest_before
+		    and (walled_in == 0 or id < walled_in)) {
+			walled_in = id;
+		}
+	}
+	TESTEQUALS(walled_in != 0, true);
+	const auto stopped = position_of(walled_in, 47);
+	// The reachable tile nearest the rally point is (68, 64), against the wall.
+	TESTEQUALS(stopped.ne.to_double() > 67.0 and stopped.ne.to_double() < 69.0, true);
+	TESTEQUALS(std::abs(stopped.se.to_double() - 64.5) < 1.5, true);
+	// Ordering it out of the walled-in centre is refused, not a crash: the
+	// pathfinder used to throw when no portal route reached the target.
+	TESTEQUALS(fvd->issue_attack_move(state, 1, {walled_in}, {100.5, 100.5, 0}, at(47)), false);
+	// Setting a rally point behind the wall is allowed, as in AoE2.
+	TESTEQUALS(fvd->set_hunter_rally_point(state, 1, {central}, {90.5, 90.5, 0}, at(47)), true);
 }
 }
