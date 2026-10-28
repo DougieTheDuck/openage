@@ -191,7 +191,7 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
-        "openage::gamestate::tests::fvd_tower_shadow_overlap",
+        "openage::renderer::world::tests::structure_shadow_depth",
         "FVD adjacent tower shadows stay behind the rear structure",
         lambda env: env["has_assets"],
     )

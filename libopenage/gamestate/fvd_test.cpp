@@ -724,56 +724,6 @@ void fvd_scenario() {
 	           time::TIME_ZERO);
 }
 
-void fvd_tower_shadow_overlap() {
-	auto root = util::Path{
-		std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
-	auto graphics = root / "assets" / "fvd" / "graphics";
-	auto tower_sheet = renderer::resources::parser::parse_texture_file(
-		graphics / "medieval-tower" / "medieval_tower.texture");
-	auto texture = renderer::resources::Texture2dData{
-		tower_sheet.get_image_path().value()};
-	const auto &frame = tower_sheet.get_subtex_info(0);
-	const auto frame_position = frame.get_pos();
-	const auto frame_size = frame.get_size();
-	const auto row_size = texture.get_info().get_row_size();
-	const auto pixels = texture.get_data();
-	auto pixel = [&](int32_t x, int32_t y) {
-		return pixels + (frame_position[1] + y) * row_size
-		     + (frame_position[0] + x) * 4;
-	};
-
-	// One tile towards screen bottom-right projects to this displacement in
-	// source pixels for the tower's 0.5 scale and the dimetric camera.
-	constexpr int32_t front_offset_x = 139;
-	constexpr int32_t front_offset_y = 69;
-	size_t overlapping_shadow_pixels = 0;
-	size_t foreground_depth_shadow_pixels = 0;
-	for (int32_t y = front_offset_y;
-	     y < static_cast<int32_t>(frame_size[1]); ++y) {
-		for (int32_t x = front_offset_x;
-		     x < static_cast<int32_t>(frame_size[0]); ++x) {
-			const auto rear = pixel(x, y);
-			const auto front = pixel(x - front_offset_x, y - front_offset_y);
-			const auto front_is_shadow = front[3] > renderer::resources::ALPHA_MASK_CUTOFF
-			                          and front[3] < 255
-			                          and front[0] <= 5
-			                          and front[1] <= 5
-			                          and front[2] <= 5;
-			if (rear[3] < 128 or not front_is_shadow) {
-				continue;
-			}
-			++overlapping_shadow_pixels;
-			// world2d.frag.glsl currently leaves alpha >= 128 at the front
-			// structure's depth, allowing these fragments to darken the rear tower.
-			if (front[3] >= 128) {
-				++foreground_depth_shadow_pixels;
-			}
-		}
-	}
-	TESTNOTEQUALS(overlapping_shadow_pixels, size_t{0});
-	TESTEQUALS(foreground_depth_shadow_pixels, size_t{0});
-}
-
 void fvd_construction() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
