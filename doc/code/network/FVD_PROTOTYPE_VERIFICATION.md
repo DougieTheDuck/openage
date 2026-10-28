@@ -95,6 +95,20 @@ See [multiplayer acceptance](WINDOWS_MULTIPLAYER_ACCEPTANCE.md) and
 for the step-by-step details. Physical-client tests are **not replaced**
 by loopback or worker-level harnesses.
 
+## User manual smoke-check results — 2026-10-28
+
+These are **user-reported** gameplay observations, not automated test executions or completion of the comprehensive 2/4/8-player / cross-platform acceptance matrix. Keep broader verification items open until their full criteria are met.
+
+| Smoke check | Result | Scope / follow-up |
+|---|---|---|
+| 1. Multiplayer synchronisation | **Untested** | Full multi-client state parity remains pending. |
+| 2. Tower construction queues | **PASS** | User confirmed the instructed hands-on Builder FIFO Shift-drag and network queue smoke check; does not independently certify 2/4/8-client coverage or all edge cases. |
+| 3. Hunter combat and stances | **FAIL** | Patrol currently interferes with stance behaviour. Track fix in [hunter-stances task 1.12](../../../openspec/changes/hunter-stances/tasks.md): stances must have the same acquisition/engagement/disengagement semantics while patrolling as while stationary; Linux developer to implement and user to retest. |
+| 4. Disconnects and host migration | **PASS** | User confirmed the instructed hands-on disconnect / host-migration smoke check; leave repeated starts, multi-client and cross-platform coverage open. |
+| 5. Building destruction and rendering | **PASS** | User confirmed the instructed hands-on destruction / depth / shadow smoke check; not a substitute for full graphical parity and recovery tests. |
+
+No tests were run by this documentation update. Do not mark the original broad OpenSpec implementation/acceptance milestones complete solely on this smoke-check evidence.
+
 ## Outstanding implementation versus verification
 
 **Still implementation:** 1.7 any missing network target-highlight/rally
