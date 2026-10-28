@@ -1491,6 +1491,13 @@ void Presenter::render() {
 				if (local_hud) {
 					local_view = this->fvd_local_view(*local_hud, controlled);
 				}
+				else if (this->fvd_replication) {
+					// A guest draws only proxies built from the host's already
+					// filtered snapshot. Clear the shown filter a pre-match local
+					// view left behind, or anything created after the match
+					// starts (new towers, horses) stays hidden.
+					this->world_renderer->set_shown(std::nullopt);
+				}
 				const network::WorldState *construction_world = replica_for_hud ? &*replica_for_hud
 				                                              : local_view ? &*local_view : nullptr;
 				if (not this->fvd_replication and local_view) {
