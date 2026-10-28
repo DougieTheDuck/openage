@@ -266,6 +266,11 @@ def tests_cpp():
         "FVD Hunter Observe/Aggressive/Defensive stances and Patrol",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_hunter_patrol_stances",
+        "FVD Patrol behaviour under Observe, Defensive and Aggressive stances",
+        lambda env: env["has_assets"],
+    )
 
 
 def demos_cpp():

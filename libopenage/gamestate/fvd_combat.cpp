@@ -39,6 +39,10 @@ constexpr double HORSE_SIGHT_RANGE = 8.0;
 /** Furthest a Defensive engagement may stray from its engagement point. */
 constexpr double HORSE_LEASH_RANGE = 6.0;
 constexpr double HORSE_LEASH_RANGE_SQUARED = HORSE_LEASH_RANGE * HORSE_LEASH_RANGE;
+constexpr double HORSE_SIGHT_RANGE_SQUARED = HORSE_SIGHT_RANGE * HORSE_SIGHT_RANGE;
+/** Furthest a Defensive patrol chases from where it left its route. */
+constexpr double PATROL_LEASH_RANGE = 10.0;
+constexpr double PATROL_LEASH_RANGE_SQUARED = PATROL_LEASH_RANGE * PATROL_LEASH_RANGE;
 
 /** Use stable ordering for simultaneous combat and lethal-hit decisions. */
 std::vector<entity_id_t> entities_by_definition(
@@ -623,6 +627,13 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 		const auto stance = this->get_hunter_stance(id);
 		// A Defensive engagement guards its engagement point, the order's destination.
 		const bool defending = order.stance_engagement and stance == HunterStance::DEFENSIVE;
+		// On patrol the stance decides whether and how far the horse fights.
+		const bool patrolling = order.patrol_return.has_value();
+		if (patrolling and stance == HunterStance::OBSERVE and order.target) {
+			halt_for_engagement(horse, time);
+			order.target.reset();
+			order.patrol_engagement.reset();
+		}
 
 		auto eligible = [&](entity_id_t candidate) {
 			return this->hunter_target_eligible(state, candidate, time);
@@ -658,21 +669,48 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			this->attack_orders.erase(order_it);
 			continue;
 		}
-		if (not order.target) {
+		if (not order.target and not (patrolling and stance == HunterStance::OBSERVE)) {
 			// A tower within firing range takes priority over a nearby
 			// Builder, even if the original move destination was reached.
-			// An Aggressive engagement keeps looking as far as it can see;
-			// a Defensive one only accepts enemies near its engagement point.
-			const bool aggressive = order.stance_engagement
-			                        and stance == HunterStance::AGGRESSIVE;
+			// Aggressive horses look as far as they can see; Defensive ones
+			// only accept enemies near the point they are guarding.
+			const bool aggressive = stance == HunterStance::AGGRESSIVE
+			                        and (order.stance_engagement or patrolling);
+			std::optional<coord::phys3> anchor{};
+			double anchor_radius = HORSE_LEASH_RANGE;
+			if (defending) {
+				anchor = order.destination;
+			}
+			else if (patrolling and order.patrol_engagement) {
+				anchor = order.patrol_engagement;
+				anchor_radius = PATROL_LEASH_RANGE;
+			}
 			const auto nearest = this->nearest_hunter_target(
 				state, horse, towers, builders,
 				aggressive ? HORSE_SIGHT_RANGE : HORSE_ATTACK_RANGE,
-				defending ? std::make_optional(order.destination) : std::nullopt,
-				HORSE_LEASH_RANGE, time);
+				anchor, anchor_radius, time);
 			if (nearest) {
 				order.target = nearest;
 				halt_for_engagement(horse, time);
+				if (patrolling and stance == HunterStance::DEFENSIVE and not order.patrol_engagement) {
+					order.patrol_engagement = current;
+				}
+			}
+		}
+		if (patrolling and order.target) {
+			const auto enemy_at = position_at(state->get_game_entity(*order.target), time);
+			if (stance == HunterStance::AGGRESSIVE
+			    and distance_squared(current, enemy_at) > HORSE_SIGHT_RANGE_SQUARED) {
+				// An Aggressive patrol that loses its quarry stops where it is.
+				halt_for_engagement(horse, time);
+				this->attack_orders.erase(order_it);
+				continue;
+			}
+			if (stance == HunterStance::DEFENSIVE and order.patrol_engagement
+			    and (distance_squared(current, *order.patrol_engagement) > PATROL_LEASH_RANGE_SQUARED
+			         or distance_squared(enemy_at, *order.patrol_engagement) > PATROL_LEASH_RANGE_SQUARED)) {
+				halt_for_engagement(horse, time);
+				order.target.reset();
 			}
 		}
 		if (defending and order.target) {
@@ -779,6 +817,17 @@ void FVD::combat_tick(const std::shared_ptr<GameState> &state,
 			}
 			this->attack_orders.erase(order_it);
 			continue;
+		}
+
+		// A Defensive patrol walks back to where it left its route first.
+		if (order.patrol_engagement) {
+			if ((current - *order.patrol_engagement).length() >= 0.15) {
+				if (not travelling(horse, time)) {
+					system::Move::move_default(horse, state, *order.patrol_engagement, time);
+				}
+				continue;
+			}
+			order.patrol_engagement.reset();
 		}
 
 		// After reaching the destination, remain alert to enemies within

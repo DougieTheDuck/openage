@@ -350,6 +350,8 @@ private:
 		std::optional<time::time_t> pending_hit{};
 		/** Patrol's other endpoint, swapped with the destination on arrival. */
 		std::optional<coord::phys3> patrol_return{};
+		/** Where a Defensive patrol left its route to chase; it returns here. */
+		std::optional<coord::phys3> patrol_engagement{};
 		/** Started by an Aggressive or Defensive stance rather than a command. */
 		bool stance_engagement = false;
 	};

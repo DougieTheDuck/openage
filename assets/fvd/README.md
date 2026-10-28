@@ -104,8 +104,11 @@ Each horse also has a stance for when it has no order, shown in the HUD for the 
 **Z** sets Aggressive: the horse engages the nearest completed tower within eight tiles, otherwise the nearest Builder, and pursues it.
 **X** sets Defensive: the horse engages enemies within its four-tile firing range, gives up once the fight moves more than six tiles from where it began, and walks back there.
 Orders always take precedence, so a Move travels past enemies; an arrived Attack-move hands over to an Aggressive or Defensive stance.
-Press **P** and left-click a point to Patrol: the horses loop between their starting positions and that point, fighting enemies within four tiles like Attack-move and then continuing.
-Run `bin/run test openage::gamestate::tests::fvd_hunter_stances` for the stance and Patrol rules.
+Press **P** and left-click a point to Patrol: the horses loop between their starting positions and that point, and their stance decides how they fight on the way.
+Observe horses never attack while patrolling.
+Defensive horses attack enemies within four tiles, give up once the chase is more than ten tiles from where they left the route, then return and carry on.
+Aggressive horses attack anything within eight tiles; if the target escapes beyond that, they stop patrolling and stay where they are.
+Run `bin/run test openage::gamestate::tests::fvd_hunter_stances` and `openage::gamestate::tests::fvd_hunter_patrol_stances` for the stance and Patrol rules.
 The gather point remains unimplemented.
 Completed towers automatically target nearby horses and fire scheduled arrows.
 Only authoritative impacts damage health; killing blows credit the tower's Builder.

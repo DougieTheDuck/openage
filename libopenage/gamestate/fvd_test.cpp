@@ -2494,6 +2494,8 @@ void fvd_hunter_stances() {
 		state, 1, {patroller->get_id(), observed->get_id()}, {106, 100, 0}, at(0)), false);
 	TESTEQUALS(has_order(patroller), false);
 	TESTEQUALS(fvd->issue_patrol(state, 1, {patroller->get_id()}, {106, 100, 0}, at(0)), true);
+	TESTEQUALS(fvd->set_hunter_stance(
+		state, 1, {ambusher->get_id()}, HunterStance::DEFENSIVE, at(0)), true);
 	TESTEQUALS(fvd->issue_patrol(state, 1, {ambusher->get_id()}, {106, 120, 0}, at(0)), true);
 
 	// Drive the authoritative 0.2-second combat tick and track each loop.
@@ -2564,10 +2566,111 @@ void fvd_hunter_stances() {
 	TESTEQUALS(patrol_out and patrol_back and patrol_out_again, true);
 	TESTEQUALS(has_order(patroller), true);
 
-	// A patrolling horse fights an enemy beside its route, then resumes.
+	// A Defensive patrol fights an enemy beside its route, then resumes.
 	run_until(16.0);
 	TESTEQUALS(state->get_game_entities().contains(ambushed->get_id()), false);
 	TESTEQUALS(ambush_resumed, true);
 	TESTEQUALS(has_order(ambusher), true);
+}
+
+void fvd_hunter_patrol_stances() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	auto spawn = [&](player_id_t owner, const char *definition, coord::phys3 position) {
+		return entities->spawn_game_entity(
+			loop, state, owner, std::string{"fvd.data.entities."} + definition, position, at(0));
+	};
+	auto position_of = [&](const std::shared_ptr<GameEntity> &entity, double seconds) {
+		return std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION))->get_positions().get(at(seconds));
+	};
+	auto health_of = [&](const std::shared_ptr<GameEntity> &entity, double seconds) {
+		return std::dynamic_pointer_cast<component::Live>(
+			entity->get_component(component::component_t::LIVE))
+		    ->get_attribute(at(seconds), "fvd.data.entities.Health")->get(at(seconds));
+	};
+	auto has_order = [&](const std::shared_ptr<GameEntity> &horse) {
+		const auto orders = fvd->get_attack_order_state();
+		return std::any_of(orders.begin(), orders.end(), [&](const auto &order) {
+			return order.horse_id == horse->get_id();
+		});
+	};
+
+	// Three patrols far enough apart that no sight radius overlaps another.
+	auto watcher = spawn(1, "Horse", {20, 20, 0});
+	auto ignored = spawn(2, "Builder", {23, 22, 0});
+	auto guard = spawn(1, "Horse", {20, 60, 0});
+	auto fleeing = spawn(2, "Builder", {23, 63, 0});
+	auto hunter = spawn(1, "Horse", {20, 100, 0});
+	auto quarry = spawn(2, "Builder", {23, 107, 0});
+	TESTEQUALS(fvd->set_hunter_stance(state, 1, {guard->get_id()}, HunterStance::DEFENSIVE, at(0)), true);
+	TESTEQUALS(fvd->set_hunter_stance(state, 1, {hunter->get_id()}, HunterStance::AGGRESSIVE, at(0)), true);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {watcher->get_id()}, {26, 20, 0}, at(0)), true);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {guard->get_id()}, {26, 60, 0}, at(0)), true);
+	TESTEQUALS(fvd->issue_patrol(state, 1, {hunter->get_id()}, {26, 100, 0}, at(0)), true);
+
+	double now = 0;
+	double guard_furthest = 0;
+	bool guard_resumed = false;
+	auto run_until = [&](double until, const std::function<void()> &each_tick = {}) {
+		while (now + 0.1 < until) {
+			now += 0.2;
+			loop->reach_time(at(now), state);
+			fvd->combat_tick(state, at(now));
+			const auto guard_at = position_of(guard, now);
+			guard_furthest = std::max(guard_furthest, std::abs(guard_at.se.to_double() - 60.0));
+			guard_resumed = guard_resumed
+			             or (guard_furthest > 1.0 and std::abs(guard_at.se.to_double() - 60.0) < 0.2
+			                 and guard_at.ne.to_double() >= 25.8);
+			if (each_tick) {
+				each_tick();
+			}
+		}
+	};
+
+	// The Aggressive patrol sees a Builder seven tiles off its route and
+	// leaves the route for it; a Defensive one would ignore it.
+	run_until(1.0);
+	TESTEQUALS(has_order(hunter), true);
+	TESTEQUALS(position_of(hunter, now).se.to_double() > 100.5, true);
+
+	// Its quarry escapes beyond sight, so it stops patrolling where it is.
+	std::dynamic_pointer_cast<component::Position>(
+		quarry->get_component(component::component_t::POSITION))->set_position(at(now), {23, 125, 0});
+	run_until(1.4);
+	TESTEQUALS(has_order(hunter), false);
+	fvd->get_hunter_stance(hunter->get_id()) == HunterStance::AGGRESSIVE or TESTFAIL;
+	const auto hunter_stopped = position_of(hunter, now);
+
+	// The Defensive patrol has engaged the Builder near its route by now;
+	// the Builder runs, and the horse chases until the ten-tile leash.
+	TESTEQUALS(health_of(fleeing, now) < 25, true);
+	system::Move::move_default(fleeing, state, {23, 95, 0}, at(now));
+
+	run_until(16.0);
+	// Observe on patrol never attacks, even two tiles from its route.
+	TESTEQUALS(health_of(ignored, now), int64_t{25});
+	TESTEQUALS(has_order(watcher), true);
+	// The Defensive horse chased, gave up within its leash and went back
+	// to patrolling the original route; its target escaped.
+	TESTEQUALS(guard_furthest > 1.0 and guard_furthest < 11.0, true);
+	TESTEQUALS(guard_resumed, true);
+	TESTEQUALS(has_order(guard), true);
+	TESTEQUALS(state->get_game_entities().contains(fleeing->get_id()), true);
+	// The Aggressive horse stayed where it lost its quarry.
+	TESTEQUALS((position_of(hunter, now) - hunter_stopped).length() < 0.2, true);
+	TESTEQUALS(has_order(hunter), false);
 }
 }

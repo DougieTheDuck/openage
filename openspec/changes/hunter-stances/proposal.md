@@ -18,8 +18,11 @@ there is no way to keep a group sweeping an area.
     firing range, gives up beyond 6 tiles from where it engaged, and
     returns to that point afterwards.
 - Add a **Patrol** order: the horse moves to a clicked point, then loops
-  between its starting position and that point indefinitely, engaging
-  enemies met en route with AttackMove rules and then resuming the loop.
+  between its starting position and that point indefinitely. Its stance
+  decides how it fights on the way, as in AoE2: Observe never attacks;
+  Defensive chases up to 10 tiles from where it left the route, then
+  returns and carries on; Aggressive chases anything in sight and, if
+  the target escapes, stops patrolling where it is.
 - A stance applies only while a horse has no order. Move, AttackMove,
   focus and Patrol orders take precedence; an arrived AttackMove hands
   over to an Aggressive or Defensive stance.
