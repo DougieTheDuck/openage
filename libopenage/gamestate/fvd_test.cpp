@@ -914,6 +914,111 @@ void fvd_construction() {
 	TESTEQUALS(fvd->destroy_tower(state, first_tower, t(222)), false);
 }
 
+/**
+ * Delete demolishes one owned tower through the authoritative command path.
+ * This also covers construction cancellation, pathfinding and replication.
+ */
+void fvd_builder_demolition() {
+	auto root = util::Path{
+		std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	entity_id_t builder_id = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (ownership->get_owners().get(time::TIME_ZERO) == player_id_t{2}) {
+			builder_id = id;
+			break;
+		}
+	}
+	TESTEQUALS(builder_id != 0, true);
+	const coord::phys3 site{61, 66, 0};
+	auto tower_at_site = [&](const time::time_t &time) {
+		entity_id_t tower_id = 0;
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			if (entity->get_definition() != "fvd.data.entities.Tower") continue;
+			auto position = std::dynamic_pointer_cast<component::Position>(
+				entity->get_component(component::component_t::POSITION));
+			if (position->get_positions().get(time).to_tile() == site.to_tile()) {
+				tower_id = id;
+			}
+		}
+		return tower_id;
+	};
+	auto land_grid = state->get_map()->get_pathfinder()->get_grid(
+		state->get_map()->get_grid_id("fvd.data.terrain.Land"));
+	auto sector_size = land_grid->get_sector_size();
+	auto sector = land_grid->get_sector(61 / sector_size, 66 / sector_size);
+	auto local = site.to_tile() - sector->get_position().to_tile(sector_size);
+	auto cost = [&]() { return sector->get_cost_field()->get_cost(local); };
+	event::SendCommandHandler commander;
+	auto demolish = [&](player_id_t owner, const std::vector<entity_id_t> &ids,
+	                    const time::time_t &time) {
+		bool accepted = false;
+		commander.invoke(*loop, nullptr, state, time,
+		                 {{"type", component::command::command_t::DEMOLISH_TOWER},
+		                  {"owner", owner},
+		                  {"entity_ids", ids},
+		                  {"result_cb", std::function<void(bool)>{[&accepted](bool result) {
+			                  accepted = result;
+		                  }}}});
+		return accepted;
+	};
+
+	TESTEQUALS(fvd->request_build(state, 2, {builder_id}, site, time::TIME_ZERO), true);
+	loop->reach_time(at(0.1), state);
+	auto tower = tower_at_site(at(0.1));
+	TESTEQUALS(tower != entity_id_t{0}, true);
+	TESTEQUALS(cost(), path::COST_IMPASSABLE);
+	TESTEQUALS(demolish(1, {tower}, at(0.11)), false); // Hunter role
+	TESTEQUALS(demolish(3, {tower}, at(0.11)), false); // Foreign Builder
+	TESTEQUALS(demolish(2, {builder_id}, at(0.11)), false); // Not a tower
+	TESTEQUALS(demolish(2, {}, at(0.11)), false);
+	TESTEQUALS(demolish(2, {tower, tower}, at(0.11)), false);
+	TESTEQUALS(demolish(2, {tower + 100000}, at(0.11)), false);
+	TESTEQUALS(state->get_game_entities().contains(tower), true);
+	TESTEQUALS(demolish(2, {tower}, at(0.12)), true);
+	TESTEQUALS(state->get_game_entities().contains(tower), false);
+	TESTEQUALS(cost(), path::cost_t{1});
+	TESTEQUALS(demolish(2, {tower}, at(0.13)), false);
+	auto snapshot = network::capture_fvd_presentation_state(state, at(0.13));
+	TESTEQUALS(std::none_of(snapshot.entities.begin(), snapshot.entities.end(),
+	                       [tower](const auto &entry) { return entry.entity_id == tower; }), true);
+
+	// Delete during construction must not leave a foundation, reservation
+	// or scheduled completion event able to resurrect the tower.
+	TESTEQUALS(fvd->request_build(state, 2, {builder_id}, site, at(0.2)), true);
+	loop->reach_time(at(0.25), state);
+	auto unfinished = tower_at_site(at(0.25));
+	TESTEQUALS(unfinished != entity_id_t{0}, true);
+	TESTEQUALS(fvd->get_build_order(builder_id) != nullptr, true);
+	TESTEQUALS(fvd->is_tile_reserved(site.to_tile()), true);
+	TESTEQUALS(demolish(2, {unfinished}, at(0.26)), true);
+	TESTEQUALS(state->get_game_entities().contains(unfinished), false);
+	TESTEQUALS(fvd->get_build_order(builder_id) == nullptr, true);
+	TESTEQUALS(fvd->is_tile_reserved(site.to_tile()), false);
+	TESTEQUALS(cost(), path::cost_t{1});
+	loop->reach_time(at(1), state);
+	TESTEQUALS(tower_at_site(at(1)), entity_id_t{0});
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		(void)id;
+		TESTNOTEQUALS(entity->get_definition(), "fvd.data.entities.Foundation");
+	}
+}
+
 void fvd_hunter_spawning() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");

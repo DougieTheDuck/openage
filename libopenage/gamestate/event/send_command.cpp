@@ -178,6 +178,13 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			}
 			return;
 		}
+		if (command_type == component::command::command_t::DEMOLISH_TOWER) {
+			const bool accepted = fvd->demolish_owned_tower(gstate, owner, ids, time);
+			if (result_cb) {
+				result_cb(accepted);
+			}
+			return;
+		}
 		if (command_type == component::command::command_t::SET_STANCE) {
 			const bool accepted = params.check_type<HunterStance>("stance")
 			                  and fvd->set_hunter_stance(

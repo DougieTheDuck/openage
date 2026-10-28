@@ -16,10 +16,10 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 /**
  * Current protocol version.
  */
-// Hunter stances add an entity flag and command kinds that older clients
-// reject, so refuse them at the handshake instead of mid-match. The minor
-// version keeps counting relay features, which gate on it.
-constexpr uint16_t PROTOCOL_MAJOR = 14;
+// Builder tower demolition adds a command kind that earlier clients reject.
+// Refuse incompatible clients at the handshake rather than mid-match.
+// Minor versions continue to gate compatible relay features.
+constexpr uint16_t PROTOCOL_MAJOR = 15;
 constexpr uint16_t PROTOCOL_MINOR = 4;
 
 /** Oldest protocol minor version compatible with this implementation. */

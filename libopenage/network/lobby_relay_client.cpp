@@ -47,6 +47,7 @@ const char *order_name(CommandKind kind) {
 	case CommandKind::PRIORITIZE_FOUNDATION: return "Prioritize foundation";
 	case CommandKind::SET_STANCE: return "Stance";
 	case CommandKind::PATROL: return "Patrol";
+	case CommandKind::DEMOLISH_TOWER: return "Demolish tower";
 	}
 	return "Order";
 }

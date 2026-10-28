@@ -28,7 +28,7 @@ Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
 `bin/run test openage::gamestate::tests::fvd_animation_phase`,
 `bin/run test openage::network::tests::messages` and
 `bin/run test openage::network::tests::world_delta`.
-Multiplayer protocol v14 requires both clients and the relay to be rebuilt.
+Multiplayer protocol v15 adds Builder tower demolition commands; all participating clients and the relay must use compatible builds.
 
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
@@ -137,7 +137,7 @@ Press **F9** before the first Hunter appears to spawn it immediately and continu
 This debug shortcut runs only on the local or host simulation; guests cannot trigger it.
 Drag with the left mouse button to select your Builder and right-click to move it.
 The lower-left HUD displays the controlled player and selected entity.
-Selecting a tower shows its live HP and its damage and armour fields instead of a build action.
+Selecting a tower shows its live HP and its damage and armour fields instead of a build action. As a Builder, select one of your own completed or in-progress towers and press **Delete** to demolish it immediately. The host validates ownership, removes the tower for all players and restores its pathfinding footprint. Demolishing an in-progress tower cancels that Builder's current construction queue without leaving a replacement foundation; existing lifetime tower kills remain credited.
 Tower damage and armour read the configured gameplay values, currently 2 arrow damage and 1 armour.
 Only a selected Builder can enter tower placement mode, using the B key or Build Tower HUD button.
 Select a Builder, click **Build Tower** (or press **B**) and move the cursor to see a footprint preview (green for available, red for occupied, reserved or out of bounds).

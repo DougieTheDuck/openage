@@ -128,7 +128,8 @@ public:
 	 */
 	bool cancel_build(const std::shared_ptr<GameState> &state,
 	                  entity_id_t builder,
-	                  const time::time_t &time);
+	                  const time::time_t &time,
+	                  bool preserve_foundation = true);
 
 	/** Validate ownership and the full tower footprint for placement preview. */
 	bool can_place_tower(const std::shared_ptr<GameState> &state,
@@ -170,6 +171,15 @@ public:
 	/** Recalculate current routes and release footprints of destroyed towers. */
 	void refresh_paths(const std::shared_ptr<GameState> &state,
 	                   const time::time_t &time);
+
+	/**
+	 * Immediately demolish exactly one selected tower owned by a Builder player.
+	 * Reject foreign towers, non-towers and stale selections without mutation.
+	 * In-progress construction is canceled without leaving a foundation.
+	 */
+	bool demolish_owned_tower(const std::shared_ptr<GameState> &state,
+	                         player_id_t owner, const std::vector<entity_id_t> &ids,
+	                         const time::time_t &time);
 
 	/** Destroy a tower and restore the path costs under its footprint. */
 	bool destroy_tower(const std::shared_ptr<GameState> &state,

@@ -1098,7 +1098,7 @@ void Presenter::init_input() {
 			// The global input context must forward placement keys to
 			// the FVD-specific game binding context.
 			for (auto key : {Qt::Key_B, Qt::Key_A, Qt::Key_P, Qt::Key_Z, Qt::Key_X, Qt::Key_C,
-			                 Qt::Key_Escape, Qt::Key_F9}) {
+			                 Qt::Key_Delete, Qt::Key_Escape, Qt::Key_F9}) {
 				input_ctx->bind(
 					input::Event{input::event_class::KEYBOARD, key,
 					             Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
@@ -1279,6 +1279,27 @@ void Presenter::render() {
 	}
 	if (this->game_controller) {
 		auto selected = this->game_controller->get_selection_details();
+		if (this->fvd_hud_state
+		    and selected.kind == input::game::SelectionKind::TOWER
+		    and selected.ids.size() == 1) {
+			// A demolished (or combat-destroyed) tower can remain selected
+			// until the next click. Clear it only after authoritative state
+			// confirms removal, never when sending an unacknowledged order.
+			auto world = this->fvd_replication
+				? this->fvd_replication->get_world_state()
+				: std::optional<network::WorldState>{};
+			const auto local = this->fvd_replication
+				? nullptr : this->simulation->get_fvd_presentation_state();
+			const network::WorldState *authoritative = world ? &*world : local.get();
+			if (authoritative and std::none_of(
+			        authoritative->entities.begin(), authoritative->entities.end(),
+			        [&](const network::EntityState &entity) {
+				        return entity.entity_id == selected.ids.front();
+			        })) {
+				this->game_controller->set_selected({});
+				selected = this->game_controller->get_selection_details();
+			}
+		}
 		this->hud_renderer->set_selected(selected.ids);
 		if (this->fvd_hud_state) {
 			auto controlled = this->game_controller->get_controlled();

@@ -145,6 +145,24 @@ void messages() {
 	invalid_target_flag[11] = 1;
 	TESTTHROWS(decode_command_intent(invalid_target_flag));
 
+	// Demolition carries exactly one selected tower ID and no optional intent.
+	CommandIntent demolition{12, CommandKind::DEMOLISH_TOWER, {201}};
+	auto demolition_roundtrip = decode_command_intent(encode_command_intent(demolition));
+	TESTEQUALS(demolition_roundtrip.kind == CommandKind::DEMOLISH_TOWER, true);
+	TESTEQUALS(demolition_roundtrip.entity_ids.size(), size_t{1});
+	TESTEQUALS(demolition_roundtrip.entity_ids.front(), gamestate::entity_id_t{201});
+	TESTEQUALS(demolition_roundtrip.stance.has_value(), false);
+	TESTEQUALS(demolition_roundtrip.target_entity.has_value(), false);
+	demolition.entity_ids.clear();
+	TESTTHROWS(encode_command_intent(demolition));
+	demolition.entity_ids = {201, 202};
+	TESTTHROWS(encode_command_intent(demolition));
+	auto invalid_demolition = encode_command_intent(CommandIntent{
+		12, CommandKind::DEMOLISH_TOWER, {201}});
+	// Entity count starts at offset 12 in the command intent.
+	invalid_demolition[15] = 0;
+	TESTTHROWS(decode_command_intent(invalid_demolition));
+
 	auto invalid_kind = encoded_intent;
 	invalid_kind[8] = 0;
 	invalid_kind[9] = 6;

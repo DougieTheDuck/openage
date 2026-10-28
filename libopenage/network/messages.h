@@ -60,6 +60,7 @@ enum class CommandKind : uint16_t {
 	PRIORITIZE_FOUNDATION = 5,
 	SET_STANCE = 6,
 	PATROL = 7,
+	DEMOLISH_TOWER = 8,
 };
 
 /** Host decision for one client command. */

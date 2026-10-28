@@ -42,6 +42,8 @@ gamestate::component::command::command_t simulation_command(CommandKind kind) {
 		return gamestate::component::command::command_t::SET_STANCE;
 	case CommandKind::PATROL:
 		return gamestate::component::command::command_t::PATROL;
+	case CommandKind::DEMOLISH_TOWER:
+		return gamestate::component::command::command_t::DEMOLISH_TOWER;
 	default:
 		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
 		                     << static_cast<uint16_t>(kind)};

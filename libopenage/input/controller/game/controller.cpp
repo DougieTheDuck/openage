@@ -517,6 +517,34 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 
 	auto fvd = simulation->get_game()->get_state()->get_fvd();
 	if (fvd) {
+		binding_func_t demolish_selected_tower{[simulation, time_loop, send_guest_command, guest_world](
+		                                        const event_arguments &,
+		                                        const std::shared_ptr<Controller> controller) {
+			const auto selection = controller->get_selection_details();
+			const auto owner = static_cast<gamestate::player_id_t>(controller->get_controlled());
+			if (owner < 2 or selection.kind != SelectionKind::TOWER or selection.ids.size() != 1) {
+				return;
+			}
+			if (guest_world and guest_world().has_value()) {
+				if (send_guest_command) {
+					send_guest_command(network::CommandIntent{
+						0, network::CommandKind::DEMOLISH_TOWER, selection.ids});
+				}
+				return;
+			}
+			event::EventHandler::param_map::map_t params{
+				{"type", gamestate::component::command::command_t::DEMOLISH_TOWER},
+				{"owner", owner},
+				{"entity_ids", selection.ids},
+			};
+			simulation->get_event_loop()->submit_event(
+				"game.send_command", simulation->get_commander(),
+				simulation->get_game()->get_state(),
+				time_loop->get_clock()->get_time(), params);
+		}};
+		ctx->bind(Event{event_class::KEYBOARD, Qt::Key_Delete,
+		                Qt::KeyboardModifier::NoModifier, QEvent::KeyRelease},
+		          binding_action{forward_action_t::CLEAR, demolish_selected_tower});
 		std::weak_ptr<Controller> weak_controller = controller;
 		controller->set_hunter_stance_action([weak_controller, set_stance](gamestate::HunterStance stance) {
 			if (auto active = weak_controller.lock()) {
