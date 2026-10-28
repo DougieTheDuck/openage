@@ -5,7 +5,7 @@ in vec2 vert_uv;
 layout(location=0) out vec4 col;
 
 uniform sampler2D tex;
-uniform bool cbits = true;
+uniform bool cbits = false;
 
 // position (top left corner) and size: (x, y, width, height)
 uniform vec4 tile_params;

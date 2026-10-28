@@ -191,6 +191,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_tower_shadow_overlap",
+        "FVD adjacent tower shadows stay behind the rear structure",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_construction",
         "FVD Builder movement, timed construction and cancellation",
         lambda env: env["has_assets"],
