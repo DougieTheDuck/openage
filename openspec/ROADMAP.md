@@ -13,6 +13,9 @@ a tower from the UI, place an order to build it on any free tile, and watch the
 Builder walk to an adjacent tile and construct it. Towers defend against approaching 
 Hunter units. The human Hunter selects the horses gathering at map center and gives
 them attack-move orders; horses never advance automatically after spawning.
+A permanent, indestructible Hunter tower occupies the map center. Horses spawn
+around it; at the 20-second Hunter start it begins attacking enemy Builders
+within 10 tiles with missiles dealing 100 damage per hit.
 All players see compatible game state and scores but only see their kill count,
 which is incremented for every hunter unit one of their towers kills.
 
