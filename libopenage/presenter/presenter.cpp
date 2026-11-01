@@ -1646,7 +1646,15 @@ void Presenter::render() {
 			                 or selected.kind == input::game::SelectionKind::GROUP_HORSES;
 			QString selection_label{"No unit selected"};
 			if (selected.ids.size() > 1) {
-				selection_label = QString{"%1 units selected"}.arg(static_cast<int>(selected.ids.size()));
+				const auto count = static_cast<int>(selected.ids.size());
+				if (selected.kind == input::game::SelectionKind::GROUP_TOWERS)
+					selection_label = QString{"%1 towers selected"}.arg(count);
+				else if (selected.kind == input::game::SelectionKind::GROUP_CONSTRUCTING_TOWERS)
+					selection_label = QString{"%1 towers under construction selected"}.arg(count);
+				else if (selected.kind == input::game::SelectionKind::GROUP_FOUNDATIONS)
+					selection_label = QString{"%1 foundations selected"}.arg(count);
+				else
+					selection_label = QString{"%1 units selected"}.arg(count);
 			}
 			else if (builder) {
 				selection_label = this->game_controller->is_garrison_mode_active()
@@ -1678,22 +1686,22 @@ void Presenter::render() {
 				             .arg(static_cast<qlonglong>(current))
 				             .arg(selected.render_entity->get_max_health());
 			}
-			// Guest render entities are lightweight proxies; health is supplied
-			// by the authoritative state rather than the paused local world.
-			if (this->fvd_replication and selected.ids.size() == 1) {
-				auto replicated = this->fvd_replication->get_world_state();
-				if (replicated) {
-					auto id = selected.ids.front();
-					auto entity = std::find_if(
-						replicated->entities.begin(), replicated->entities.end(),
-						[id](const network::EntityState &entry) {
-							return entry.entity_id == id;
-						});
-					if (entity != replicated->entities.end()
-					    and entity->health and entity->maximum_health) {
+			// Inspectable allied and Hunter-visible enemy towers may lack a
+			// local RenderEntity pointer. Always display their authoritative HP.
+			if (selected.ids.size() == 1) {
+				const auto replicated = this->fvd_replication
+					? this->fvd_replication->get_world_state()
+					: std::optional<network::WorldState>{};
+				const auto local = replicated ? nullptr : this->simulation->get_fvd_presentation_state();
+				const network::WorldState *world = replicated ? &*replicated : local.get();
+				if (world) {
+					const auto id = selected.ids.front();
+					const auto entity = std::find_if(world->entities.begin(), world->entities.end(),
+						[id](const network::EntityState &entry) { return entry.entity_id == id; });
+					if (entity != world->entities.end() and entity->health and entity->maximum_health) {
 						health = QString{"%1 / %2"}
-						             .arg(static_cast<qlonglong>(*entity->health))
-						             .arg(static_cast<qlonglong>(*entity->maximum_health));
+						    .arg(static_cast<qlonglong>(*entity->health))
+						    .arg(static_cast<qlonglong>(*entity->maximum_health));
 					}
 				}
 			}
@@ -1736,13 +1744,19 @@ void Presenter::render() {
 					                       [id](const network::EntityState &entry) {
 						                       return entry.entity_id == id;
 					                       });
-					if (it != construction_world->entities.end()
-					    and it->owner_id >= 2) {
-						selection_label = it->garrison_player == controlled
-							? QString{"Tower — your Builder garrisoned (G to exit)"}
-							: it->garrison_player
-								? QString{"Tower — allied Builder garrisoned"}
-								: QString{"Tower — right-click to set your ungarrison point"};
+					if (it != construction_world->entities.end() and it->owner_id >= 2) {
+						if (controlled == 1) {
+							selection_label = QString{"Enemy tower — Player %1"}.arg(it->owner_id);
+						}
+						else if (it->garrison_player == controlled) {
+							selection_label = QString{"Tower — your Builder garrisoned (G to exit)"};
+						}
+						else if (it->owner_id != controlled) {
+							selection_label = QString{"Allied tower — Player %1"}.arg(it->owner_id);
+						}
+						else {
+							selection_label = QString{"Tower — right-click to set your ungarrison point"};
+						}
 						this->fvd_hud_state->insert("selection", selection_label);
 					}
 				}
