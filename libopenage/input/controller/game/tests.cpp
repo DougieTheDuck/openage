@@ -110,6 +110,7 @@ void fvd_structure_group_selection() {
 }
 
 void tower_placement_mode() {
+	fvd_structure_group_selection();
 	Controller controller{{1, 2, 3}, 2};
 	controller.set_drag_select_start({320, 180}, {10, 20});
 	TESTEQUALS(controller.get_drag_select_start(), (coord::input{320, 180}));
