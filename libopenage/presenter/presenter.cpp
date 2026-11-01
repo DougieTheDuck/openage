@@ -1975,7 +1975,11 @@ void Presenter::render() {
 							         or std::any_of(construction_world->entities.begin(),
 							                        construction_world->entities.end(),
 							                        [&](const network::EntityState &entry) {
-								                        return entry.definition != "fvd.data.entities.TowerDemolition"
+								                        // Live units can be displaced at construction time;
+								                        // they must not invalidate a planned foundation.
+								                        return entry.definition != "fvd.data.entities.Builder"
+								                            and entry.definition != "fvd.data.entities.Horse"
+								                            and entry.definition != "fvd.data.entities.TowerDemolition"
 								                            and entry.definition != "fvd.data.entities.HunterRallyPoint"
 								                            and entry.position.to_tile() == tile;
 							                        }))) {
