@@ -45,6 +45,7 @@
 #include "network/command_bridge.h"
 #include "network/construction_presentation.h"
 #include "network/match_connection_state.h"
+#include "network/world_delta.h"
 #include "pathfinding/cost_field.h"
 #include "pathfinding/definitions.h"
 #include "pathfinding/grid.h"
@@ -834,6 +835,7 @@ void fvd_garrison() {
 	TESTEQUALS(fvd->request_garrison(state, 1, {builder}, tower, t(0.2)), false);
 	TESTEQUALS(fvd->request_garrison(state, 3, {builder}, tower, t(0.2)), false);
 	TESTEQUALS(fvd->request_garrison(state, 2, {builder}, builder, t(0.2)), false);
+	const auto pre_garrison_world = network::capture_fvd_presentation_state(state, t(0.2));
 	TESTEQUALS(fvd->request_garrison(state, 2, {builder}, tower, t(0.2)), true);
 	TESTEQUALS(fvd->request_garrison(state, 2, {builder}, tower, t(0.2)), false);
 	loop->reach_time(t(0.25), state);
@@ -845,6 +847,17 @@ void fvd_garrison() {
 	// Sheltering never sets zero HP or removes the Builder from authoritative
 	// state, even though its sprite is absent from world replication.
 	TESTEQUALS(state->get_game_entities().contains(builder), true);
+	const auto post_garrison_world = network::capture_fvd_presentation_state(state, t(0.25));
+	// The same authoritative snapshot transition used by the HUD and
+	// multiplayer must not manufacture a confirmed death effect.
+	TESTEQUALS(network::confirmed_combat_effects(
+	    pre_garrison_world, post_garrison_world).empty(), true);
+	TESTEQUALS(std::any_of(post_garrison_world.entities.begin(),
+	                       post_garrison_world.entities.end(),
+	                       [tower](const auto &entry) {
+		                       return entry.entity_id == tower
+		                           and entry.garrison_player == player_id_t{2};
+	                       }), true);
 	auto sheltered_live = std::dynamic_pointer_cast<component::Live>(
 		state->get_game_entity(builder)->get_component(component::component_t::LIVE));
 	TESTEQUALS(sheltered_live->get_attribute(t(0.25), "fvd.data.entities.Health")->get(t(0.25)) > 0, true);
