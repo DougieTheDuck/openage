@@ -1135,6 +1135,34 @@ void Presenter::init_input() {
 			}
 			return;
 		}
+		if (ev.type() == QEvent::KeyRelease and ev.key() == Qt::Key_G
+		    and this->game_controller and this->fvd_hud_state
+		    and this->simulation and this->simulation->get_game()->get_state()->get_fvd()) {
+			const auto selection = this->game_controller->get_selection_details();
+			const auto player = this->game_controller->get_controlled();
+			if (player >= 2 and selection.kind == input::game::SelectionKind::TOWER
+			    and selection.ids.size() == 1) {
+				auto replicated = this->fvd_replication
+				    ? this->fvd_replication->get_world_state()
+				    : std::optional<network::WorldState>{};
+				auto local = replicated ? nullptr : this->simulation->get_fvd_presentation_state();
+				const network::WorldState *world = replicated ? &*replicated : local.get();
+				if (world) {
+					auto entry = std::find_if(world->entities.begin(), world->entities.end(),
+						[&](const network::EntityState &entity) {
+							return entity.entity_id == selection.ids.front();
+						});
+					if (entry != world->entities.end()
+					    and entry->garrison_player != player) {
+						this->fvd_hud_state->insert(
+						    "ungarrisonError", QString{"Can only ungarrison your own builder."});
+						const int serial = this->fvd_hud_state->value("ungarrisonErrorSerial").toInt();
+						this->fvd_hud_state->insert("ungarrisonErrorSerial", serial + 1);
+						return;
+					}
+				}
+			}
+		}
 		this->input_manager->process(ev);
 	});
 	this->window->add_mouse_button_callback([&](const QMouseEvent &ev) {
@@ -1377,6 +1405,9 @@ void Presenter::init_input() {
 			this->fvd_hud_state->insert("arrowStreaks", QVariantList{});
 			this->fvd_hud_state->insert("combatEffects", QVariantList{});
 			this->fvd_hud_state->insert("attackOrderMarkers", QVariantList{});
+			this->fvd_hud_state->insert("occupiedTowerFlags", QVariantList{});
+			this->fvd_hud_state->insert("ungarrisonError", QString{});
+			this->fvd_hud_state->insert("ungarrisonErrorSerial", 0);
 			this->fvd_hud_state->insert("hunterCountdown", 0);
 			this->fvd_hud_state->insert("matchTimeRemaining", -1);
 			this->fvd_hud_state->insert("matchEnded", false);
@@ -1917,6 +1948,29 @@ void Presenter::render() {
 						coord::phys_t::from_double(ne),
 						coord::phys_t::from_double(se), 0});
 				};
+				// Occupied towers display the Builder player's flag, not the
+				// tower owner's colour. Heights are fixed for this prototype.
+				// Position them through the same camera projection as tile overlays.
+				QVariantList occupied_flags;
+				if (construction_world) {
+					for (const auto &entity : construction_world->entities) {
+						if (entity.definition != "fvd.data.entities.Tower"
+						    or not entity.garrison_player or entity.remembered) continue;
+						auto at = entity.position;
+						at.up += coord::phys_t::from_double(4.5);
+						const auto screen = project_position(at);
+						if (screen.x() < -30 or screen.y() < -30
+						    or screen.x() > viewport[0] + 30
+						    or screen.y() > viewport[1] + 30) continue;
+						occupied_flags.push_back(QVariantMap{
+							{"x", screen.x()}, {"y", screen.y()},
+							{"player", static_cast<int>(*entity.garrison_player)},
+						});
+					}
+				}
+				if (not occupied_flags.isEmpty()
+				    or not this->fvd_hud_state->value("occupiedTowerFlags").toList().empty())
+					this->fvd_hud_state->insert("occupiedTowerFlags", occupied_flags);
 				QVariantList attack_order_markers;
 				if (construction_world
 				    and (not this->fvd_lobby_enabled or this->fvd_gameplay_active)) {

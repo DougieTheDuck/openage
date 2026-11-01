@@ -30,6 +30,14 @@ Item {
 	readonly property var arrowStreaks: hud === null ? [] : hud.arrowStreaks
 	readonly property var combatEffects: hud === null ? [] : hud.combatEffects
 	readonly property var attackOrderMarkers: hud === null ? [] : hud.attackOrderMarkers
+	readonly property var occupiedTowerFlags: hud === null ? [] : hud.occupiedTowerFlags
+	readonly property int ungarrisonErrorSerial: hud === null ? 0 : hud.ungarrisonErrorSerial
+
+	function flagColor(player) {
+		var colors = ["#95abb7", "#d65d52", "#438be5", "#df5753",
+		              "#55b66f", "#e8d16a", "#57c6d1", "#aa75d9", "#ec9b4c"]
+		return colors[player] || "#e6e1cd"
+	}
 
 	function formatMatchTime(totalSeconds) {
 		var minutes = Math.floor(totalSeconds / 60)
@@ -220,6 +228,80 @@ Item {
 				ctx.fill()
 				ctx.stroke()
 			}
+		}
+	}
+
+	// All viewers see the occupying Builder's player-colour flag above the
+	// tower, even if an allied player constructed the tower. This is a
+	// screen-space flag at the fixed tower-top height; no sprite changes.
+	Canvas {
+		id: towerFlags
+		anchors.fill: parent
+		z: 2
+		visible: root.occupiedTowerFlags.length > 0
+		onVisibleChanged: if (visible) requestPaint()
+		Connections {
+			target: root
+			function onOccupiedTowerFlagsChanged() {
+				if (towerFlags.visible) towerFlags.requestPaint()
+			}
+		}
+		onPaint: {
+			var ctx = getContext("2d")
+			ctx.clearRect(0, 0, width, height)
+			for (var i = 0; i < root.occupiedTowerFlags.length; ++i) {
+				var flag = root.occupiedTowerFlags[i]
+				var x = flag.x
+				var y = flag.y
+				var cloth = root.flagColor(flag.player)
+				ctx.lineWidth = 2
+				ctx.strokeStyle = "#eff0da"
+				ctx.beginPath()
+				ctx.moveTo(x, y + 9)
+				ctx.lineTo(x, y - 24)
+				ctx.stroke()
+				ctx.fillStyle = cloth
+				ctx.strokeStyle = "#18212c"
+				ctx.lineWidth = 1.1
+				ctx.beginPath()
+				ctx.moveTo(x + 1, y - 24)
+				ctx.lineTo(x + 26, y - 19)
+				ctx.lineTo(x + 20, y - 11)
+				ctx.lineTo(x + 1, y - 14)
+				ctx.closePath()
+				ctx.fill()
+				ctx.stroke()
+				ctx.fillStyle = "#101a25"
+				ctx.font = "bold 10px sans-serif"
+				ctx.fillText(String(flag.player), x + 8, y - 15)
+			}
+		}
+	}
+
+	Timer {
+		id: ungarrisonErrorTimer
+		interval: 3000
+		repeat: false
+	}
+	onUngarrisonErrorSerialChanged: if (ungarrisonErrorSerial > 0) ungarrisonErrorTimer.restart()
+	Rectangle {
+		z: 15
+		anchors.horizontalCenter: parent.horizontalCenter
+		anchors.top: parent.top
+		anchors.topMargin: 105
+		width: ungarrisonErrorText.implicitWidth + 36
+		height: 40
+		radius: 6
+		color: "#df342f29"
+		border.color: "#ed9f8e"
+		visible: ungarrisonErrorTimer.running
+		Text {
+			id: ungarrisonErrorText
+			anchors.centerIn: parent
+			font.pixelSize: 16
+			font.bold: true
+			color: "#fff1e7"
+			text: root.hud === null ? "" : root.hud.ungarrisonError
 		}
 	}
 
