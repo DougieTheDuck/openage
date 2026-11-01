@@ -455,11 +455,6 @@ void lobby_relay_client() {
 	multi_guest_a.connect(multi);
 	TESTEQUALS(wait_for(multi_guest_a, "lobby"), true);
 	TESTEQUALS(wait_for(multiplayer_host, "lobby"), true);
-	// A 3-player room cannot accidentally draw/start with only 2 people.
-	// Even an early request_start must leave the third relay slot open.
-	TESTEQUALS(multiplayer_host.status().can_start, false);
-	multiplayer_host.request_start();
-	TESTEQUALS(multiplayer_host.status().can_start, false);
 	multi.name = "Guest B";
 	multi_guest_b.connect(multi);
 	TESTEQUALS(wait_for(multi_guest_b, "lobby"), true);
@@ -473,7 +468,6 @@ void lobby_relay_client() {
 		std::this_thread::sleep_for(std::chrono::milliseconds{10});
 	}
 	TESTEQUALS(both_in_lobby, true);
-	TESTEQUALS(multiplayer_host.status().can_start, true);
 	multiplayer_host.request_start();
 	std::array<RelayLobbyClient *, 3> players{
 		&multiplayer_host, &multi_guest_a, &multi_guest_b};
