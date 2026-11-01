@@ -31,7 +31,7 @@ Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
 `bin/run test openage::gamestate::tests::fvd_animation_phase`,
 `bin/run test openage::network::tests::messages` and
 `bin/run test openage::network::tests::world_delta`.
-Multiplayer protocol v16 adds fog of war (v15 added Builder tower demolition commands); all participating clients and the relay must use compatible builds.
+Multiplayer protocol v20 includes fog of war, garrisoning and private ungarrison-marker state; all participating clients must use compatible builds.
 
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
@@ -77,6 +77,23 @@ foundation prioritization, and recovery snapshots are implemented; complete
 online HUD polish and disconnect/reconnect policy are still in progress.
 
 In a Windows development build, run `.\RelWithDebInfo\run.exe game --modpacks fvd` from the build directory with the runtime dependency paths configured.
+### Tower foundation displacement (experimental)
+
+Foundations can now be placed on tiles occupied by your own Builder, other
+Builders or Hunter Horses; the placement preview remains valid. When a planned
+foundation reaches the front of its build queue, the Builder approaches a
+vacant adjacent stand and orders occupants to move to reachable free tiles.
+The foundation is not constructed until the footprint is clear. If the Builder
+cannot clear the tile or reach a stand within **five seconds** of trying, that
+foundation (including its sprite and reservation) is removed and the Builder
+automatically continues the **remaining queue in the original order**. Solid
+towers, existing foundations and another Builder's tile reservations still
+block placement. This behaviour is authoritative on the host; the guest
+receives its actual movement and construction updates.
+
+Focused regression: `run test openage::gamestate::tests::fvd_foundation_push_and_timeout -a --have-assets`.
+Compile and two-client acceptance are still pending.
+
 ### Experimental Builder garrison (protocol v20)
 
 With a Builder selected, press **T**, then left-click one of your own finished
