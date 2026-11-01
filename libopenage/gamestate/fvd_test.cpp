@@ -842,6 +842,14 @@ void fvd_garrison() {
 	TESTEQUALS(fvd->can_see(state, FVDTeam::HUNTER, builder, t(0.25)), false);
 	TESTEQUALS(fvd->can_place_tower(state, 2, {builder}, {70, 70, 0}, t(0.25)), false);
 	TESTEQUALS(fvd->get_garrisoned_builder(tower), std::optional<entity_id_t>{builder});
+	// Sheltering never sets zero HP or removes the Builder from authoritative
+	// state, even though its sprite is absent from world replication.
+	TESTEQUALS(state->get_game_entities().contains(builder), true);
+	auto sheltered_live = std::dynamic_pointer_cast<component::Live>(
+		state->get_game_entity(builder)->get_component(component::component_t::LIVE));
+	TESTEQUALS(sheltered_live->get_attribute(t(0.25), "fvd.data.entities.Health")->get(t(0.25)) > 0, true);
+	fvd->evaluate_match_outcome(state, t(0.25));
+	TESTEQUALS(fvd->get_match_outcome().has_value(), false);
 	// A different Builder player may maintain an independent plan even
 	// for a tower they did not construct. Check below after owner snapshots.
 	TESTEQUALS(fvd->set_ungarrison_point(state, 2, {builder}, {60, 66, 0}, t(0.25)), false);

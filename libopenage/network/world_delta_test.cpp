@@ -275,6 +275,32 @@ void world_delta() {
 		std::vector<uint64_t>(fog_word_count(128), 0),
 		std::vector<uint64_t>(fog_word_count(128), 0), {}});
 	TESTEQUALS(confirmed_combat_effects(hp_hit, fog_hidden).empty(), true);
+	// Garrisoning removes a Builder's visual entity, but MUST NOT play a
+	// death effect. The occupant's public player-colour flag is available to
+	// all viewers, while the actual ID belongs only to that Builder's player.
+	WorldState builder_before{};
+	builder_before.local_player_id = 2;
+	builder_before.entities = {
+		{300, 2, "fvd.data.entities.Builder", {60.5, 66.5, 0}, 25, 25},
+		{301, 3, "fvd.data.entities.Tower", {61.5, 66.5, 0}, 100, 100}};
+	auto builder_inside = builder_before;
+	builder_inside.entities.erase(builder_inside.entities.begin());
+	builder_inside.entities.front().garrison_player = gamestate::player_id_t{2};
+	builder_inside.entities.front().garrisoned_builder = gamestate::entity_id_t{300};
+	TESTEQUALS(confirmed_combat_effects(builder_before, builder_inside).empty(), true);
+	auto spectator_inside = builder_inside;
+	spectator_inside.local_player_id = 1;
+	spectator_inside.entities.front().garrisoned_builder.reset();
+	TESTEQUALS(confirmed_combat_effects(builder_before, spectator_inside).empty(), true);
+	auto other_builder_inside = spectator_inside;
+	other_builder_inside.local_player_id = 3;
+	TESTEQUALS(confirmed_combat_effects(builder_before, other_builder_inside).empty(), true);
+	// Truly killed Builders still produce a death effect.
+	auto builder_killed = builder_before;
+	builder_killed.entities.erase(builder_killed.entities.begin());
+	TESTEQUALS(confirmed_combat_effects(builder_before, builder_killed).size(), size_t{1});
+	TESTEQUALS(confirmed_combat_effects(builder_before, builder_killed).front().death, true);
+
 	// The viewer already knows when one of its own units is removed, even if
 	// that unit's vision disappears from the same authoritative state.
 	auto own_unit_hidden = fog_hidden;

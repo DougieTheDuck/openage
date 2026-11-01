@@ -272,6 +272,21 @@ std::vector<ConfirmedCombatEffect> confirmed_combat_effects(
 		if (not prior.health or *prior.health <= 0) continue;
 		auto next = remaining.find(prior.entity_id);
 		if (next == remaining.end()) {
+			// A Builder entering a tower disappears from world replication
+			// without dying. The occupying player's public flag establishes
+			// this transition even for the Hunter, who must never receive
+			// the concealed Builder's private entity ID.
+			if (prior.definition == "fvd.data.entities.Builder") {
+				const bool sheltered = std::any_of(
+					current.entities.begin(), current.entities.end(),
+					[&](const EntityState &entry) {
+						return entry.definition == "fvd.data.entities.Tower"
+						    and entry.garrison_player == prior.owner_id
+						    and (not entry.garrisoned_builder
+						         or *entry.garrisoned_builder == prior.entity_id);
+					});
+				if (sheltered) continue;
+			}
 			// The host removed a previously living entity. The cue is
 			// cosmetic; only the host decides death and kill attribution.
 			// An entity merely walking into the recipient's fog is not dead.
