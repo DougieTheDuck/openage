@@ -503,6 +503,20 @@ private:
 		const std::shared_ptr<GameEntity> &builder,
 		const coord::tile &site, const time::time_t &time) const;
 
+	/** Return ungarrisoned Builder/Horse units currently occupying the footprint. */
+	std::vector<entity_id_t> build_site_blockers(
+		const std::shared_ptr<GameState> &state, const coord::tile &site,
+		const time::time_t &time) const;
+
+	/** Ask blocking units to step away without jumping or teleporting them. */
+	void push_build_site_blockers(
+		const std::shared_ptr<GameState> &state, const coord::tile &site,
+		entity_id_t building_builder, const time::time_t &time);
+
+	/** On five-second timeout, remove only this foundation and continue the queue. */
+	void skip_blocked_build(const std::shared_ptr<GameState> &state,
+	                        entity_id_t builder, const time::time_t &time);
+
 	/** Start the Builder's next reachable queued site, if any. */
 	void start_next_queued_build(const std::shared_ptr<GameState> &state,
 	                             player_id_t owner, entity_id_t builder,
@@ -545,6 +559,8 @@ private:
 		uint64_t route_revision;
 		entity_id_t foundation_id;
 		std::optional<entity_id_t> tower_id;
+		/** Start of the five-second occupied-foundation clearance window. */
+		std::optional<time::time_t> blocked_since{};
 	};
 
 	struct FootprintCell {

@@ -618,17 +618,26 @@ bool FVD::can_place_tower(const std::shared_ptr<GameState> &state,
 		return false;
 	}
 	auto site = position.to_tile();
-	// A Builder may finish its previous job on a queued foundation and must
-	// be allowed to step off it before construction begins.
-	const auto ignored_builder = existing_foundation
-	                           ? std::make_optional(builder_id)
-	                           : std::nullopt;
+	// Unit collision is NOT a placement constraint. Reservations and solid
+	// buildings still are. Live units get a five-second chance to vacate only
+	// when this foundation reaches the head of the Builder's queue.
 	for (const auto &tile : this->get_tower_footprint(site)) {
 		if (tile.ne < 0 or tile.se < 0
 		    or tile.ne >= this->map_size or tile.se >= this->map_size
-		    or this->is_tile_reserved(tile)
-		    or this->tile_occupied(state, tile, time, ignored_builder)) {
+		    or this->is_tile_reserved(tile)) {
 			return false;
+		}
+		for (const auto &[id, occupant] : state->get_game_entities()) {
+			if (id == existing_foundation or this->is_garrisoned(id)
+			    or occupant->get_definition() == this->builder
+			    or occupant->get_definition() == this->horse
+			    or occupant->get_definition() == this->foundation
+			    or occupant->get_definition() == this->tower_demolition
+			    or occupant->get_definition() == this->hunter_rally_marker) continue;
+			auto occupant_pos = std::dynamic_pointer_cast<component::Position>(
+				occupant->get_component(component::component_t::POSITION));
+			if (occupant_pos and occupant_pos->get_positions().get(time).to_tile() == tile)
+				return false;
 		}
 		for (const auto &[id, entity] : state->get_game_entities()) {
 			if (id == existing_foundation or entity->get_definition() != this->foundation) {
@@ -744,10 +753,9 @@ bool FVD::start_build(const std::shared_ptr<GameState> &state,
 	auto current_position = std::dynamic_pointer_cast<component::Position>(
 		entity->get_component(component::component_t::POSITION))->get_positions().get(time);
 	auto stand = this->find_build_stand(state, entity, site, time);
-	if (not stand.has_value()) {
-		log::log(WARN << "No reachable adjacent construction tile");
-		return false;
-	}
+	// An enclosed/occupied site is still a valid planned foundation.
+	// Retry finding the stand for up to five seconds when the job is active.
+	if (not stand) stand = current_position;
 
 	// A valid new construction command supersedes walking into a tower.
 	this->cancel_pending_garrison(builder_id);
@@ -969,6 +977,111 @@ bool FVD::cancel_build(const std::shared_ptr<GameState> &state,
 		}
 	}
 	return true;
+}
+
+std::vector<entity_id_t> FVD::build_site_blockers(
+	const std::shared_ptr<GameState> &state, const coord::tile &site,
+	const time::time_t &time) const {
+	std::vector<entity_id_t> blockers;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (this->is_garrisoned(id)
+		    or (entity->get_definition() != this->builder
+		        and entity->get_definition() != this->horse)) continue;
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		if (not position) continue;
+		const auto here = position->get_positions().get(time).to_tile();
+		const auto footprint = this->get_tower_footprint(site);
+		if (std::find(footprint.begin(), footprint.end(), here) != footprint.end())
+			blockers.push_back(id);
+	}
+	std::sort(blockers.begin(), blockers.end());
+	return blockers;
+}
+
+void FVD::push_build_site_blockers(
+	const std::shared_ptr<GameState> &state, const coord::tile &site,
+	entity_id_t building_builder, const time::time_t &time) {
+	const auto blockers = this->build_site_blockers(state, site, time);
+	auto pathfinder = state->get_map()->get_pathfinder();
+	const auto grid_id = state->get_map()->get_grid_id("fvd.data.terrain.Land");
+	const auto grid = pathfinder->get_grid(grid_id);
+	const auto sector_size = grid->get_sector_size();
+	std::vector<coord::tile> destinations;
+	for (auto id : blockers) {
+		// The active Builder has its own stand and arrival order.
+		if (id == building_builder) continue;
+		auto found = state->get_game_entities().find(id);
+		if (found == state->get_game_entities().end()) continue;
+		auto entity = found->second;
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		auto move = std::dynamic_pointer_cast<component::Move>(
+			entity->get_component(component::component_t::MOVE));
+		if (not move) continue;
+		auto current = position->get_positions().get(time);
+		if (move->get_active_target() and move->get_active_arrival() > time
+		    and std::find(this->get_tower_footprint(site).begin(),
+		                  this->get_tower_footprint(site).end(),
+		                  move->get_active_target()->to_tile())
+		            != this->get_tower_footprint(site).end()) {
+			// A unit heading into the site needs a new target below.
+		}
+		else if (move->get_active_target() and move->get_active_arrival() > time) {
+			// Already moving away under its own or an earlier push order.
+			continue;
+		}
+		std::optional<coord::phys3> escape;
+		for (coord::tile_t radius = 1; radius <= 4 and not escape; ++radius) {
+			for (coord::tile_t ne = site.ne - radius; ne <= site.ne + radius and not escape; ++ne) {
+				for (coord::tile_t se = site.se - radius; se <= site.se + radius; ++se) {
+					if (std::max(std::abs(ne - site.ne), std::abs(se - site.se)) != radius
+					    or ne < 0 or se < 0 or ne >= this->map_size or se >= this->map_size) continue;
+					const coord::tile candidate{ne, se};
+					if (this->is_tile_reserved(candidate)
+					    or this->tile_occupied(state, candidate, time, id)
+					    or std::find(destinations.begin(), destinations.end(), candidate) != destinations.end())
+						continue;
+					auto sector = grid->get_sector(candidate.ne / sector_size,
+					                              candidate.se / sector_size);
+					auto local = candidate - sector->get_position().to_tile(sector_size);
+					if (sector->get_cost_field()->get_cost(local) >= path::COST_IMPASSABLE) continue;
+					auto route = pathfinder->get_path(path::PathRequest{
+						grid_id, current.to_tile(), candidate, time});
+					if (route.status != path::PathResult::FOUND or route.waypoints.empty()) continue;
+					escape = candidate.to_phys3_center();
+					destinations.push_back(candidate);
+					break;
+				}
+			}
+		}
+		if (escape) system::Move::move_default(entity, state, *escape, time);
+	}
+}
+
+void FVD::skip_blocked_build(const std::shared_ptr<GameState> &state,
+                             entity_id_t builder, const time::time_t &time) {
+	auto pending = this->build_orders.find(builder);
+	if (pending == this->build_orders.end() or pending->second.tower_id) return;
+	const auto site = pending->second.order->get_target();
+	const auto owner = pending->second.order->get_owner();
+	const auto foundation_id = pending->second.foundation_id;
+	for (const auto &tile : this->get_tower_footprint(site)) {
+		auto reserved = this->reserved_tiles.find(tile);
+		if (reserved != this->reserved_tiles.end() and reserved->second == builder)
+			this->reserved_tiles.erase(reserved);
+	}
+	this->build_orders.erase(pending);
+	if (state->get_game_entities().contains(foundation_id))
+		state->remove_game_entity(foundation_id, time);
+	auto found = state->get_game_entities().find(builder);
+	if (found != state->get_game_entities().end()) {
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			found->second->get_component(component::component_t::POSITION));
+		position->set_position(time, position->get_positions().get(time));
+		system::Idle::idle(found->second, time);
+	}
+	this->start_next_queued_build(state, owner, builder, time);
 }
 
 void FVD::advance_build(const std::shared_ptr<GameState> &state,
