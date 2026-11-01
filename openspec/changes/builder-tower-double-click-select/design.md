@@ -1,10 +1,12 @@
 # Design notes
 
-- Detect the double click with `QStyleHints::mouseDoubleClickInterval` (the
-  controller already includes QStyleHints) on the same picked entity.
-- "Visible on screen" means inside the camera's view, using the same frustum the
-  world renderer already culls with; never include hidden or remembered
-  entities (fog of war).
+- Use Qt's `MouseButtonDblClick` event and suppress the following release so
+  normal single-click cannot erase a freshly selected group.
+- "Visible on screen" means inside the camera's viewport projection; never
+  include fog-hidden or remembered buildings. The clicked owner (not the
+  controlling Builder) determines which structures the double-click collects.
+- Shift-click accumulates same-kind structures across allied Builder owners.
+- Hunter clicks select just one visible tower and expose authoritative HP.
 - Three new selection kinds: finished towers, towers under construction and
   foundations. Existing single-tower Delete stays as it is.
 - `DEMOLISH_TOWER` currently requires exactly one entity. Either allow several
