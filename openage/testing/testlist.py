@@ -257,6 +257,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_allied_garrison",
+        "FVD allied shelters, occupant-owned exits, private per-player rally markers and public flags",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_garrison_hop",
         "FVD adjacent tower-to-tower shelter transfer and point marker cleanup",
         lambda env: env["has_assets"],

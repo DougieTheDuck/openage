@@ -923,6 +923,93 @@ void fvd_garrison() {
 	TESTEQUALS(live->get_attribute(t(0.35), "fvd.data.entities.Health")->get(t(0.35)), hp);
 }
 
+/** Allied towers shelter any Builder but never grant control over that
+ * Builder to their owner. The public flag is the occupant's player colour. */
+void fvd_allied_garrison() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	entity_id_t own_builder = 0;
+	entity_id_t allied_builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		auto player = ownership->get_owners().get(at(0));
+		if (player == 2) own_builder = id;
+		if (player == 3) allied_builder = id;
+	}
+	TESTEQUALS(own_builder != 0 and allied_builder != 0, true);
+	TESTEQUALS(fvd->request_build(state, 3, {allied_builder}, {61, 66, 0}, at(0)), true);
+	loop->reach_time(at(0.2), state);
+	entity_id_t tower = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Tower") continue;
+		auto own = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (own->get_owners().get(at(0.2)) == player_id_t{3}) tower = id;
+	}
+	TESTEQUALS(tower != 0, true);
+	// Two players independently program this SAME allied tower.
+	TESTEQUALS(fvd->set_ungarrison_point(state, 2, {tower}, {60, 66, 0}, at(0.2)), true);
+	TESTEQUALS(fvd->set_ungarrison_point(state, 3, {tower}, {63, 66, 0}, at(0.2)), true);
+	TESTEQUALS(fvd->get_ungarrison_point(tower, 2),
+	           std::make_optional(coord::phys3{60, 66, 0}));
+	TESTEQUALS(fvd->get_ungarrison_point(tower, 3),
+	           std::make_optional(coord::phys3{63, 66, 0}));
+	TESTEQUALS(fvd->request_garrison(state, 2, {own_builder}, tower, at(0.2)), true);
+	loop->reach_time(at(0.4), state);
+	TESTEQUALS(fvd->get_garrisoned_player(state, tower, at(0.4)),
+	           std::optional<player_id_t>{2});
+	TESTEQUALS(fvd->get_garrisoned_builder(tower),
+	           std::optional<entity_id_t>{own_builder});
+	TESTEQUALS(fvd->request_garrison(state, 3, {allied_builder}, tower, at(0.4)), false);
+	network::MatchConnectionState guests{fvd->get_player_count()};
+	const auto owner_view = network::capture_fvd_state(state, guests, at(0.4), 0, 1, 3);
+	const auto occupant_view = network::capture_fvd_state(state, guests, at(0.4), 0, 1, 2);
+	auto entry = [tower](const network::WorldState &world) {
+		return std::find_if(world.entities.begin(), world.entities.end(),
+		    [tower](const auto &entity) { return entity.entity_id == tower; });
+	};
+	auto owner_tower = entry(owner_view);
+	auto occupant_tower = entry(occupant_view);
+	TESTEQUALS(owner_tower != owner_view.entities.end(), true);
+	TESTEQUALS(occupant_tower != occupant_view.entities.end(), true);
+	TESTEQUALS(owner_tower->garrison_player, std::optional<player_id_t>{2});
+	TESTEQUALS(occupant_tower->garrison_player, std::optional<player_id_t>{2});
+	TESTEQUALS(owner_tower->garrisoned_builder.has_value(), false);
+	TESTEQUALS(occupant_tower->garrisoned_builder,
+	           std::optional<entity_id_t>{own_builder});
+	auto markers = [](const network::WorldState &world) {
+		return std::count_if(world.entities.begin(), world.entities.end(),
+		    [](const auto &entity) {
+			    return entity.definition == "fvd.data.entities.HunterRallyPoint";
+		    });
+	};
+	TESTEQUALS(markers(owner_view), 1);
+	TESTEQUALS(markers(occupant_view), 1);
+	// The owner of the tower must NEVER eject the visiting Builder.
+	TESTEQUALS(fvd->ungarrison_builder(state, 3, {tower}, at(0.4)), false);
+	TESTEQUALS(fvd->is_garrisoned(own_builder), true);
+	TESTEQUALS(fvd->ungarrison_builder(state, 2, {tower}, at(0.4)), true);
+	TESTEQUALS(fvd->is_garrisoned(own_builder), false);
+	TESTEQUALS(fvd->get_garrisoned_player(state, tower, at(0.4)).has_value(), false);
+	TESTEQUALS(fvd->destroy_tower(state, tower, at(0.4)), true);
+	TESTEQUALS(fvd->get_ungarrison_point(tower, 2).has_value(), false);
+	TESTEQUALS(fvd->get_ungarrison_point(tower, 3).has_value(), false);
+}
 /** Garrisoning between touching towers never exposes the Builder to combat. */
 void fvd_garrison_hop() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
