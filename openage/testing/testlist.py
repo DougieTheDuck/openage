@@ -216,6 +216,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_foundation_push_and_timeout",
+        "FVD foundations under Builders/Horses, five-second obstruction skip and FIFO continuation",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_build_queue",
         "FVD FIFO tower construction and reserved queued sites",
         lambda env: env["has_assets"],

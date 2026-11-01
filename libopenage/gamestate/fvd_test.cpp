@@ -1217,7 +1217,20 @@ void fvd_construction() {
 		entities->spawn_game_entity(loop, state, 2, "fvd.data.entities.Tower",
 		                           tile.to_phys3_center(), t(211));
 	}
-	TESTEQUALS(build(7, {110, 110, 0}, 211), false);
+	// Placement is permitted even without a free stand: its clearance
+	// timer starts when the order reaches the front. Delete remains usable.
+	TESTEQUALS(build(7, {110, 110, 0}, 211), true);
+	TESTEQUALS(fvd->is_tile_reserved({110, 110}), true);
+	entity_id_t enclosed_foundation = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Foundation") continue;
+		auto pos = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		if (pos->get_positions().get(t(211)).to_tile() == coord::tile{110, 110})
+			enclosed_foundation = id;
+	}
+	TESTEQUALS(enclosed_foundation != 0, true);
+	TESTEQUALS(fvd->delete_owned_foundation(state, 7, enclosed_foundation, t(211)), true);
 	TESTEQUALS(fvd->is_tile_reserved({110, 110}), false);
 	TESTEQUALS(state->get_game_entities().size(), 21);
 
@@ -2494,6 +2507,103 @@ void fvd_presentation_snapshot() {
 				       and site.queue_position == 0;
 			   }), true);
 	TESTEQUALS(network::make_construction_presentation(*building).sites.size(), size_t{3});
+}
+
+/** Units occupying an otherwise valid planned foundation do not reject the
+ * order. An unmovable occupant times out after five seconds and only that
+ * foundation is removed; the following queued job still starts. */
+void fvd_foundation_push_and_timeout() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	entity_id_t builder = 0;
+	entity_id_t other_builder = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		const auto owner = ownership->get_owners().get(at(0));
+		if (owner == 2) builder = id;
+		if (owner == 3) other_builder = id;
+	}
+	TESTEQUALS(builder != 0 and other_builder != 0, true);
+	auto builder_pos = std::dynamic_pointer_cast<component::Position>(
+		state->get_game_entity(builder)->get_component(component::component_t::POSITION));
+	auto other_pos = std::dynamic_pointer_cast<component::Position>(
+		state->get_game_entity(other_builder)->get_component(component::component_t::POSITION));
+	// A Builder can place a foundation underneath itself and step aside.
+	const coord::tile self_site{75, 75};
+	builder_pos->set_position(at(0), self_site.to_phys3_center());
+	TESTEQUALS(fvd->can_place_tower(state, 2, {builder}, self_site.to_phys3_center(), at(0)), true);
+	TESTEQUALS(fvd->request_build(state, 2, {builder}, self_site.to_phys3_center(), at(0)), true);
+	loop->reach_time(at(0.5), state);
+	TESTEQUALS(builder_pos->get_positions().get(at(0.5)).to_tile() != self_site, true);
+
+	// An enemy Hunter horse occupies the next foundation. Eight impassable
+	// neighbours leave no walkable escape, so its order must eventually time
+	// out rather than teleporting the horse or aborting the remaining queue.
+	const coord::tile blocked{82, 82};
+	auto horse = entities->spawn_game_entity(
+		loop, state, 1, "fvd.data.entities.Horse", blocked.to_phys3_center(), at(0.5));
+	system::Idle::idle(horse, at(0.5));
+	const nyan::fqon_t land{"fvd.data.terrain.Land"};
+	for (coord::tile_t ne = blocked.ne - 1; ne <= blocked.ne + 1; ++ne) {
+		for (coord::tile_t se = blocked.se - 1; se <= blocked.se + 1; ++se) {
+			if (ne != blocked.ne or se != blocked.se)
+				state->get_map()->set_path_cost(land, {ne, se}, path::COST_IMPASSABLE, at(0.5));
+		}
+	}
+	state->get_map()->rebuild_path_grid(land);
+	const coord::tile following{88, 82};
+	// The queued site is also occupied by another player's Builder, which
+	// must be displaced only when that job becomes active.
+	other_pos->set_position(at(0.5), following.to_phys3_center());
+	TESTEQUALS(fvd->can_place_tower(state, 2, {builder}, blocked.to_phys3_center(), at(0.5)), true);
+	TESTEQUALS(fvd->request_build(state, 2, {builder}, blocked.to_phys3_center(), at(0.5)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, {builder}, following.to_phys3_center(), at(0.5)), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{1});
+	auto foundation_at = [&](const coord::tile &tile, const time::time_t &now) {
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			if (entity->get_definition() != "fvd.data.entities.Foundation") continue;
+			auto position = std::dynamic_pointer_cast<component::Position>(
+				entity->get_component(component::component_t::POSITION));
+			if (position->get_positions().get(now).to_tile() == tile) return id;
+		}
+		return entity_id_t{0};
+	};
+	TESTEQUALS(foundation_at(blocked, at(0.5)) != 0, true);
+	loop->reach_time(at(5.75), state);
+	TESTEQUALS(fvd->is_tile_reserved(blocked), false);
+	TESTEQUALS(foundation_at(blocked, at(5.75)), entity_id_t{0});
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	TESTEQUALS(fvd->get_build_order(builder) != nullptr, true);
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), following);
+	TESTEQUALS(std::dynamic_pointer_cast<component::Position>(
+		horse->get_component(component::component_t::POSITION))
+		->get_positions().get(at(5.75)).to_tile(), blocked);
+	loop->reach_time(at(17), state);
+	TESTEQUALS(other_pos->get_positions().get(at(17)).to_tile() != following, true);
+	TESTEQUALS(fvd->is_tile_reserved(following), false);
+	bool completed = false;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Tower") continue;
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		if (position->get_positions().get(at(17)).to_tile() == following) completed = true;
+	}
+	TESTEQUALS(completed, true);
 }
 
 void fvd_build_queue() {
