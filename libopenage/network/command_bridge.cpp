@@ -324,11 +324,13 @@ WorldState capture_fvd_state(
 			entity_state.hunter_stance.reset();
 			entity_state.ungarrison_source_tower.reset();
 		}
-		// A shelter can be owned by an ally; only its occupant's player gets
-		// the private Builder identity. Every viewer receives the public flag.
-		if (entity_state.garrison_player != recipient) {
-			entity_state.garrisoned_builder.reset();
-		}
+		// G and tower hopping target the TOWER, never the hidden Builder ID.
+		// Therefore no multiplayer recipient needs the private entity ID,
+		// not even the occupant's player. Strip it unconditionally at this
+		// single authoritative serialization boundary. The public occupant
+		// flag alone is enough for the client HUD and owner-only G checks,
+		// and prevents identity-validation failures from disconnecting peers.
+		entity_state.garrisoned_builder.reset();
 		auto entity = state->get_game_entity(entity_state.entity_id);
 		auto position = std::dynamic_pointer_cast<gamestate::component::Position>(
 			entity->get_component(gamestate::component::component_t::POSITION));

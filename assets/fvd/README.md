@@ -104,7 +104,8 @@ them inside; garrisoned Builders are not visible to the Hunter and cannot be
 damaged, collide, or place new towers. One Builder may occupy each tower.
 Every occupied tower raises a small **player-colour flag above the roof**
 showing whose Builder is inside; the flag is visible to all players who can
-see the tower. **Only the player whose flag is raised** may select that tower
+see the tower. The hidden Builder ID never leaves the host; guests need only
+the public player-colour flag and tower ID to control their own ungarrison. **Only the player whose flag is raised** may select that tower
 and press **G** to ungarrison. Other players see
 "Can only ungarrison your own builder." on screen. A tower may be owned by
 any allied Builder player and holds one Builder at a time. Destroying an

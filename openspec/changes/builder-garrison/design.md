@@ -5,9 +5,10 @@
   "alive" checks, but remove its position from vision, targeting, collision and
   pathfinding.
 - Replication: all viewers with vision of the tower see the occupying
-  Builder's player-colour flag, even when an ally built the tower. Only the
-  Builder's player receives the private Builder ID. The Hunter never sees
-  the concealed Builder itself.
+  Builder's player-colour flag, even when an ally built the tower. The
+  concealed Builder's ID stays on the host for ALL recipients, including its
+  owner: G targets the tower ID, and the host enforces the Builder's ownership.
+  This avoids leaking or mismatching private identities in delta snapshots.
 - Ungarrison point: one independent marker per (tower, player), using
   the same `hunter_rally_point` red arrow sprite, visible only to that player
   while the source tower is selected,

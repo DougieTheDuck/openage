@@ -836,6 +836,9 @@ void fvd_garrison() {
 	TESTEQUALS(fvd->request_garrison(state, 3, {builder}, tower, t(0.2)), false);
 	TESTEQUALS(fvd->request_garrison(state, 2, {builder}, builder, t(0.2)), false);
 	const auto pre_garrison_world = network::capture_fvd_presentation_state(state, t(0.2));
+	network::MatchConnectionState garrison_connections{8};
+	const auto recipient_before = network::capture_fvd_state(
+		state, garrison_connections, t(0.2), 0, 1, 2);
 	TESTEQUALS(fvd->request_garrison(state, 2, {builder}, tower, t(0.2)), true);
 	TESTEQUALS(fvd->request_garrison(state, 2, {builder}, tower, t(0.2)), false);
 	loop->reach_time(t(0.25), state);
@@ -848,6 +851,27 @@ void fvd_garrison() {
 	// state, even though its sprite is absent from world replication.
 	TESTEQUALS(state->get_game_entities().contains(builder), true);
 	const auto post_garrison_world = network::capture_fvd_presentation_state(state, t(0.25));
+	const auto recipient_after = network::capture_fvd_state(
+		state, garrison_connections, t(0.25), 0, 2, 2);
+	// Regression for a real Hunter-authority-to-Builder-recipient stream:
+	// serialize both the full snapshot and the garrisoning delta through the
+	// exact protocol path that previously disconnected player 2.
+	const auto recipient_wire = network::decode_world_state(
+		network::encode_world_state(recipient_after));
+	auto garrison_delta = network::make_world_delta(recipient_before, recipient_after);
+	auto recipient_rebuilt = network::apply_world_delta(recipient_before,
+		network::decode_world_delta(network::encode_world_delta(garrison_delta)));
+	TESTEQUALS(std::none_of(recipient_rebuilt.entities.begin(),
+	                       recipient_rebuilt.entities.end(),
+	                       [](const auto &entry) {
+		                       return entry.garrisoned_builder.has_value();
+	                       }), true);
+	TESTEQUALS(std::any_of(recipient_wire.entities.begin(),
+	                      recipient_wire.entities.end(),
+	                      [tower](const auto &entry) {
+		                      return entry.entity_id == tower
+		                          and entry.garrison_player == player_id_t{2};
+	                      }), true);
 	// The same authoritative snapshot transition used by the HUD and
 	// multiplayer must not manufacture a confirmed death effect.
 	TESTEQUALS(network::confirmed_combat_effects(
@@ -904,9 +928,20 @@ void fvd_garrison() {
 		return it == world.entities.end() ? std::optional<entity_id_t>{}
 		                                  : it->garrisoned_builder;
 	};
-	TESTEQUALS(occupant_in(private_owner), std::optional<entity_id_t>{builder});
+	// The private Builder ID is never sent. The HUD and ungarrison command
+	// use the public occupant-player flag plus the tower entity ID instead.
+	TESTEQUALS(occupant_in(private_owner).has_value(), false);
 	TESTEQUALS(occupant_in(private_hunter).has_value(), false);
 	TESTEQUALS(occupant_in(private_other).has_value(), false);
+	TESTEQUALS(network::decode_world_state(
+	    network::encode_world_state(private_owner)).entities.size(),
+	    private_owner.entities.size());
+	for (const auto &view : {private_owner, private_hunter, private_other}) {
+		TESTEQUALS(std::none_of(view.entities.begin(), view.entities.end(),
+		                       [](const auto &entry) {
+			                       return entry.garrisoned_builder.has_value();
+		                       }), true);
+	}
 	auto markers = [](const network::WorldState &world) {
 		return std::count_if(world.entities.begin(), world.entities.end(),
 		             [](const auto &entity) {
@@ -1019,8 +1054,14 @@ void fvd_allied_garrison() {
 	TESTEQUALS(owner_tower->garrison_player, std::optional<player_id_t>{2});
 	TESTEQUALS(occupant_tower->garrison_player, std::optional<player_id_t>{2});
 	TESTEQUALS(owner_tower->garrisoned_builder.has_value(), false);
-	TESTEQUALS(occupant_tower->garrisoned_builder,
-	           std::optional<entity_id_t>{own_builder});
+	TESTEQUALS(occupant_tower->garrisoned_builder.has_value(), false);
+	// Full snapshots must serialize for both visitors and the tower owner.
+	TESTEQUALS(network::decode_world_state(
+	    network::encode_world_state(occupant_view)).entities.size(),
+	    occupant_view.entities.size());
+	TESTEQUALS(network::decode_world_state(
+	    network::encode_world_state(owner_view)).entities.size(),
+	    owner_view.entities.size());
 	auto markers = [](const network::WorldState &world) {
 		return std::count_if(world.entities.begin(), world.entities.end(),
 		    [](const auto &entity) {
