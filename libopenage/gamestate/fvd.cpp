@@ -1003,6 +1003,7 @@ void FVD::push_build_site_blockers(
 	const std::shared_ptr<GameState> &state, const coord::tile &site,
 	entity_id_t building_builder, const time::time_t &time) {
 	const auto blockers = this->build_site_blockers(state, site, time);
+	const auto footprint = this->get_tower_footprint(site);
 	auto pathfinder = state->get_map()->get_pathfinder();
 	const auto grid_id = state->get_map()->get_grid_id("fvd.data.terrain.Land");
 	const auto grid = pathfinder->get_grid(grid_id);
@@ -1021,14 +1022,9 @@ void FVD::push_build_site_blockers(
 		if (not move) continue;
 		auto current = position->get_positions().get(time);
 		if (move->get_active_target() and move->get_active_arrival() > time
-		    and std::find(this->get_tower_footprint(site).begin(),
-		                  this->get_tower_footprint(site).end(),
-		                  move->get_active_target()->to_tile())
-		            != this->get_tower_footprint(site).end()) {
-			// A unit heading into the site needs a new target below.
-		}
-		else if (move->get_active_target() and move->get_active_arrival() > time) {
-			// Already moving away under its own or an earlier push order.
+		    and std::find(footprint.begin(), footprint.end(),
+		                  move->get_active_target()->to_tile()) == footprint.end()) {
+			// Already walking away under its own or an earlier push order.
 			continue;
 		}
 		std::optional<coord::phys3> escape;
@@ -1113,14 +1109,52 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 	auto placed_tower = it->second.tower_id;
 	if (not builder_alive(entity, time)
 	    or ownership->get_owners().get(time) != order->get_owner()
-	    or current != it->second.stand
-	    or (not placed_tower.has_value()
-	        and this->tile_occupied(state, current.to_tile(), time, builder))
 	    or not this->is_tile_reserved(tile)
-	    or this->reserved_tiles.at(tile) != builder
-	    or (not placed_tower.has_value() and this->tile_occupied(state, tile, time))) {
+	    or this->reserved_tiles.at(tile) != builder) {
 		this->cancel_build(state, builder, time);
 		return;
+	}
+	if (not finish and not placed_tower) {
+		const auto blockers = this->build_site_blockers(state, tile, time);
+		const bool at_stand = current == it->second.stand;
+		const bool stand_blocked = this->tile_occupied(
+			state, it->second.stand.to_tile(), time, builder);
+		if (not blockers.empty() or not at_stand or stand_blocked) {
+			// The first attempt after arrival starts the five-second clock.
+			// In transit to a distant site we only arrive here when the
+			// movement event fires, so travel itself does not count.
+			if (not it->second.blocked_since) it->second.blocked_since = time;
+			const auto elapsed = time - *it->second.blocked_since;
+			if (elapsed >= time::time_t::from_int(5)) {
+				log::log(INFO << "Skipping occupied FVD foundation after five seconds");
+				this->skip_blocked_build(state, builder, time);
+				return;
+			}
+			// Resolve units occupying the site without teleporting them.
+			// A unit already walking out is left alone until it clears.
+			this->push_build_site_blockers(state, tile, builder, time);
+			auto stand = this->find_build_stand(state, entity, tile, time);
+			if (stand) {
+				auto move = std::dynamic_pointer_cast<component::Move>(
+					entity->get_component(component::component_t::MOVE));
+				const bool going = move and move->get_active_target()
+				                and *move->get_active_target() == *stand
+				                and move->get_active_arrival() > time;
+				if (not going and *stand != current) {
+					system::Move::move_default(entity, state, *stand, time);
+				}
+				it->second.stand = *stand;
+			}
+			auto loop = this->event_loop.lock();
+			if (not loop) [[unlikely]]
+				throw Error{ERR << "FVD clearance event loop is unavailable"};
+			loop->create_event("game.fvd_build_progress", entity->get_manager(), state,
+			                   time + time::time_t::from_double(0.25),
+			                   {{"builder", builder}, {"order", order_id},
+			                    {"route", route_revision}, {"finish", false}});
+			return;
+		}
+		it->second.blocked_since.reset();
 	}
 	if (not finish) {
 		auto loop = this->event_loop.lock();
@@ -1244,7 +1278,7 @@ void FVD::refresh_paths(const std::shared_ptr<GameState> &state,
 		throw Error{ERR << "FVD construction event loop no longer exists"};
 	}
 	for (auto &[builder_id, build] : this->build_orders) {
-		if (build.tower_id.has_value()) {
+		if (build.tower_id.has_value() or build.blocked_since) {
 			continue;
 		}
 		auto found = state->get_game_entities().find(builder_id);
