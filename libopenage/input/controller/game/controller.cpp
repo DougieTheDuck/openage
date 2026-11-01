@@ -456,7 +456,9 @@ std::optional<StructureSelection> select_fvd_structure(
 			}
 		}
 	}
-	else if (shift and (previous.kind == kind or previous.kind == group_of(kind))) {
+	else if (shift and (previous.kind == kind or previous.kind == group_of(kind)
+	                     or (kind == SelectionKind::GROUP_CONSTRUCTING_TOWERS
+	                         and previous.kind == SelectionKind::TOWER))) {
 		const bool compatible = std::all_of(previous.ids.begin(), previous.ids.end(),
 			[&](gamestate::entity_id_t id) {
 				const auto entry = find(id);
