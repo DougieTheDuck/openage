@@ -2,19 +2,24 @@
 
 ## Why
 
-A Builder with dozens of towers cannot select them together, for example to
-delete a badly placed line.
+Builders need to inspect and group their own or allied structures, and Hunters
+need to inspect visible enemy towers without being able to command them.
 
 ## What Changes
 
-- As a Builder, double-clicking one of your **finished towers** selects all
-  of your finished towers visible on screen.
-- Double-clicking one of your **foundations** selects all of your foundations
-  visible on screen.
-- Double-clicking one of your **towers under construction** selects all of
-  your towers under construction visible on screen.
+- A Builder may Shift+left-click additional allied or own structures of the
+  same type (finished tower, tower under construction, or foundation), even
+  when the structures have different Builder owners.
+- As a Builder, double-clicking a **finished tower** selects all finished towers
+  belonging to that clicked tower's owner that are visible on screen.
+- Double-clicking a **foundation** selects the on-screen foundations of its owner.
+- Double-clicking a **tower under construction** selects its owner's on-screen
+  towers under construction.
 - The three groups never mix: only the kind double-clicked is selected.
-- A group of your towers or foundations can be deleted together with Delete.
+- Group selection is inspection-only for now: it never sends orders to an
+  allied owner's structures. Group demolition remains a separate TODO.
+- The Hunter can single-click a visible enemy tower to inspect its health and
+  tower stats but cannot multi-select any structures or select remembered fog silhouettes.
 - The HUD shows "N towers selected", "N towers under construction selected" or
   "N foundations selected".
 
@@ -27,4 +32,5 @@ delete a badly placed line.
 
 ## Status
 
-Proposed (Dougie, 2026-10-28). Not implemented.
+Selection and Hunter tower inspection code implemented on FVD, 2026-11-02;
+manual gameplay/Windows-Linux build verification outstanding. Group Delete remains proposed.
