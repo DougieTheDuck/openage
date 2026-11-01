@@ -186,6 +186,11 @@ void RelayLobbyClient::connect(RelayLobbyConfig settings) {
 		.phase = "connecting",
 		.message = settings.hosting ? "Creating relay room..." : "Joining relay room...",
 	});
+	if (settings.hosting) {
+		log::log(INFO << "[FVD/lobby] hosting_config capacity=" << settings.player_capacity
+		              << " mode=" << (settings.player_capacity > 2
+		                           or settings.prepared_rehost_lobby ? "multi" : "two-peer"));
+	}
 	this->worker = std::thread{[this, settings = std::move(settings)]() {
 		if (settings.hosting
 		    and (settings.player_capacity > 2 or settings.prepared_rehost_lobby)) {
@@ -1103,8 +1108,9 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 		this->publish(RelayLobbyStatus{
 			.phase = "waiting",
 			.message = "Room #" + std::to_string(lobby->room_id())
-			           + " accepts up to " + std::to_string(settings.player_capacity)
-			           + " players. Waiting for Builders or Hunter...",
+			           + " reserved for " + std::to_string(settings.player_capacity)
+			           + " players (1/" + std::to_string(settings.player_capacity)
+			           + "). Waiting for everyone to join...",
 			.participants = participants_text(),
 			.connected = true,
 		});
@@ -1117,15 +1123,21 @@ void RelayLobbyClient::run_multi_host(RelayLobbyConfig settings) {
 				previous_count = count;
 				this->publish(RelayLobbyStatus{
 					.phase = "lobby",
-					.message = "Guests joined. Start when everyone is ready ("
-					           + std::to_string(lobby->participant_count()) + "/"
-					           + std::to_string(settings.player_capacity) + ").",
+					.message = count == settings.player_capacity
+						? "Lobby full (" + std::to_string(count) + "/"
+						      + std::to_string(settings.player_capacity) + "). Ready to start."
+						: "Waiting for players (" + std::to_string(count) + "/"
+						      + std::to_string(settings.player_capacity) + ").",
 					.participants = participants_text(),
-					.can_start = count >= 2,
+					// The requested size is the required size. A 3-player
+					// room must not accidentally start its Hunter lottery
+					// after only the first guest connects.
+					.can_start = count == settings.player_capacity,
 					.connected = true,
 				});
 			}
-			if ((this->start_requested and lobby->participant_count() >= 2
+			if ((this->start_requested
+			     and lobby->participant_count() == settings.player_capacity
 			     and not settings.rehost_start)
 			    or (settings.rehost_start
 			        and lobby->participant_count() == settings.rehost_start->assignments.size())) break;

@@ -123,7 +123,7 @@ Item {
                     }
                 }
 
-                Text { text: "Maximum players when hosting (2–8)"; color: "#dfe9e3"; font.pixelSize: 12 }
+                Text { text: "Players required to start (2–8)"; color: "#dfe9e3"; font.pixelSize: 12 }
                 Rectangle {
                     width: parent.width; height: 36
                     color: "#17221e"; radius: 4; border.color: "#688478"; border.width: 1

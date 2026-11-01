@@ -40,8 +40,11 @@ handshakes report their errors in the menu; socket work is on a separate thread.
 Gameplay inputs are suppressed behind the overlay.
 
 **Current limitations:** The screen can host **2–8 people**, selected using
-"Maximum players". The default remains two, preserving the existing tested
-single-guest path. When hosting a larger room, `RelayLobbyClient` uses
+"Players required to start". The default remains two, preserving the existing tested
+single-guest path. A 3-player room reserves two relay guest channels and
+does not enable Start Game until the host and both guests have joined.
+The host logs the actual configured capacity as
+`[FVD/lobby] hosting_config capacity=3 mode=multi` for verification. When hosting a larger room, `RelayLobbyClient` uses
 `RelayMultiHostLobby` and sends each guest its own initial snapshot and
 live world-delta stream. All guest orders enter one authoritative simulation,
 and command replies are returned only to their authenticated sender.
