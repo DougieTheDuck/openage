@@ -983,6 +983,7 @@ std::vector<entity_id_t> FVD::build_site_blockers(
 	const std::shared_ptr<GameState> &state, const coord::tile &site,
 	const time::time_t &time) const {
 	std::vector<entity_id_t> blockers;
+	const auto footprint = this->get_tower_footprint(site);
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (this->is_garrisoned(id)
 		    or (entity->get_definition() != this->builder
@@ -991,7 +992,6 @@ std::vector<entity_id_t> FVD::build_site_blockers(
 			entity->get_component(component::component_t::POSITION));
 		if (not position) continue;
 		const auto here = position->get_positions().get(time).to_tile();
-		const auto footprint = this->get_tower_footprint(site);
 		if (std::find(footprint.begin(), footprint.end(), here) != footprint.end())
 			blockers.push_back(id);
 	}
@@ -1111,6 +1111,13 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 	    or ownership->get_owners().get(time) != order->get_owner()
 	    or not this->is_tile_reserved(tile)
 	    or this->reserved_tiles.at(tile) != builder) {
+		this->cancel_build(state, builder, time);
+		return;
+	}
+	// Construction was started only at its approved adjacent stand; moving
+	// away during the timed build still cancels the work as before.
+	if (finish and (current != it->second.stand
+	                or this->tile_occupied(state, current.to_tile(), time, builder))) {
 		this->cancel_build(state, builder, time);
 		return;
 	}
