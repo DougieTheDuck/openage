@@ -1117,9 +1117,13 @@ void FVD::advance_build(const std::shared_ptr<GameState> &state,
 	if (not finish and not placed_tower) {
 		const auto blockers = this->build_site_blockers(state, tile, time);
 		const bool at_stand = current == it->second.stand;
+		const auto stand_tile = it->second.stand.to_tile();
+		const bool adjacent = std::abs(stand_tile.ne - tile.ne) <= 1
+		                   and std::abs(stand_tile.se - tile.se) <= 1
+		                   and stand_tile != tile;
 		const bool stand_blocked = this->tile_occupied(
 			state, it->second.stand.to_tile(), time, builder);
-		if (not blockers.empty() or not at_stand or stand_blocked) {
+		if (not blockers.empty() or not at_stand or not adjacent or stand_blocked) {
 			// The first attempt after arrival starts the five-second clock.
 			// In transit to a distant site we only arrive here when the
 			// movement event fires, so travel itself does not count.
