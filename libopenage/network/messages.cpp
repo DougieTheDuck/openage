@@ -692,7 +692,7 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 			throw Error{MSG(err) << "FVD Hunter stances may only be sent to their owner"};
 		}
 		if (entity.garrisoned_builder
-		    and (entity.owner_id != state.local_player_id
+		    and (entity.garrison_player.value_or(entity.owner_id) != state.local_player_id
 		         or entity.definition != TOWER_DEFINITION
 		         or *entity.garrisoned_builder == 0)) {
 			throw Error{MSG(err) << "Garrisoned Builder identity belongs only to the tower owner"};
@@ -947,8 +947,7 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		EntityState entity{entity_id, owner_id, std::move(definition), position};
 		if ((flags & ENTITY_HAS_GARRISONED_BUILDER) != 0) {
 			const auto builder_id = reader.u64();
-			if (builder_id == 0 or owner_id != state.local_player_id
-			    or entity.definition != TOWER_DEFINITION) {
+			if (builder_id == 0 or entity.definition != TOWER_DEFINITION) {
 				throw Error{MSG(err) << "Invalid or foreign garrison identity"};
 			}
 			entity.garrisoned_builder = builder_id;
@@ -968,6 +967,9 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 				throw Error{MSG(err) << "Invalid public tower flag"};
 			entity.garrison_player = player_id;
 		}
+		if (entity.garrisoned_builder
+		    and entity.garrison_player.value_or(entity.owner_id) != state.local_player_id)
+			throw Error{MSG(err) << "Foreign sheltered Builder identity"};
 		if ((flags & ENTITY_HAS_HUNTER_STANCE) != 0) {
 			if (owner_id != state.local_player_id or entity.definition != HORSE_DEFINITION
 			    or not is_known_hunter_stance(hunter_stance)) {
@@ -1043,7 +1045,7 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 		}
 		entity.remembered = (flags & ENTITY_REMEMBERED) != 0;
 		if (entity.garrisoned_builder
-		    and (entity.owner_id != state.local_player_id
+		    and (entity.garrison_player.value_or(entity.owner_id) != state.local_player_id
 		         or entity.definition != TOWER_DEFINITION
 		         or *entity.garrisoned_builder == 0)) {
 			throw Error{MSG(err) << "Garrisoned Builder identity belongs only to the tower owner"};

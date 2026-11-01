@@ -448,9 +448,13 @@ void apply_guest_selection(
 	});
 	for (auto id : candidates) {
 		auto found = find(id);
-		if (found == world.entities.end() or found->owner_id != world.local_player_id) {
-			continue;
-		}
+		const bool own_unit = found != world.entities.end()
+		                  and found->owner_id == world.local_player_id;
+		const bool allied_tower = found != world.entities.end()
+		                       and world.local_player_id >= 2
+		                       and found->owner_id >= 2
+		                       and found->definition == "fvd.data.entities.Tower";
+		if (not own_unit and not allied_tower) continue;
 		if (found->definition == "fvd.data.entities.Horse") {
 			if (kind != SelectionKind::NONE and kind != SelectionKind::HORSE) continue;
 			kind = SelectionKind::HORSE;
@@ -782,7 +786,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				if (world) {
 					auto matches = [&](const network::EntityState &entity) {
 						return entity.entity_id != selection.ids.front()
-						    and entity.owner_id == owner
+						    and owner >= 2 and entity.owner_id >= 2
 						    and entity.definition == "fvd.data.entities.Tower";
 					};
 					auto found = std::find_if(
@@ -1001,7 +1005,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 					                             : simulation->get_fvd_presentation_state();
 					const network::WorldState *world = replicated ? &*replicated : host_world.get();
 					auto matches_tower = [owner](const network::EntityState &entity) {
-						return entity.owner_id == owner
+						return owner >= 2 and entity.owner_id >= 2
 						    and entity.definition == "fvd.data.entities.Tower";
 					};
 					std::optional<gamestate::entity_id_t> tower_id;
@@ -1028,7 +1032,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 						if (it != world->entities.end()) tower_id = it->entity_id;
 					}
 					if (not tower_id) {
-						log::log(INFO << "FVD garrison: click one of your own completed towers");
+						log::log(INFO << "FVD garrison: click a friendly completed tower");
 						return; // Keep T mode armed for another click or Esc.
 					}
 					controller->cancel_garrison_mode();

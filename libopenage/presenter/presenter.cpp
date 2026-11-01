@@ -841,7 +841,7 @@ network::WorldState Presenter::fvd_local_view(const network::WorldState &world, 
 	this->world_renderer->set_shown(std::move(shown));
 	// Builders share fog, not private garrison identities.
 	for (auto &entity : view.entities) {
-		if (entity.owner_id != controlled) entity.garrisoned_builder.reset();
+		if (entity.garrison_player != controlled) entity.garrisoned_builder.reset();
 	}
 	// A guest only knows a remembered building's last place, not its state.
 	for (auto &entity : view.entities) {
@@ -1669,10 +1669,12 @@ void Presenter::render() {
 						                       return entry.entity_id == id;
 					                       });
 					if (it != construction_world->entities.end()
-					    and it->owner_id == controlled) {
-						selection_label = it->garrisoned_builder
-							? QString{"Tower — Builder garrisoned (G to exit)"}
-							: QString{"Tower — right-click to set ungarrison point"};
+					    and it->owner_id >= 2) {
+						selection_label = it->garrison_player == controlled
+							? QString{"Tower — your Builder garrisoned (G to exit)"}
+							: it->garrison_player
+								? QString{"Tower — allied Builder garrisoned"}
+								: QString{"Tower — right-click to set your ungarrison point"};
 						this->fvd_hud_state->insert("selection", selection_label);
 					}
 				}
