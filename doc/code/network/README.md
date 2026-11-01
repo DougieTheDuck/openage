@@ -51,6 +51,7 @@ On a fresh room-list request, the relay drops advertised rooms whose host TCP
 connection has closed, and refuses a join if its host has already disconnected.
 The UI's room list is refreshed by **Refresh Games**, not pushed in real time.
 An empty request retries briefly so a room being published concurrently with the refresh is included.
+Role assignment releases lobby text focus, and persisted numeric fields are validated before reuse.
 Session IDs now survive the final role rebinding, and the initial world
 snapshot/acknowledgement runs through that same relay connection. The host can
 now queue complete recipient-specific state captures; the relay worker computes

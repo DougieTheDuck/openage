@@ -86,6 +86,10 @@ bool GUI::contains_item(const QString &object_name, const QPointF &scene_positio
 	       and item->contains(item->mapFromScene(scene_position));
 }
 
+void GUI::clear_input_focus() {
+	this->gui_renderer->get_window()->contentItem()->forceActiveFocus();
+}
+
 std::shared_ptr<renderer::RenderPass> GUI::get_render_pass() const {
 	return this->render_pass;
 }

@@ -82,6 +82,32 @@ std::shared_ptr<QQmlPropertyMap> create_property_map() {
 #endif
 }
 
+QString validated_lobby_setting(const QString &key,
+                                const QString &value,
+                                const QString &fallback) {
+	auto normalized = value;
+	bool valid = true;
+	if (key == QStringLiteral("port")) {
+		bool converted = false;
+		const auto port = normalized.toUInt(&converted);
+		valid = converted and port > 0 and port <= 65535;
+	}
+	else if (key == QStringLiteral("maxPlayers")) {
+		// Older hidden lobby inputs could append gameplay hotkeys to this
+		// otherwise valid single-digit preference.
+		normalized = normalized.left(1);
+		bool converted = false;
+		const auto count = normalized.toUInt(&converted);
+		valid = converted and count >= 2 and count <= 8;
+	}
+	else if (key == QStringLiteral("roomId") and not normalized.isEmpty()) {
+		bool converted = false;
+		const auto room_id = normalized.toULongLong(&converted);
+		valid = converted and room_id != 0;
+	}
+	return valid ? normalized : fallback;
+}
+
 } // namespace
 
 Presenter::Presenter(const util::Path &root_dir,
@@ -605,6 +631,7 @@ void Presenter::refresh_fvd_lobby_state() {
 	// Lock the local controller to the one player chosen by StartMatch.
 	if (state.local_player_id != 0 and this->game_controller
 	    and state.local_player_id != this->fvd_assigned_player) {
+		if (this->gui) this->gui->clear_input_focus();
 		this->game_controller->lock_to_online_player(state.local_player_id);
 		this->fvd_assigned_player = state.local_player_id;
 	}
@@ -1430,9 +1457,14 @@ void Presenter::init_input() {
 					std::pair{"roomId", ""},
 					std::pair{"name", "Player"},
 				}) {
+					const auto setting = QStringLiteral("lobby/") + QString::fromUtf8(key);
+					const auto fallback = QString::fromUtf8(default_value);
+					const auto stored = saved.value(setting, fallback).toString();
+					const auto value = validated_lobby_setting(
+						QString::fromUtf8(key), stored, fallback);
+					if (value != stored) saved.setValue(setting, value);
 					this->fvd_lobby_state->insert(
-						key, saved.value(QStringLiteral("lobby/") + QString::fromUtf8(key),
-						                 QString::fromUtf8(default_value)).toString());
+						key, value);
 				}
 				// This optional access credential must not be persisted as
 				// unencrypted preferences (QSettings is not a password vault).

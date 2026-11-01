@@ -60,6 +60,9 @@ public:
 	/** Hit test a named QML control in current scene coordinates. */
 	bool contains_item(const QString &object_name, const QPointF &scene_position) const;
 
+	/** Move keyboard focus away from an editable QML control. */
+	void clear_input_focus();
+
 	/**
 	 * Get the render pass of the GUI.
 	 *

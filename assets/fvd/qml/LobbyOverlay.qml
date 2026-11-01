@@ -107,6 +107,8 @@ Item {
                             anchors.fill: parent; anchors.margins: 9
                             text: menu.lobby ? menu.lobby.port : "32456"; color: "white"; font.pixelSize: 14
                             inputMethodHints: Qt.ImhDigitsOnly
+                            maximumLength: 5
+                            validator: IntValidator { bottom: 1; top: 65535 }
                             onTextEdited: if (menu.lobby) menu.lobby.port = text
                         }
                     }
@@ -131,6 +133,8 @@ Item {
                         anchors.fill: parent; anchors.margins: 9
                         text: menu.lobby ? menu.lobby.maxPlayers : "2"; color: "white"; font.pixelSize: 14
                         inputMethodHints: Qt.ImhDigitsOnly
+                        maximumLength: 1
+                        validator: IntValidator { bottom: 2; top: 8 }
                         onTextEdited: if (menu.lobby) menu.lobby.maxPlayers = text
                     }
                 }
@@ -144,6 +148,8 @@ Item {
                         text: menu.lobby ? menu.lobby.roomId : ""
                         color: "white"; font.pixelSize: 14
                         inputMethodHints: Qt.ImhDigitsOnly
+                        maximumLength: 20
+                        validator: RegularExpressionValidator { regularExpression: /[0-9]*/ }
                         onTextEdited: if (menu.lobby) menu.lobby.roomId = text
                     }
                 }
