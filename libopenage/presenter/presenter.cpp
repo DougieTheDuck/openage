@@ -1580,11 +1580,16 @@ void Presenter::render() {
 		auto selected = this->game_controller->get_selection_details();
 		if (this->fvd_hud_state
 		    and (selected.kind == input::game::SelectionKind::TOWER
-		         or selected.kind == input::game::SelectionKind::FOUNDATION)
+		         or selected.kind == input::game::SelectionKind::FOUNDATION
+		         or selected.kind == input::game::SelectionKind::BUILDER)
 		    and selected.ids.size() == 1) {
+			// A Builder that enters a tower remains alive in the authoritative
+			// simulation but disappears from visible world snapshots. Do not
+			// leave its host-local RenderEntity selected: unlike replicated
+			// guests, the host keeps the old direct render/health pointer.
 			// A demolished (or combat-destroyed) tower can remain selected
 			// until the next click. Clear it only after authoritative state
-			// confirms removal, never when sending an unacknowledged order.
+			// confirms removal or sheltering, never on an unacknowledged order.
 			auto world = this->fvd_replication
 				? this->fvd_replication->get_world_state()
 				: std::optional<network::WorldState>{};

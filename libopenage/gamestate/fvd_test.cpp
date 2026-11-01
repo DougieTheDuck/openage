@@ -852,6 +852,14 @@ void fvd_garrison() {
 	// multiplayer must not manufacture a confirmed death effect.
 	TESTEQUALS(network::confirmed_combat_effects(
 	    pre_garrison_world, post_garrison_world).empty(), true);
+	// Host presentation can no longer keep an invisible Builder selected:
+	// that entity is intentionally absent in the snapshot, while the
+	// public occupant flag is present on the tower.
+	TESTEQUALS(std::none_of(post_garrison_world.entities.begin(),
+	                       post_garrison_world.entities.end(),
+	                       [builder](const auto &entry) {
+		                       return entry.entity_id == builder;
+	                       }), true);
 	TESTEQUALS(std::any_of(post_garrison_world.entities.begin(),
 	                       post_garrison_world.entities.end(),
 	                       [tower](const auto &entry) {
