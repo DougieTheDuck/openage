@@ -522,9 +522,11 @@ Item {
 			      + "Stance: Z Aggressive | X Defensive | C Observe"
 			    : root.canBuild
 			    ? "Builder: right-click foundation to resume | B: Build Tower | Shift+drag: line"
+			    : root.isTower && root.hunter
+			    ? "Hunter: selected enemy tower is inspection only"
 			    : (root.isTower || root.isFoundation) && !root.hunter
-			    ? "Builder: press Delete to remove your selected tower or foundation"
-			    : "Drag to select your units | Right-click to move"
+			    ? "Builder: Shift+click allied same-type structures | Double-click to select owner's on-screen structures"
+			    : "Drag to select units | Builders: Shift+click allied structures, double-click to group"
 			horizontalAlignment: Text.AlignHCenter
 		}
 	}
