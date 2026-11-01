@@ -41,6 +41,9 @@ enum class SelectionKind {
 	NONE,
 	BUILDER,
 	TOWER,
+	GROUP_TOWERS,
+	GROUP_CONSTRUCTING_TOWERS,
+	GROUP_FOUNDATIONS,
 	HORSE,
 	GROUP_HORSES,
 	/** The Hunter's central tower; right-click sets its rally point. */
@@ -56,6 +59,23 @@ struct SelectionDetails {
 	SelectionKind kind = SelectionKind::NONE;
 	std::shared_ptr<renderer::world::RenderEntity> render_entity;
 };
+
+/** Structure-only selection of actual, recipient-visible world entities. */
+struct StructureSelection {
+	std::vector<gamestate::entity_id_t> ids;
+	SelectionKind kind{SelectionKind::NONE};
+};
+
+/** Builders can Shift-add allied structures of the same type; double-click
+ * selects matching on-screen structures of the clicked owner. Hunters may
+ * inspect one visible tower only. Hidden/remembered enemies are excluded. */
+std::optional<StructureSelection> select_fvd_structure(
+	const network::WorldState &world,
+	gamestate::player_id_t viewer,
+	gamestate::entity_id_t clicked,
+	const SelectionDetails &previous,
+	bool shift, bool double_click,
+	const std::function<bool(const network::EntityState &)> &on_screen);
 
 /**
  * Interface for game controllers.
@@ -108,6 +128,10 @@ public:
 		const std::vector<gamestate::entity_id_t> ids,
 		SelectionKind kind = SelectionKind::NONE,
 		const std::shared_ptr<renderer::world::RenderEntity> &render_entity = nullptr);
+
+	/** Suppress Qt's trailing release after a handled double-click. */
+	void mark_structure_double_click();
+	bool consume_structure_double_click_release();
 
 	/** Start an asynchronous selection update and return its generation. */
 	uint64_t begin_selection_update();
@@ -223,6 +247,7 @@ private:
 	std::shared_ptr<renderer::world::RenderEntity> selected_render_entity;
 	uint64_t selection_generation = 0;
 	bool selection_pending = false;
+	bool skip_double_click_release = false;
 	std::function<void()> deferred_selection_action{};
 
 	/** Which order the next Hunter map click issues. */
@@ -276,7 +301,10 @@ std::vector<coord::tile> tower_line_sites(const coord::tile &start,
  * Setup default controller action bindings:
  *
  * - B, then Left Mouse click: Build a tower; Shift-click to append sites.
- * - Shift+left-drag: queue a straight line of foundations along one map axis.
+ * - Shift+left-drag with Builder: queue a straight line of foundations.
+ * - Shift+click structures: add same-type allied structures; double-click
+ *   a structure to select its owner's same-type on-screen structures.
+ * - Hunter: single-click Builder towers to inspect HP; no building groups.
  * - F9: Skip the first Hunter spawn delay on the authoritative simulation.
  * - Right Mouse click: Move to terrain; Hunter right-clicks enemy to
  *   focus-attack, while a Builder right-clicks a queued foundation to
