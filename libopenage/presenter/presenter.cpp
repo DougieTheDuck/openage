@@ -1610,31 +1610,47 @@ void Presenter::render() {
 	}
 	if (this->game_controller) {
 		auto selected = this->game_controller->get_selection_details();
-		if (this->fvd_hud_state
+		if (this->fvd_hud_state and not selected.ids.empty()
 		    and (selected.kind == input::game::SelectionKind::TOWER
 		         or selected.kind == input::game::SelectionKind::FOUNDATION
-		         or selected.kind == input::game::SelectionKind::BUILDER)
-		    and selected.ids.size() == 1) {
-			// A Builder that enters a tower remains alive in the authoritative
-			// simulation but disappears from visible world snapshots. Do not
-			// leave its host-local RenderEntity selected: unlike replicated
-			// guests, the host keeps the old direct render/health pointer.
-			// A demolished (or combat-destroyed) tower can remain selected
-			// until the next click. Clear it only after authoritative state
-			// confirms removal or sheltering, never on an unacknowledged order.
-			auto world = this->fvd_replication
+		         or selected.kind == input::game::SelectionKind::BUILDER
+		         or selected.kind == input::game::SelectionKind::GROUP_TOWERS
+		         or selected.kind == input::game::SelectionKind::GROUP_CONSTRUCTING_TOWERS
+		         or selected.kind == input::game::SelectionKind::GROUP_FOUNDATIONS)) {
+			// Drop destroyed/sheltered structures from groups, and deselect
+			// Hunter-inspected towers when fog hides them. The rendered group
+			// must never retain an entity absent from authoritative state.
+			const auto replicated = this->fvd_replication
 				? this->fvd_replication->get_world_state()
 				: std::optional<network::WorldState>{};
-			const auto local = this->fvd_replication
-				? nullptr : this->simulation->get_fvd_presentation_state();
-			const network::WorldState *authoritative = world ? &*world : local.get();
-			if (authoritative and std::none_of(
-			        authoritative->entities.begin(), authoritative->entities.end(),
-			        [&](const network::EntityState &entity) {
-				        return entity.entity_id == selected.ids.front();
-			        })) {
-				this->game_controller->set_selected({});
-				selected = this->game_controller->get_selection_details();
+			const auto local = replicated ? nullptr : this->simulation->get_fvd_presentation_state();
+			const network::WorldState *authoritative = replicated ? &*replicated : local.get();
+			if (authoritative) {
+				std::vector<gamestate::entity_id_t> remaining{};
+				for (const auto id : selected.ids) {
+					const auto it = std::find_if(authoritative->entities.begin(),
+					    authoritative->entities.end(),
+					    [id](const network::EntityState &entity) { return entity.entity_id == id; });
+					if (it == authoritative->entities.end() or it->remembered) continue;
+					if (this->game_controller->get_controlled() == 1
+					    and selected.kind == input::game::SelectionKind::TOWER
+					    and not input::game::select_fvd_structure(*authoritative, 1, id,
+					        {}, false, false,
+					        [](const network::EntityState &) { return true; })) continue;
+					remaining.push_back(id);
+				}
+				if (remaining != selected.ids) {
+					auto kind = selected.kind;
+					if (remaining.size() == 1) {
+						if (kind == input::game::SelectionKind::GROUP_TOWERS
+						    or kind == input::game::SelectionKind::GROUP_CONSTRUCTING_TOWERS)
+							kind = input::game::SelectionKind::TOWER;
+						else if (kind == input::game::SelectionKind::GROUP_FOUNDATIONS)
+							kind = input::game::SelectionKind::FOUNDATION;
+					}
+					this->game_controller->set_selected(remaining, kind);
+					selected = this->game_controller->get_selection_details();
+				}
 			}
 		}
 		this->hud_renderer->set_selected(selected.ids);
