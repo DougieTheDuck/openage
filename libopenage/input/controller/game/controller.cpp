@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cmath>
 #include <iterator>
 #include <utility>
 
@@ -112,7 +113,10 @@ void Controller::set_selected(
 	log::log(DBG << "Selected " << ids.size() << " entities");
 
 	this->selected = ids;
-	this->selected_kind = (ids.size() == 1 or kind == SelectionKind::GROUP_HORSES)
+	this->selected_kind = (ids.size() == 1 or kind == SelectionKind::GROUP_HORSES
+	                       or kind == SelectionKind::GROUP_TOWERS
+	                       or kind == SelectionKind::GROUP_CONSTRUCTING_TOWERS
+	                       or kind == SelectionKind::GROUP_FOUNDATIONS)
 	                         ? kind : SelectionKind::NONE;
 	this->selected_render_entity = ids.size() == 1 ? render_entity : nullptr;
 	this->selection_generation += 1;
@@ -121,6 +125,16 @@ void Controller::set_selected(
 	this->placing_tower = false;
 	this->garrison_mode = false;
 	this->hunter_targeting = HunterTargeting::NONE;
+}
+
+void Controller::mark_structure_double_click() {
+	std::unique_lock lock{this->mutex};
+	this->skip_double_click_release = true;
+}
+
+bool Controller::consume_structure_double_click_release() {
+	std::unique_lock lock{this->mutex};
+	return std::exchange(this->skip_double_click_release, false);
 }
 
 uint64_t Controller::begin_selection_update() {
@@ -146,7 +160,10 @@ bool Controller::set_selected_if_current(
 
 		log::log(DBG << "Selected " << ids.size() << " entities");
 		this->selected = ids;
-		this->selected_kind = (ids.size() == 1 or kind == SelectionKind::GROUP_HORSES)
+		this->selected_kind = (ids.size() == 1 or kind == SelectionKind::GROUP_HORSES
+		                       or kind == SelectionKind::GROUP_TOWERS
+		                       or kind == SelectionKind::GROUP_CONSTRUCTING_TOWERS
+		                       or kind == SelectionKind::GROUP_FOUNDATIONS)
 		                         ? kind : SelectionKind::NONE;
 		this->selected_render_entity = ids.size() == 1 ? render_entity : nullptr;
 		this->selection_pending = false;
@@ -363,6 +380,99 @@ std::vector<gamestate::entity_id_t> units_take_priority(
 	return units.empty() ? ids : units;
 }
 
+
+namespace {
+
+SelectionKind structure_type(const network::WorldState &world,
+                             const network::EntityState &entity) {
+	if (entity.definition == "fvd.data.entities.Foundation")
+		return SelectionKind::FOUNDATION;
+	if (entity.definition == "fvd.data.entities.HunterTower")
+		return SelectionKind::HUNTER_TOWER;
+	if (entity.definition != "fvd.data.entities.Tower")
+		return SelectionKind::NONE;
+	const bool being_built = std::any_of(
+		world.constructions.begin(), world.constructions.end(),
+		[&](const network::ConstructionState &construction) {
+			return construction.site_entity_id == entity.entity_id
+			    and construction.phase == network::ConstructionPhase::UNDER_CONSTRUCTION;
+		});
+	return being_built ? SelectionKind::GROUP_CONSTRUCTING_TOWERS : SelectionKind::TOWER;
+}
+
+SelectionKind group_of(SelectionKind kind) {
+	if (kind == SelectionKind::TOWER) return SelectionKind::GROUP_TOWERS;
+	if (kind == SelectionKind::FOUNDATION) return SelectionKind::GROUP_FOUNDATIONS;
+	return kind;
+}
+
+bool visible_structure(const network::WorldState &world,
+                       gamestate::player_id_t viewer,
+                       const network::EntityState &entity) {
+	if (entity.remembered) return false;
+	if (entity.owner_id != 0 and (entity.owner_id == 1) == (viewer == 1))
+		return true;
+	const auto side = viewer == 1 ? network::PlayerRole::HUNTER : network::PlayerRole::BUILDER;
+	const auto fog = std::find_if(world.fog.begin(), world.fog.end(),
+	                             [side](const network::TeamFog &entry) {
+		                             return entry.team == side;
+	                             });
+	return fog != world.fog.end()
+	    and network::fog_tile_set(fog->visible, world.map_size, entity.position.to_tile());
+}
+
+} // namespace
+
+std::optional<StructureSelection> select_fvd_structure(
+	const network::WorldState &world,
+	gamestate::player_id_t viewer,
+	gamestate::entity_id_t clicked,
+	const SelectionDetails &previous,
+	bool shift, bool double_click,
+	const std::function<bool(const network::EntityState &)> &on_screen) {
+	const auto find = [&](gamestate::entity_id_t id) {
+		return std::find_if(world.entities.begin(), world.entities.end(),
+			[id](const network::EntityState &entity) { return entity.entity_id == id; });
+	};
+	const auto source = find(clicked);
+	if (source == world.entities.end() or not visible_structure(world, viewer, *source))
+		return std::nullopt;
+	const auto kind = structure_type(world, *source);
+	if (kind == SelectionKind::NONE) return std::nullopt;
+	const bool builder = viewer >= 2;
+	if (builder and source->owner_id < 2) return std::nullopt;
+	if (not builder and kind == SelectionKind::FOUNDATION) return std::nullopt;
+	if (not builder) {
+		return StructureSelection{{clicked},
+			kind == SelectionKind::HUNTER_TOWER ? kind : SelectionKind::TOWER};
+	}
+	std::vector<gamestate::entity_id_t> selected{clicked};
+	if (double_click) {
+		for (const auto &entity : world.entities) {
+			if (entity.entity_id != clicked and entity.owner_id == source->owner_id
+			    and structure_type(world, entity) == kind
+			    and visible_structure(world, viewer, entity) and on_screen(entity)) {
+				selected.push_back(entity.entity_id);
+			}
+		}
+	}
+	else if (shift and (previous.kind == kind or previous.kind == group_of(kind))) {
+		const bool compatible = std::all_of(previous.ids.begin(), previous.ids.end(),
+			[&](gamestate::entity_id_t id) {
+				const auto entry = find(id);
+				return entry != world.entities.end() and entry->owner_id >= 2
+				    and structure_type(world, *entry) == kind
+				    and visible_structure(world, viewer, *entry);
+			});
+		if (compatible) selected.insert(selected.end(), previous.ids.begin(), previous.ids.end());
+	}
+	std::sort(selected.begin(), selected.end());
+	selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
+	const auto result_kind = selected.size() > 1 ? group_of(kind)
+	    : (kind == SelectionKind::GROUP_CONSTRUCTING_TOWERS ? SelectionKind::TOWER : kind);
+	return StructureSelection{std::move(selected), result_kind};
+}
+
 namespace {
 
 /** Resolve the selected entity type on the simulation thread. */
@@ -426,6 +536,37 @@ void apply_selection(const std::shared_ptr<Controller> &controller,
 	}
 	controller->set_selected_if_current(
 		generation, ids, kind, found->second->get_render_entity());
+}
+
+
+/** Structure picks use authoritative recipient-visible snapshots, independent
+ * of the host-local game.click_select ownership-only event. */
+bool apply_structure_click(
+	const std::shared_ptr<Controller> &controller,
+	const std::shared_ptr<gamestate::GameSimulation> &simulation,
+	const std::shared_ptr<renderer::camera::Camera> &camera,
+	const std::function<std::optional<network::WorldState>()> &guest_world,
+	gamestate::entity_id_t clicked, uint64_t generation,
+	const SelectionDetails &previous, bool shift, bool double_click) {
+	const auto replica = guest_world ? guest_world() : std::optional<network::WorldState>{};
+	const auto local = replica ? nullptr : simulation->get_fvd_presentation_state();
+	const network::WorldState *world = replica ? &*replica : local.get();
+	if (not world) return false;
+	const auto viewer = static_cast<gamestate::player_id_t>(controller->get_controlled());
+	const auto on_screen = [camera](const network::EntityState &entity) {
+		const Eigen::Matrix4f matrix = camera->get_projection_matrix() * camera->get_view_matrix();
+		const auto pos = entity.position.to_scene3().to_world_space();
+		const Eigen::Vector4f clip = matrix * Eigen::Vector4f{pos.x(), pos.y(), pos.z(), 1.0f};
+		return std::isfinite(clip.w()) and clip.w() > 0.0f
+		    and std::isfinite(clip.x()) and std::isfinite(clip.y())
+		    and std::abs(clip.x() / clip.w()) <= 1.0f
+		    and std::abs(clip.y() / clip.w()) <= 1.0f;
+	};
+	const auto result = select_fvd_structure(
+		*world, viewer, clicked, previous, shift, double_click, on_screen);
+	if (not result) return false;
+	controller->set_selected_if_current(generation, result->ids, result->kind);
+	return true;
 }
 
 /** Resolve guest selections exclusively from the host's replicated world. */
@@ -979,6 +1120,10 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		[simulation, time_loop, camera, pick_entity, create_entity_event, hunter_route_event,
 		 send_guest_command, guest_world](const event_arguments &args,
 	        const std::shared_ptr<Controller> controller) {
+			if (controller->consume_structure_double_click_release()) {
+				controller->reset_drag_select();
+				return;
+			}
 			const bool shift = (args.e.mod_code & Qt::ShiftModifier) != 0;
 			const auto start = controller->get_drag_select_start_optional();
 			const auto world_start = controller->get_drag_world_start_optional();
@@ -1131,8 +1276,11 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 					if (std::abs(drag_delta.x) < drag_threshold
 					    and std::abs(drag_delta.y) < drag_threshold) {
 						pick_entity(args.mouse,
-							[controller, selection_generation, replica = std::move(*replica)](
+							[controller, simulation, camera, guest_world, selection, shift,
+							 selection_generation, replica = std::move(*replica)](
 								std::optional<gamestate::entity_id_t> id) {
+								if (id and apply_structure_click(controller, simulation, camera,
+								    guest_world, *id, selection_generation, selection, shift, false)) return;
 								apply_guest_selection(controller, replica, selection_generation,
 									id ? std::vector<gamestate::entity_id_t>{*id}
 									   : std::vector<gamestate::entity_id_t>{});
@@ -1175,8 +1323,11 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				auto controlled = controller->get_controlled();
 				pick_entity(
 					args.mouse,
-					[simulation, time_loop, controller, controlled, selection_generation](
+					[simulation, time_loop, camera, controller, guest_world, selection,
+						 shift, controlled, selection_generation](
 						std::optional<gamestate::entity_id_t> id) {
+						if (id and apply_structure_click(controller, simulation, camera,
+						    guest_world, *id, selection_generation, selection, shift, false)) return;
 						std::vector<gamestate::entity_id_t> picked;
 						if (id.has_value()) {
 							picked.push_back(*id);
@@ -1237,6 +1388,34 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 		QEvent::MouseButtonRelease};
 
 	ctx->bind(ev_mouse_lmb_release, drag_selection_action);
+
+	// Qt delivers a final left release after its double-click event. Process
+	// the group here and suppress that release so it cannot undo the group.
+	binding_func_t select_structure_group{
+		[simulation, camera, pick_entity, guest_world](const event_arguments &args,
+		                                              const std::shared_ptr<Controller> controller) {
+			controller->mark_structure_double_click();
+			controller->reset_drag_select();
+			if (controller->is_garrison_mode_active()
+			    or controller->is_tower_placement_active()
+			    or controller->is_attack_move_active()
+			    or controller->is_patrol_active()) return;
+			const auto previous = controller->get_selection_details();
+			const auto generation = controller->begin_selection_update();
+			pick_entity(args.mouse,
+				[simulation, camera, controller, guest_world, previous, generation](
+				    std::optional<gamestate::entity_id_t> id) {
+					if (id and apply_structure_click(controller, simulation, camera,
+					    guest_world, *id, generation, previous, false, true)) return;
+					// Ignore double-click on non-structures without losing the
+					// selection created by the preceding single click.
+					controller->set_selected_if_current(
+					    generation, previous.ids, previous.kind, previous.render_entity);
+				});
+		}};
+	ctx->bind(Event{event_class::MOUSE_BUTTON_DBL, Qt::MouseButton::LeftButton,
+	                Qt::KeyboardModifier::NoModifier, QEvent::MouseButtonDblClick},
+	          binding_action{forward_action_t::CLEAR, select_structure_group});
 	// Shift+left release queues a click or a constrained multi-site drag.
 	ctx->bind(Event{event_class::MOUSE_BUTTON, Qt::MouseButton::LeftButton,
 	                Qt::KeyboardModifier::ShiftModifier, QEvent::MouseButtonRelease},
