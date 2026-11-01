@@ -176,6 +176,8 @@ struct EntityState {
 	std::optional<gamestate::entity_id_t> garrisoned_builder{};
 	/** A private ungarrison marker's source tower (never exposed to other players). */
 	std::optional<gamestate::entity_id_t> ungarrison_source_tower{};
+	/** Public occupant's player colour; the hidden Builder ID stays private. */
+	std::optional<gamestate::player_id_t> garrison_player{};
 };
 
 /** FVD role assigned to one playable player. */

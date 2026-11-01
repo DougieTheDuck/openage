@@ -201,8 +201,10 @@ WorldState capture_fvd_presentation_state(
 			entity_state.health = hp->first;
 			entity_state.maximum_health = hp->second;
 		}
-		if (entity->get_definition() == "fvd.data.entities.Tower")
+		if (entity->get_definition() == "fvd.data.entities.Tower") {
 			entity_state.garrisoned_builder = fvd->get_garrisoned_builder(entity_id);
+			entity_state.garrison_player = fvd->get_garrisoned_player(state, entity_id, time);
+		}
 		if (entity->get_definition() == fvd->get_hunter_rally_marker_definition())
 			entity_state.ungarrison_source_tower = fvd->get_ungarrison_marker_source(entity_id);
 		if (entity->get_definition() == "fvd.data.entities.Horse") {
@@ -320,8 +322,12 @@ WorldState capture_fvd_state(
 		// Only the Hunter learns how its horses will react.
 		if (entity_state.owner_id != recipient) {
 			entity_state.hunter_stance.reset();
-			entity_state.garrisoned_builder.reset();
 			entity_state.ungarrison_source_tower.reset();
+		}
+		// A shelter can be owned by an ally; only its occupant's player gets
+		// the private Builder identity. Every viewer receives the public flag.
+		if (entity_state.garrison_player != recipient) {
+			entity_state.garrisoned_builder.reset();
 		}
 		auto entity = state->get_game_entity(entity_state.entity_id);
 		auto position = std::dynamic_pointer_cast<gamestate::component::Position>(

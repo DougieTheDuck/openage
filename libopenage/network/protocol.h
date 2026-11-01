@@ -22,9 +22,11 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 // world state; v18 adds Builder GARRISON and UNGARRISON commands.
 // v19 adds an explicit target entity to SET_UNGARRISON_POINT for tower hopping.
 // v20 attaches each private ungarrison arrow to its source tower for selection-only rendering.
+// v21 publishes occupant player-colour flags, keeps Builder IDs private to the
+// occupant, and supports independent per-player tower exit plans.
 // Refuse older clients at the handshake rather than mid-match.
 // Minor versions continue to gate compatible relay features.
-constexpr uint16_t PROTOCOL_MAJOR = 20;
+constexpr uint16_t PROTOCOL_MAJOR = 21;
 constexpr uint16_t PROTOCOL_MINOR = 4;
 
 /** Oldest protocol minor version compatible with this implementation. */
