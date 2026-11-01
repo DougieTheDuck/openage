@@ -266,6 +266,18 @@ void messages() {
 		{202, 1, "fvd.data.entities.Tower", {13.0, 20.0, 0}, 100, 100},
 	};
 	state.entities[2].garrisoned_builder = gamestate::entity_id_t{300};
+	state.entities[2].garrison_player = gamestate::player_id_t{2};
+	// Tower-owner and occupant-player can differ; all viewers see the
+	// occupant's colour but only that player sees its concealed Builder ID.
+	auto allied_view = state;
+	allied_view.entities[2].owner_id = 3;
+	TESTEQUALS(decode_world_state(encode_world_state(allied_view))
+	               .entities[2].garrison_player, std::optional<gamestate::player_id_t>{2});
+	auto wrong_player_view = allied_view;
+	wrong_player_view.local_player_id = 3;
+	wrong_player_view.entities[2].garrisoned_builder.reset();
+	TESTEQUALS(decode_world_state(encode_world_state(wrong_player_view))
+	               .entities[2].garrison_player, std::optional<gamestate::player_id_t>{2});
 	state.entities.front().motion_keys = {
 		{time::time_t::from_double(3.75), {11.0, 20.5, 0}},
 		{time::time_t::from_double(4.25), {12.0, 21.0, 0}},

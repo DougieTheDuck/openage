@@ -842,7 +842,8 @@ void fvd_garrison() {
 	TESTEQUALS(fvd->can_see(state, FVDTeam::HUNTER, builder, t(0.25)), false);
 	TESTEQUALS(fvd->can_place_tower(state, 2, {builder}, {70, 70, 0}, t(0.25)), false);
 	TESTEQUALS(fvd->get_garrisoned_builder(tower), std::optional<entity_id_t>{builder});
-	TESTEQUALS(fvd->set_ungarrison_point(state, 3, {tower}, {60, 66, 0}, t(0.25)), false);
+	// A different Builder player may maintain an independent plan even
+	// for a tower they did not construct. Check below after owner snapshots.
 	TESTEQUALS(fvd->set_ungarrison_point(state, 2, {builder}, {60, 66, 0}, t(0.25)), false);
 	TESTEQUALS(fvd->set_ungarrison_point(state, 2, {tower}, {60, 66, 0}, t(0.25)), true);
 	TESTEQUALS(fvd->get_ungarrison_point(tower), std::make_optional(coord::phys3{60, 66, 0}));
@@ -886,6 +887,15 @@ void fvd_garrison() {
 	TESTEQUALS(markers(private_owner), 1);
 	TESTEQUALS(markers(private_hunter), 0);
 	TESTEQUALS(markers(private_other), 0);
+	TESTEQUALS(fvd->set_ungarrison_point(state, 3, {tower}, {69, 70, 0}, t(0.25)), true);
+	TESTEQUALS(fvd->get_ungarrison_point(tower, 2),
+	           std::make_optional(coord::phys3{60, 66, 0}));
+	TESTEQUALS(fvd->get_ungarrison_point(tower, 3),
+	           std::make_optional(coord::phys3{69, 70, 0}));
+	auto other_plan = network::capture_fvd_state(state, guests, t(0.25), 1, 2, 3);
+	TESTEQUALS(markers(other_plan), 1);
+	TESTEQUALS(fvd->get_garrisoned_player(state, tower, t(0.25)),
+	           std::optional<player_id_t>{2});
 	const auto snapshot = network::capture_fvd_presentation_state(state, t(0.25));
 	TESTEQUALS(std::none_of(snapshot.entities.begin(), snapshot.entities.end(),
 	                        [builder](const auto &item) { return item.entity_id == builder; }), true);

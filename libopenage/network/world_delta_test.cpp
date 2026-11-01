@@ -25,6 +25,20 @@ void world_delta() {
 		{13, 2, "fvd.data.entities.Builder", {66, 66, 0}, 25, 25},
 	};
 	initial.entities[1].garrisoned_builder = gamestate::entity_id_t{13};
+	// Occupancy colour is a public edge even if the hidden Builder ID
+	// is not included in the receiving player's delta.
+	auto empty_flag = initial;
+	empty_flag.entities[1].garrisoned_builder.reset();
+	auto occupied_flag = empty_flag;
+	occupied_flag.world_revision = 11;
+	occupied_flag.simulation_time = time::time_t::from_double(20.25);
+	occupied_flag.entities[1].garrison_player = gamestate::player_id_t{3};
+	auto flag_delta = make_world_delta(empty_flag, occupied_flag);
+	TESTEQUALS(flag_delta.changed.entities.size(), size_t{1});
+	auto flag_rebuilt = apply_world_delta(
+		empty_flag, decode_world_delta(encode_world_delta(flag_delta)));
+	TESTEQUALS(flag_rebuilt.entities[1].garrison_player,
+	           std::optional<gamestate::player_id_t>{3});
 	// Selection-only marker linkage is replicated even when no sprite moves.
 	auto marker_before = initial;
 	marker_before.entities.push_back({
