@@ -93,6 +93,10 @@ def tests_cpp():
     yield "openage::network::tests::protocol"
     yield "openage::network::tests::handshake"
     yield "openage::network::tests::lobby"
+    yield (
+        "openage::network::tests::lobby_rematch_room_visibility",
+        "A fresh third client can browse a three-player room hosted by a reused match client",
+    )
     yield "openage::network::tests::lobby_relay_client"
     yield (
         "openage::network::tests::lobby_latency",

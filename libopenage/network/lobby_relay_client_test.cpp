@@ -32,6 +32,145 @@ bool wait_for(RelayLobbyClient &client, const std::string &phase) {
 
 } // namespace
 
+void lobby_rematch_room_visibility() {
+	RelayRoomDirectory directory{64};
+	auto listener = TcpListener::listen("127.0.0.1", 0);
+	std::exception_ptr relay_error{};
+	std::jthread relay{[&]() {
+		try {
+			serve_relay_directory(listener, directory, 32);
+		}
+		catch (...) {
+			relay_error = std::current_exception();
+		}
+	}};
+	struct CloseListener {
+		TcpListener &listener;
+		~CloseListener() { this->listener.close(); }
+	} close_listener{listener};
+
+	// Exercise both former match processes as the next room creator. Repeat
+	// the browser snapshot because the live failure is reported as intermittent.
+	for (size_t round = 0; round < 6; ++round) {
+		RelayLobbyClient first{};
+		RelayLobbyClient second{};
+		RelayLobbyConfig match{};
+		match.address = "127.0.0.1";
+		match.port = listener.get_port();
+		match.name = "Initial Host " + std::to_string(round);
+		match.room_name = "Completed Match " + std::to_string(round);
+		match.hosting = true;
+		first.connect(match);
+		TESTEQUALS(wait_for(first, "waiting"), true);
+
+		match.hosting = false;
+		match.name = "Initial Guest " + std::to_string(round);
+		second.refresh(match);
+		TESTEQUALS(wait_for(second, "menu"), true);
+		match.room_id = second.status().suggested_room_id;
+		TESTEQUALS(match.room_id != uint64_t{0}, true);
+		second.connect(match);
+		TESTEQUALS(wait_for(first, "lobby"), true);
+		TESTEQUALS(wait_for(second, "lobby"), true);
+		first.request_start();
+		TESTEQUALS(wait_for(first, "assigned"), true);
+		TESTEQUALS(wait_for(second, "assigned"), true);
+
+		auto &authority = first.is_authority() ? first : second;
+		auto &remote = first.is_authority() ? second : first;
+		WorldState initial{};
+		initial.map_size = 128;
+		initial.world_revision = 1;
+		initial.local_player_id = remote.status().local_player_id;
+		initial.players = {
+			{1, PlayerRole::HUNTER, true},
+			{2, PlayerRole::BUILDER, true},
+		};
+		authority.provide_host_snapshot(initial);
+		TESTEQUALS(wait_for(authority, "bootstrap"), true);
+		TESTEQUALS(wait_for(remote, "bootstrap"), true);
+
+		auto finished = initial;
+		finished.world_revision = 2;
+		finished.simulation_time = time::time_t::from_int(2700);
+		finished.match_outcome = {
+			MatchWinner::BUILDERS,
+			MatchEndReason::TIME_LIMIT,
+			finished.simulation_time,
+		};
+		authority.provide_host_update(finished);
+		TESTEQUALS(wait_for(authority, "streaming"), true);
+		TESTEQUALS(wait_for(remote, "streaming"), true);
+		TESTEQUALS(remote.get_replication()->get_world_state()->match_outcome,
+		           finished.match_outcome);
+		first.close();
+		second.close();
+
+		auto &rehoster = round % 2 == 0 ? first : second;
+		RelayLobbyConfig rematch{};
+		rematch.address = "127.0.0.1";
+		rematch.port = listener.get_port();
+		rematch.name = "Rematch Host " + std::to_string(round);
+		rematch.room_name = "Visible Three Player Rematch " + std::to_string(round);
+		rematch.hosting = true;
+		rematch.player_capacity = 3;
+		rehoster.connect(rematch);
+		RelayLobbyClient early_browser{};
+		auto immediate_refresh = rematch;
+		immediate_refresh.hosting = false;
+		early_browser.refresh(immediate_refresh);
+		TESTEQUALS(wait_for(early_browser, "menu"), true);
+		TESTEQUALS(
+			early_browser.status().rooms.find(rematch.room_name) != std::string::npos,
+			true);
+		early_browser.close();
+		TESTEQUALS(wait_for(rehoster, "waiting"), true);
+
+		auto &returning_player = round % 2 == 0 ? second : first;
+		rematch.hosting = false;
+		rematch.name = "Returning Player " + std::to_string(round);
+		returning_player.refresh(rematch);
+		TESTEQUALS(wait_for(returning_player, "menu"), true);
+		const auto returning_browser = returning_player.status();
+		TESTEQUALS(returning_browser.rooms.find(rematch.room_name) != std::string::npos, true);
+		rematch.room_id = returning_browser.suggested_room_id;
+		TESTEQUALS(rematch.room_id != uint64_t{0}, true);
+		returning_player.connect(rematch);
+		TESTEQUALS(wait_for(rehoster, "lobby"), true);
+		TESTEQUALS(wait_for(returning_player, "lobby"), true);
+
+		RelayLobbyClient third_player{};
+		rematch.name = "Third Player " + std::to_string(round);
+		for (size_t refresh = 0; refresh < 5; ++refresh) {
+			third_player.refresh(rematch);
+			TESTEQUALS(wait_for(third_player, "menu"), true);
+			const auto browser = third_player.status();
+			TESTEQUALS(browser.rooms.find(rematch.room_name) != std::string::npos, true);
+			TESTEQUALS(browser.suggested_room_id, rematch.room_id);
+		}
+		third_player.close();
+		returning_player.close();
+		rehoster.close();
+
+		bool room_removed = false;
+		for (size_t attempt = 0; attempt < 50; ++attempt) {
+			if (list_relay_rooms(
+			        rematch.address, rematch.port, RelayToken{}).empty()) {
+				room_removed = true;
+				break;
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds{10});
+		}
+		TESTEQUALS(room_removed, true);
+	}
+
+	listener.close();
+	relay.join();
+	if (relay_error) {
+		std::rethrow_exception(relay_error);
+	}
+}
+
 void lobby_relay_client() {
 	RelayLobbyClient invalid{};
 	RelayLobbyConfig bad{};

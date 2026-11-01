@@ -32,6 +32,8 @@ constexpr size_t MAX_INFLIGHT_COMMANDS = 256;
 constexpr auto LIVE_HEARTBEAT_INTERVAL = std::chrono::seconds{1};
 constexpr auto LIVE_SESSION_TIMEOUT = std::chrono::seconds{15};
 constexpr auto LIVE_POLL_INTERVAL = std::chrono::milliseconds{5};
+constexpr auto ROOM_REFRESH_SETTLE_TIMEOUT = std::chrono::milliseconds{750};
+constexpr auto ROOM_REFRESH_RETRY_INTERVAL = std::chrono::milliseconds{50};
 
 void log_role_draw(const StartMatch &assignment) {
 	const auto creator = player_for_participant(
@@ -1757,15 +1759,31 @@ void RelayLobbyClient::forward_rehost_offers(
 
 void RelayLobbyClient::run_refresh(RelayLobbyConfig settings) {
 	try {
-		auto socket = std::make_shared<TcpConnection>(
-			TcpConnection::connect(settings.address, settings.port));
-		{
-			std::lock_guard lock{this->mutex};
-			this->connection = socket;
-		}
+		const auto token = parse_token(settings.token_hex);
+		const auto deadline = std::chrono::steady_clock::now()
+		                    + ROOM_REFRESH_SETTLE_TIMEOUT;
+		std::vector<RelayRoomSummary> rooms{};
+		size_t attempts = 0;
+		do {
+			auto socket = std::make_shared<TcpConnection>(
+				TcpConnection::connect(settings.address, settings.port));
+			{
+				std::lock_guard lock{this->mutex};
+				this->connection = socket;
+			}
+			if (this->stopping) return;
+			rooms = list_relay_rooms(*socket, token);
+			socket->close();
+			++attempts;
+			if (not rooms.empty()
+			    or std::chrono::steady_clock::now() >= deadline) break;
+			std::this_thread::sleep_for(ROOM_REFRESH_RETRY_INTERVAL);
+		} while (not this->stopping);
 		if (this->stopping) return;
-		auto rooms = list_relay_rooms(*socket, parse_token(settings.token_hex));
-		socket->close();
+		if (attempts > 1) {
+			log::log(INFO << "[FVD/lobby] room_refresh_settled attempts=" << attempts
+			              << " rooms=" << rooms.size());
+		}
 		std::string listing{};
 		for (const auto &room : rooms) {
 			if (not listing.empty()) {
