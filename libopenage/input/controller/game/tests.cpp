@@ -29,6 +29,86 @@ void horse_selection_priority() {
 	TESTEQUALS(units_take_priority({}, is_horse), ids{});
 }
 
+
+void fvd_structure_group_selection() {
+	using namespace openage::network;
+	WorldState world{};
+	world.map_size = 32;
+	const auto tower = [](gamestate::entity_id_t id, gamestate::player_id_t owner,
+	                      coord::tile at, const std::string &definition) {
+		EntityState entity{};
+		entity.entity_id = id;
+		entity.owner_id = owner;
+		entity.definition = definition;
+		entity.position = at.to_phys3_center();
+		entity.health = 100;
+		entity.maximum_health = 200;
+		return entity;
+	};
+	world.entities = {
+		tower(10, 2, {2, 2}, "fvd.data.entities.Tower"),
+		tower(11, 3, {3, 3}, "fvd.data.entities.Tower"),
+		tower(12, 3, {4, 4}, "fvd.data.entities.Tower"),
+		tower(13, 3, {5, 5}, "fvd.data.entities.Tower"),
+		tower(20, 2, {6, 6}, "fvd.data.entities.Foundation"),
+		tower(21, 3, {7, 7}, "fvd.data.entities.Foundation"),
+		tower(30, 2, {8, 8}, "fvd.data.entities.Tower"),
+		tower(31, 2, {9, 9}, "fvd.data.entities.Tower"),
+	};
+	world.constructions.push_back(ConstructionState{});
+	world.constructions.back().site_entity_id = 30;
+	world.constructions.back().phase = ConstructionPhase::UNDER_CONSTRUCTION;
+	world.constructions.push_back(ConstructionState{});
+	world.constructions.back().site_entity_id = 31;
+	world.constructions.back().phase = ConstructionPhase::UNDER_CONSTRUCTION;
+	const auto on_screen = [](const EntityState &entity) { return entity.entity_id != 13; };
+	const auto first = select_fvd_structure(world, 2, 10, {}, false, false, on_screen);
+	TESTEQUALS(first.has_value(), true);
+	TESTEQUALS(first->kind == SelectionKind::TOWER, true);
+	const auto allied = select_fvd_structure(world, 2, 11,
+		SelectionDetails{first->ids, first->kind}, true, false, on_screen);
+	TESTEQUALS(allied.has_value(), true);
+	TESTEQUALS(allied->kind == SelectionKind::GROUP_TOWERS, true);
+	TESTEQUALS(allied->ids == (std::vector<gamestate::entity_id_t>{10, 11}), true);
+	const auto repeated = select_fvd_structure(world, 2, 11,
+		SelectionDetails{allied->ids, allied->kind}, true, false, on_screen);
+	TESTEQUALS(repeated->ids == allied->ids, true);
+	const auto same_owner = select_fvd_structure(world, 2, 11, {}, false, true, on_screen);
+	TESTEQUALS(same_owner->ids == (std::vector<gamestate::entity_id_t>{11, 12}), true);
+	const auto switched = select_fvd_structure(world, 2, 20,
+		SelectionDetails{allied->ids, allied->kind}, true, false, on_screen);
+	TESTEQUALS(switched->ids == (std::vector<gamestate::entity_id_t>{20}), true);
+	TESTEQUALS(switched->kind == SelectionKind::FOUNDATION, true);
+	const auto foundations = select_fvd_structure(world, 2, 21,
+		SelectionDetails{switched->ids, switched->kind}, true, false, on_screen);
+	TESTEQUALS(foundations->kind == SelectionKind::GROUP_FOUNDATIONS, true);
+	const auto constructing = select_fvd_structure(world, 2, 30, {}, false, true, on_screen);
+	TESTEQUALS(constructing->kind == SelectionKind::GROUP_CONSTRUCTING_TOWERS, true);
+	TESTEQUALS(constructing->ids.size(), size_t{2});
+
+	// Hunter can inspect only visible towers, never multi-select or see fog memory.
+	TeamFog hunter{};
+	hunter.team = PlayerRole::HUNTER;
+	hunter.visible.resize(fog_word_count(world.map_size));
+	const auto index = 3 * world.map_size + 3;
+	hunter.visible[index / 64] |= uint64_t{1} << (index % 64);
+	world.fog.push_back(std::move(hunter));
+	const auto inspect = select_fvd_structure(world, 1, 11, {}, true, true, on_screen);
+	TESTEQUALS(inspect->ids == (std::vector<gamestate::entity_id_t>{11}), true);
+	TESTEQUALS(inspect->kind == SelectionKind::TOWER, true);
+	TESTEQUALS(select_fvd_structure(world, 1, 12, {}, false, false, on_screen).has_value(), false);
+	TESTEQUALS(select_fvd_structure(world, 1, 20, {}, false, false, on_screen).has_value(), false);
+	world.entities[1].remembered = true;
+	TESTEQUALS(select_fvd_structure(world, 1, 11, {}, false, false, on_screen).has_value(), false);
+
+	Controller controller{{1, 2, 3}, 2};
+	controller.set_selected({10, 11}, SelectionKind::GROUP_TOWERS);
+	TESTEQUALS(controller.get_selection_details().kind == SelectionKind::GROUP_TOWERS, true);
+	controller.mark_structure_double_click();
+	TESTEQUALS(controller.consume_structure_double_click_release(), true);
+	TESTEQUALS(controller.consume_structure_double_click_release(), false);
+}
+
 void tower_placement_mode() {
 	Controller controller{{1, 2, 3}, 2};
 	controller.set_drag_select_start({320, 180}, {10, 20});
