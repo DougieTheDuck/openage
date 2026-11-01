@@ -85,6 +85,12 @@ void fvd_structure_group_selection() {
 	const auto constructing = select_fvd_structure(world, 2, 30, {}, false, true, on_screen);
 	TESTEQUALS(constructing->kind == SelectionKind::GROUP_CONSTRUCTING_TOWERS, true);
 	TESTEQUALS(constructing->ids.size(), size_t{2});
+	const auto unfinished_first = select_fvd_structure(world, 2, 30, {}, false, false, on_screen);
+	const auto unfinished_pair = select_fvd_structure(world, 2, 31,
+		SelectionDetails{unfinished_first->ids, unfinished_first->kind},
+		true, false, on_screen);
+	TESTEQUALS(unfinished_pair->kind == SelectionKind::GROUP_CONSTRUCTING_TOWERS, true);
+	TESTEQUALS(unfinished_pair->ids.size(), size_t{2});
 
 	// Hunter can inspect only visible towers, never multi-select or see fog memory.
 	TeamFog hunter{};
