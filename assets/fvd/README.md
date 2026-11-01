@@ -31,7 +31,7 @@ Focused checks: `bin/run test openage::gamestate::tests::fvd_scenario`,
 `bin/run test openage::gamestate::tests::fvd_animation_phase`,
 `bin/run test openage::network::tests::messages` and
 `bin/run test openage::network::tests::world_delta`.
-Multiplayer protocol v20 includes fog of war, garrisoning and private ungarrison-marker state; all participating clients must use compatible builds.
+Multiplayer protocol v21 includes fog of war, shared garrisoning, public occupant flags and per-player private exit markers; all participating clients must use compatible builds.
 
 The runtime files follow the openage [texture](../../doc/media/openage/texture_format_spec.md), [sprite](../../doc/media/openage/sprite_format_spec.md), and [terrain](../../doc/media/openage/terrain_format_spec.md) formats.
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
@@ -94,21 +94,28 @@ receives its actual movement and construction updates.
 Focused regression: `run test openage::gamestate::tests::fvd_foundation_push_and_timeout -a --have-assets`.
 Compile and two-client acceptance are still pending.
 
-### Experimental Builder garrison (protocol v20)
+### Experimental Builder garrison (protocol v21)
 
-With a Builder selected, press **T**, then left-click one of your own finished
-towers. The HUD displays a "click a friendly completed tower" prompt while T
+With a Builder selected, press **T**, then left-click any friendly completed
+tower, whether yours or another Builder player's. The HUD displays a "click a friendly completed tower" prompt while T
 mode is active; pressing Esc cancels. A missed sprite pick may be resolved by
 clicking the tile beneath the tower. The authoritative game walks the Builder to an adjacent tile and hides
 them inside; garrisoned Builders are not visible to the Hunter and cannot be
 damaged, collide, or place new towers. One Builder may occupy each tower.
-Select that tower and press **G** to eject the Builder onto the first suitable
-free tile. Destroying an occupied tower also ejects its Builder unharmed.
+Every occupied tower raises a small **player-colour flag above the roof**
+showing whose Builder is inside; the flag is visible to all players who can
+see the tower. **Only the player whose flag is raised** may select that tower
+and press **G** to ungarrison. Other players see
+"Can only ungarrison your own builder." on screen. A tower may be owned by
+any allied Builder player and holds one Builder at a time. Destroying an
+occupied tower still ejects its Builder unharmed.
 
 This is an initial implementation and **has not yet passed compilation or live
 gameplay acceptance**. Select a completed tower and right-click to place a private red ungarrison
-point. The red ungarrison arrow appears **only while its source tower is
-selected**, including for multiplayer guests. With no point set, the Builder
+point. **Each tower stores a separate ungarrison point for every Builder
+player**, so sharing a tower never overwrites anyone else's escape route.
+Each player's red arrow is private and only appears while they select its
+source tower, including for multiplayer guests. With no point set, the Builder
 prefers the tile just below the tower and then searches counter-clockwise
 around its base when blocked. When the Builder leaves with G, they walk to the nearest reachable
 point (or remain beside the tower if no point was set). If the destination is an
@@ -118,7 +125,8 @@ automatically. The network command carries the destination tower's entity ID,
 not the decorative red arrow's height or screen projection. A target must
 remain friendly, finished and unoccupied. Selecting an occupied tower shows a
 private "Builder garrisoned" HUD label. More complete visual
-testing remains outstanding. Test with `run test openage::gamestate::tests::fvd_garrison -a --have-assets`
+testing remains outstanding. Test with `run test openage::gamestate::tests::fvd_allied_garrison -a --have-assets`,
+`run test openage::gamestate::tests::fvd_garrison -a --have-assets`
 and `run test openage::network::tests::messages` before distribution.
 
 Selected Builders display their current health above the unit.

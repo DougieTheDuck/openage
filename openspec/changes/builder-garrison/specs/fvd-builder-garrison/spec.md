@@ -2,19 +2,19 @@
 
 ## ADDED Requirements
 
-### Requirement: Garrison in own towers
+### Requirement: Garrison in allied towers
 
-A Builder player SHALL be able to press G with their Builder selected and click
-one of their finished towers to send the Builder inside it. A garrisoned Builder
-SHALL be hidden from other players and SHALL NOT be targeted or damaged. Only
-the owner's finished towers SHALL accept a garrison.
+A Builder player SHALL be able to press T with their Builder selected and click
+any finished friendly Builder tower to send the Builder inside it. A garrisoned
+Builder SHALL be hidden from other players and SHALL NOT be targeted or damaged.
+Exactly one Builder, of any friendly player, SHALL occupy each tower.
 
 #### Scenario: Garrison
-- **WHEN** a Builder presses G and clicks their own finished tower
+- **WHEN** a Builder presses T and clicks a friendly finished tower
 - **THEN** the Builder walks to it and disappears inside; horses can no longer target him
 
 #### Scenario: Invalid tower
-- **WHEN** the clicked tower is someone else's, unfinished, already occupied, or the Hunter tower
+- **WHEN** the clicked tower is unfinished, already occupied, a Hunter tower, or not friendly
 - **THEN** the order is rejected
 
 ### Requirement: One Builder per tower, no building inside
@@ -41,9 +41,10 @@ be placed unharmed on a free tile next to it before the tower collapses.
 
 A shortcut key SHALL ungarrison the Builder. Without an ungarrison point, the
 Builder SHALL be placed immediately on a free tile next to the tower and given
-no further order, even if enemies are near. The owner MAY set an ungarrison
-point by selecting the tower and right-clicking; it SHALL be marked with the
-same red arrow as the Hunter's rally point and shown only to the owner. With a
+no further order, even if enemies are near. Every Builder player MAY set a separate ungarrison point on the same allied
+tower by right-clicking. It SHALL be marked with the same red arrow as the
+Hunter's rally point and shown only to that player while the source tower
+is selected. With a
 point set, the ungarrisoned Builder SHALL walk to it, or as close as he can get.
 
 #### Scenario: Ungarrison without a point
@@ -56,10 +57,41 @@ point set, the ungarrisoned Builder SHALL walk to it, or as close as he can get.
 
 ### Requirement: Hop between adjacent towers
 
-When a tower's ungarrison point is on another finished, empty tower of the same
-owner whose footprint touches it, ungarrisoning SHALL move the Builder directly
+When a player's ungarrison point targets any adjacent finished, empty allied
+tower whose footprint touches the source, ungarrisoning SHALL move the Builder directly
 into that tower without exposing him outside.
 
 #### Scenario: Hop
 - **WHEN** towers A and B are adjacent, A's ungarrison point is on B, and the Builder ungarrisons from A
 - **THEN** the Builder is garrisoned in B and was never targetable in between
+
+### Requirement: Public occupant flag and private command authority
+
+An occupied friendly tower SHALL display the player-colour flag of the
+sheltered Builder (not the tower's construction owner) to every player
+who currently sees the tower. The concealed Builder's entity ID SHALL be
+replicated only to that Builder's player; the flag alone is public.
+
+#### Scenario: Visiting allied tower
+- **WHEN** player 2 garrisons inside a finished tower built by player 3
+- **THEN** both players see player 2's flag but only player 2 may press G to eject
+
+#### Scenario: Unauthorized ungarrison
+- **WHEN** a player presses G on a tower displaying another player's flag
+- **THEN** the Builder stays sheltered and the player sees the exact error
+  "Can only ungarrison your own builder."
+
+### Requirement: Per-player exit plans
+
+Each (tower, Builder player) SHALL have its own independent ungarrison
+destination and optional target-tower identity. Updating one player's
+point SHALL NOT overwrite another's. Only the requesting player sees
+their red marker while selecting its source tower.
+
+#### Scenario: Shared tower plans
+- **WHEN** two Builder players set different exits on the same allied tower
+- **THEN** both plans persist and the Builder uses only their player's plan
+
+#### Scenario: Tower destruction
+- **WHEN** a tower with multiple stored exit plans is destroyed
+- **THEN** all associated private markers and plans are removed

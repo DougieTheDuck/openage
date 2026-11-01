@@ -4,21 +4,25 @@
   construction), then is taken off the map. Keep the entity for ownership and
   "alive" checks, but remove its position from vision, targeting, collision and
   pathfinding.
-- Replication: the owner sees "garrisoned in tower X"; the Hunter sees nothing
-  (it is inside a building).
-- Ungarrison point: reuse the rally point code (marker entity per tower with
-  the same `hunter_rally_point` red arrow sprite, owner-only visibility,
+- Replication: all viewers with vision of the tower see the occupying
+  Builder's player-colour flag, even when an ally built the tower. Only the
+  Builder's player receives the private Builder ID. The Hunter never sees
+  the concealed Builder itself.
+- Ungarrison point: one independent marker per (tower, player), using
+  the same `hunter_rally_point` red arrow sprite, visible only to that player
+  while the source tower is selected,
   `closest_reachable` when walled off). It is optional: without one, the
   Builder is placed on the free adjacent tile and given no order.
 - Adjacent hop: footprints touching, including diagonally. The Builder moves
   instantly, or after a short animation, without walking outside.
-- Commands: `GARRISON` (Builder plus tower), `UNGARRISON` (tower),
-  `SET_UNGARRISON_POINT` (tower plus point).
+- Commands: `GARRISON` (Builder plus any allied tower), `UNGARRISON`
+  (tower containing the caller's own Builder only), `SET_UNGARRISON_POINT`
+  (allied tower plus per-player point/optional target tower ID).
 
 ## Decisions (Dougie, 2026-10-28)
 
-- One Builder per tower. A hop into an occupied tower is refused and the
-  Builder ungarrisons to the point's closest free tile instead.
+- One Builder per tower, regardless of which ally owns it. A hop into an
+  occupied tower is refused and its Builder remains sheltered.
 - When a tower is destroyed (by horses or Delete) its Builder is ejected
   unharmed onto a free adjacent tile before the collapse starts.
 - A garrisoned Builder cannot build: build orders for him are rejected, and
