@@ -1345,16 +1345,33 @@ std::optional<entity_id_t> FVD::get_garrisoned_builder(entity_id_t tower_id) con
 	return std::nullopt;
 }
 
-std::optional<coord::phys3> FVD::get_ungarrison_point(entity_id_t tower_id) const {
+std::optional<player_id_t> FVD::get_garrisoned_player(
+	const std::shared_ptr<GameState> &state, entity_id_t tower_id,
+	const time::time_t &time) const {
+	auto builder_id = this->get_garrisoned_builder(tower_id);
+	if (not builder_id) return std::nullopt;
+	auto found = state->get_game_entities().find(*builder_id);
+	if (found == state->get_game_entities().end()) return std::nullopt;
+	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+		found->second->get_component(component::component_t::OWNERSHIP));
+	return ownership ? std::make_optional(ownership->get_owners().get(time)) : std::nullopt;
+}
+
+std::optional<coord::phys3> FVD::get_ungarrison_point(
+	entity_id_t tower_id, player_id_t player) const {
 	auto found = this->ungarrison_points.find(tower_id);
-	return found == this->ungarrison_points.end() ? std::nullopt
-	                                              : std::make_optional(found->second.destination);
+	if (found == this->ungarrison_points.end()) return std::nullopt;
+	if (player == 0 and found->second.size() == 1)
+		return found->second.begin()->second.destination;
+	auto it = found->second.find(player);
+	return it == found->second.end() ? std::nullopt
+	                                 : std::make_optional(it->second.destination);
 }
 
 std::optional<entity_id_t> FVD::get_ungarrison_marker_source(entity_id_t marker) const {
-	for (const auto &[tower_id, point] : this->ungarrison_points) {
-		if (point.marker_id == marker) return tower_id;
-	}
+	for (const auto &[tower_id, plans] : this->ungarrison_points)
+		for (const auto &[player, point] : plans)
+			if (point.marker_id == marker) return tower_id;
 	return std::nullopt;
 }
 
@@ -1373,7 +1390,7 @@ bool FVD::set_ungarrison_point(const std::shared_ptr<GameState> &state,
 	    or this->tower_footprints.at(tower_id).under_construction) return false;
 	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 		tower->second->get_component(component::component_t::OWNERSHIP));
-	if (not ownership or ownership->get_owners().get(time) != owner) return false;
+	if (not ownership or ownership->get_owners().get(time) < 2) return false;
 	coord::phys3 destination = point;
 	if (target_tower) {
 		if (*target_tower == tower_id) return false;
@@ -1384,7 +1401,7 @@ bool FVD::set_ungarrison_point(const std::shared_ptr<GameState> &state,
 		    or this->tower_footprints.at(*target_tower).under_construction) return false;
 		auto candidate_owner = std::dynamic_pointer_cast<component::Ownership>(
 			candidate->second->get_component(component::component_t::OWNERSHIP));
-		if (not candidate_owner or candidate_owner->get_owners().get(time) != owner) return false;
+		if (not candidate_owner or candidate_owner->get_owners().get(time) < 2) return false;
 		auto target_pos = std::dynamic_pointer_cast<component::Position>(
 			candidate->second->get_component(component::component_t::POSITION));
 		destination = target_pos->get_positions().get(time);
@@ -1394,11 +1411,12 @@ bool FVD::set_ungarrison_point(const std::shared_ptr<GameState> &state,
 	auto factory = this->entity_factory.lock();
 	if (not loop or not factory) [[unlikely]]
 		throw Error{ERR << "Ungarrison marker services unavailable"};
-	auto previous = this->ungarrison_points.find(tower_id);
-	if (previous != this->ungarrison_points.end()) {
+	auto &per_player = this->ungarrison_points[tower_id];
+	auto previous = per_player.find(owner);
+	if (previous != per_player.end()) {
 		if (state->get_game_entities().contains(previous->second.marker_id))
 			state->remove_game_entity(previous->second.marker_id, time);
-		this->ungarrison_points.erase(previous);
+		per_player.erase(previous);
 	}
 	// The red rally marker is a world sprite. When its destination is a tower
 	// tile, a ground-level sprite is depth-occluded by the tower, making the
@@ -1411,8 +1429,7 @@ bool FVD::set_ungarrison_point(const std::shared_ptr<GameState> &state,
 	auto marker = factory->spawn_game_entity(loop, state, owner,
 	                                        this->hunter_rally_marker, marker_position, time);
 	system::Idle::idle(marker, time);
-	this->ungarrison_points.emplace(
-		tower_id, UngarrisonPoint{destination, marker->get_id(), target_tower});
+	per_player.emplace(owner, UngarrisonPoint{destination, marker->get_id(), target_tower});
 	return true;
 }
 
@@ -1436,12 +1453,12 @@ bool FVD::request_garrison(const std::shared_ptr<GameState> &state,
 	    or not builder_alive(builder->second, time)
 	    or not this->tower_footprints.contains(tower_id)
 	    or this->tower_footprints.at(tower_id).under_construction) return false;
-	for (const auto &entity : {builder->second, tower->second}) {
-		if (not entity->has_component(component::component_t::OWNERSHIP)) return false;
-		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
-			entity->get_component(component::component_t::OWNERSHIP));
-		if (not ownership or ownership->get_owners().get(time) != owner) return false;
-	}
+	auto builder_ownership = std::dynamic_pointer_cast<component::Ownership>(
+		builder->second->get_component(component::component_t::OWNERSHIP));
+	auto tower_ownership = std::dynamic_pointer_cast<component::Ownership>(
+		tower->second->get_component(component::component_t::OWNERSHIP));
+	if (not builder_ownership or builder_ownership->get_owners().get(time) != owner
+	    or not tower_ownership or tower_ownership->get_owners().get(time) < 2) return false;
 	if (this->get_garrisoned_builder(tower_id)) return false;
 	for (const auto &[pending_builder, pending] : this->pending_garrisons) {
 		if (pending.tower_id == tower_id) return false;
@@ -1527,19 +1544,30 @@ bool FVD::eject_builder(const std::shared_ptr<GameState> &state,
 	    or tower->second->get_definition() != this->tower) return false;
 	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 		tower->second->get_component(component::component_t::OWNERSHIP));
-	if (not ownership or ownership->get_owners().get(time) != owner) return false;
+	if (not ownership or ownership->get_owners().get(time) < 2) return false;
 	auto occupant_id = this->get_garrisoned_builder(tower_id);
 	if (not occupant_id) return false;
 	auto builder = state->get_game_entities().find(*occupant_id);
 	if (builder == state->get_game_entities().end()) return false;
+	auto builder_ownership = std::dynamic_pointer_cast<component::Ownership>(
+		builder->second->get_component(component::component_t::OWNERSHIP));
+	// A player may command only their own sheltered Builder, even if they
+	// constructed the tower. Destruction ejection is a separate safety path.
+	if (use_point and (not builder_ownership
+	    or builder_ownership->get_owners().get(time) != owner)) return false;
+	const auto exit_player = builder_ownership->get_owners().get(time);
 	auto tower_pos = std::dynamic_pointer_cast<component::Position>(
 		tower->second->get_component(component::component_t::POSITION));
 	const auto site = tower_pos->get_positions().get(time).to_tile();
-	const auto point = use_point ? this->get_ungarrison_point(tower_id)
+	const auto point = use_point ? this->get_ungarrison_point(tower_id, exit_player)
 	                             : std::optional<coord::phys3>{};
 	auto configured = this->ungarrison_points.find(tower_id);
-	const auto explicit_tower = use_point and configured != this->ungarrison_points.end()
-	                          ? configured->second.target_tower : std::nullopt;
+	const auto plan = configured == this->ungarrison_points.end()
+		? nullptr : [&]() -> const UngarrisonPoint * {
+			auto it = configured->second.find(exit_player);
+			return it == configured->second.end() ? nullptr : &it->second;
+		}();
+	const auto explicit_tower = use_point and plan ? plan->target_tower : std::nullopt;
 	// Only an explicitly targeted tower can trigger a transfer. An ordinary
 	// ground point never silently becomes a garrison command. If the intended
 	// tower was destroyed or became occupied, keep the Builder sheltered.
@@ -1552,7 +1580,7 @@ bool FVD::eject_builder(const std::shared_ptr<GameState> &state,
 		    or this->get_garrisoned_builder(*explicit_tower)) return false;
 		auto dest_owner = std::dynamic_pointer_cast<component::Ownership>(
 			destination_tower->second->get_component(component::component_t::OWNERSHIP));
-		if (not dest_owner or dest_owner->get_owners().get(time) != owner) return false;
+		if (not dest_owner or dest_owner->get_owners().get(time) < 2) return false;
 		auto hop_tower = explicit_tower;
 		if (hop_tower and *hop_tower != tower_id
 		    and this->tower_footprints.contains(*hop_tower)
@@ -1569,7 +1597,7 @@ bool FVD::eject_builder(const std::shared_ptr<GameState> &state,
 					if (std::abs(left.tile.ne - right.tile.ne) <= 1
 					    and std::abs(left.tile.se - right.tile.se) <= 1) touching = true;
 				}
-				if (touching and other_owner and other_owner->get_owners().get(time) == owner) {
+				if (touching and other_owner and other_owner->get_owners().get(time) >= 2) {
 					this->garrisoned_builders.insert_or_assign(*occupant_id, *hop_tower);
 					return true;
 				}
@@ -1624,7 +1652,7 @@ bool FVD::eject_builder(const std::shared_ptr<GameState> &state,
 		// The authoritative request handles the travel and arrival event.
 		// If the target is now blocked/destroyed, the Builder remains safely
 		// outside instead of walking toward an impassable tower centre.
-		this->request_garrison(state, owner, {*occupant_id}, *explicit_tower, time);
+		this->request_garrison(state, exit_player, {*occupant_id}, *explicit_tower, time);
 		return true;
 	}
 	if (point) {
@@ -1768,8 +1796,9 @@ bool FVD::destroy_tower(const std::shared_ptr<GameState> &state,
 	              [tower_id](const auto &entry) { return entry.second.tower_id == tower_id; });
 	auto point = this->ungarrison_points.find(tower_id);
 	if (point != this->ungarrison_points.end()) {
-		if (state->get_game_entities().contains(point->second.marker_id))
-			state->remove_game_entity(point->second.marker_id, time);
+		for (const auto &[player, plan] : point->second)
+			if (state->get_game_entities().contains(plan.marker_id))
+				state->remove_game_entity(plan.marker_id, time);
 		this->ungarrison_points.erase(point);
 	}
 	this->tower_next_shot.erase(tower_id);

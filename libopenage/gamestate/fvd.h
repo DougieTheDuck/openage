@@ -215,7 +215,7 @@ public:
 	                   bool finish,
 	                   const time::time_t &time);
 
-	/** Schedule a Builder to enter its own finished, unoccupied tower. */
+	/** Schedule a Builder to enter any allied finished, unoccupied tower. */
 	bool request_garrison(const std::shared_ptr<GameState> &state,
 	                      player_id_t owner, const std::vector<entity_id_t> &ids,
 	                      entity_id_t tower_id, const time::time_t &time);
@@ -223,19 +223,24 @@ public:
 	void advance_garrison(const std::shared_ptr<GameState> &state,
 	                      entity_id_t builder_id, entity_id_t tower_id,
 	                      uint64_t revision, const time::time_t &time);
-	/** Eject the occupant of an owned tower to a deterministic free tile. */
+	/** Eject ONLY the caller's Builder from an allied tower. */
 	bool ungarrison_builder(const std::shared_ptr<GameState> &state,
 	                        player_id_t owner, const std::vector<entity_id_t> &ids,
 	                        const time::time_t &time);
-	/** Set an optional ejection destination for the given owned finished tower. */
+	/** Set this player's private ejection destination for any allied finished tower. */
 	bool set_ungarrison_point(const std::shared_ptr<GameState> &state,
 	                          player_id_t owner, const std::vector<entity_id_t> &ids,
 	                          const coord::phys3 &point, const time::time_t &time,
 	                          std::optional<entity_id_t> target_tower = std::nullopt);
-	/** Return the sheltered Builder ID, if any (only expose to its owner). */
+	/** Return the sheltered Builder ID, host-only; recipient filtering is mandatory. */
 	std::optional<entity_id_t> get_garrisoned_builder(entity_id_t tower) const;
-	/** Return the configured point, if any. */
-	std::optional<coord::phys3> get_ungarrison_point(entity_id_t tower) const;
+	/** Public player colour of the Builder occupying this tower, when sheltered. */
+	std::optional<player_id_t> get_garrisoned_player(
+		const std::shared_ptr<GameState> &state, entity_id_t tower,
+		const time::time_t &time) const;
+	/** Return a player's own point; player 0 means the legacy single point. */
+	std::optional<coord::phys3> get_ungarrison_point(entity_id_t tower,
+	                                                 player_id_t player = 0) const;
 	/** Associate a private ungarrison sprite with the source tower. */
 	std::optional<entity_id_t> get_ungarrison_marker_source(entity_id_t marker) const;
 
@@ -769,7 +774,8 @@ private:
 		/** Explicit destination tower identity, not a marker height or a tile guess. */
 		std::optional<entity_id_t> target_tower{};
 	};
-	std::unordered_map<entity_id_t, UngarrisonPoint> ungarrison_points;
+	/** Each allied tower can have a DIFFERENT private exit plan for each player. */
+	std::unordered_map<entity_id_t, std::unordered_map<player_id_t, UngarrisonPoint>> ungarrison_points;
 	std::unordered_map<entity_id_t, entity_id_t> garrisoned_builders;
 	std::unordered_map<entity_id_t, PendingGarrison> pending_garrisons;
 	uint64_t next_garrison_revision = 1;
