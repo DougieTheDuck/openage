@@ -73,11 +73,16 @@ void structure_shadow_depth() {
 	auto stage = std::make_shared<WorldRenderStage>(
 		window, graphics_renderer, camera, root / "assets" / "shaders", assets, clock);
 
-	auto render = [&](bool rear_enabled, bool front_enabled) {
+	auto render = [&](bool rear_enabled, bool front_enabled, bool team_coloured = false) {
 		stage->clear_entities();
 		auto add_tower = [&](uint32_t id, const coord::phys3 &position) {
 			auto entity = std::make_shared<RenderEntity>();
 			entity->update(id, position, "tower.sprite", time::TIME_ZERO);
+			if (team_coloured) {
+				// Exercise the player-owned world2d shader uniform path.
+				// Existing neutral art must still render with no palette copies.
+				entity->set_occlusion_mode(occlusion_mode::OCCLUDER, 2);
+			}
 			stage->add_render_entity(entity);
 		};
 		if (rear_enabled) {
@@ -94,6 +99,11 @@ void structure_shadow_depth() {
 
 	auto rear = render(true, false);
 	auto combined = render(true, true);
+	// Team colour compiles and draws through the ordinary sprite shader,
+	// without additional sprite-sheet textures. Visual recolour acceptance
+	// awaits a deliberately magenta-painted asset.
+	auto owned = render(true, false, true);
+	TESTEQUALS(owned.get_info().get_row_size(), rear.get_info().get_row_size());
 	auto luminance_on_white = [](const uint8_t *value) {
 		const auto red = static_cast<double>(value[0]) + 255.0 - value[3];
 		const auto green = static_cast<double>(value[1]) + 255.0 - value[3];
