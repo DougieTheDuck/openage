@@ -41,11 +41,11 @@ Eigen::Vector4f get_player_outline_color(uint64_t player_id) {
 	static const std::array<Eigen::Vector4f, 8> colors{
 		rgba(214, 93, 82),   // 1: Hunter red
 		rgba(67, 139, 229),  // 2: Builder blue
-		rgba(223, 87, 83),   // 3: Builder red
-		rgba(85, 182, 111),  // 4: Builder green
-		rgba(232, 209, 106), // 5: Builder yellow
-		rgba(87, 198, 209),  // 6: Builder cyan
-		rgba(170, 117, 217), // 7: Builder purple
+		rgba(85, 182, 111),  // 3: Builder green
+		rgba(232, 209, 106), // 4: Builder yellow
+		rgba(87, 198, 209),  // 5: Builder cyan
+		rgba(170, 117, 217), // 6: Builder purple
+		rgba(187, 187, 199), // 7: Builder grey
 		rgba(236, 155, 76),  // 8: Builder orange
 	};
 	if (player_id == 0) {
