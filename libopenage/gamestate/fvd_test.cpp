@@ -197,8 +197,6 @@ void fvd_scenario() {
 		graphics / "fvd_stone_tower_demolition.sprite");
 	TESTEQUALS(plains_graphics.get_texture_count(), 1);
 	TESTEQUALS(builder_graphics.get_texture_count(), 1);
-	auto animated_idle = renderer::resources::parser::parse_sprite_file(graphics / "orc_idle.sprite");
-	auto animated_walk = renderer::resources::parser::parse_sprite_file(graphics / "orc_walk.sprite");
 	auto horse_idle1 = renderer::resources::parser::parse_sprite_file(
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-idle1.sprite");
 	auto horse_idle2 = renderer::resources::parser::parse_sprite_file(
@@ -209,15 +207,12 @@ void fvd_scenario() {
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-attack.sprite");
 	auto horse_death = renderer::resources::parser::parse_sprite_file(
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-death.sprite");
-	TESTEQUALS(animated_idle.get_texture_count(), size_t{16});
-	TESTEQUALS(animated_walk.get_texture_count(), size_t{16});
 	TESTEQUALS(horse_idle1.get_texture_count(), size_t{2});
 	TESTEQUALS(horse_idle2.get_texture_count(), size_t{1});
 	TESTEQUALS(horse_gallop.get_texture_count(), size_t{1});
 	TESTEQUALS(horse_attack.get_texture_count(), size_t{1});
 	TESTEQUALS(horse_death.get_texture_count(), size_t{4});
-	const auto &idle_layer = animated_idle.get_layer(0);
-	const auto &walk_layer = animated_walk.get_layer(0);
+	const auto &builder_layer = builder_graphics.get_layer(0);
 	const auto &horse_idle1_layer = horse_idle1.get_layer(0);
 	const auto &horse_idle2_layer = horse_idle2.get_layer(0);
 	const auto &horse_gallop_layer = horse_gallop.get_layer(0);
@@ -225,10 +220,8 @@ void fvd_scenario() {
 	const auto &horse_death_layer = horse_death.get_layer(0);
 	const auto &tower_layer = tower_graphics.get_layer(0);
 	const auto &tower_demolition_layer = tower_demolition_graphics.get_layer(0);
-	TESTEQUALS(idle_layer.get_display_mode(),
-	           renderer::resources::display_mode::LOOP);
-	TESTEQUALS(walk_layer.get_display_mode(),
-	           renderer::resources::display_mode::LOOP);
+	TESTEQUALS(builder_layer.get_display_mode(),
+	           renderer::resources::display_mode::OFF);
 	TESTEQUALS(horse_idle1_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_idle2_layer.get_display_mode(),
@@ -245,24 +238,23 @@ void fvd_scenario() {
 	           renderer::resources::display_mode::ONCE);
 	TESTEQUALS(tower_demolition_layer.get_time_per_frame(), 0.125f);
 	TESTEQUALS(tower_demolition_layer.get_frame_timing()->size(), size_t{14});
+	TESTEQUALS(builder_layer.get_angle_count(), size_t{1});
+	const auto &builder_angle = builder_layer.get_direction_angle(0.0f);
+	TESTEQUALS(builder_angle->get_frame_count(), size_t{1});
+	TESTEQUALS(builder_angle->get_frame(0)->get_texture_idx(), size_t{0});
+	TESTEQUALS(builder_angle->get_frame(0)->get_subtexture_idx(), size_t{0});
 	TESTEQUALS(horse_idle1_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_idle2_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_gallop_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_attack_layer.get_angle_count(), size_t{16});
 	TESTEQUALS(horse_death_layer.get_angle_count(), size_t{16});
 	// A frame duration is measured in seconds, not milliseconds.
-	TESTEQUALS(idle_layer.get_time_per_frame(), 0.125f);
-	TESTEQUALS(walk_layer.get_time_per_frame(), 0.07f);
 	TESTEQUALS(horse_gallop_layer.get_time_per_frame(), 0.08f);
 	TESTEQUALS(horse_idle1_layer.get_time_per_frame(), 0.15f);
 	TESTEQUALS(horse_idle2_layer.get_time_per_frame(), 0.4f);
 	TESTEQUALS(horse_attack_layer.get_time_per_frame(), 0.0375f);
 	TESTEQUALS(horse_death_layer.get_time_per_frame(), 0.05f);
 	TESTEQUALS(tower_layer.get_time_per_frame(), 0.125f);
-	const auto idle_frames = idle_layer.get_frame_timing();
-	const auto walk_frames = walk_layer.get_frame_timing();
-	TESTEQUALS(idle_frames->size(), size_t{16});
-	TESTEQUALS(walk_frames->size(), size_t{20});
 	TESTEQUALS(horse_gallop_layer.get_frame_timing()->size(), size_t{12});
 	TESTEQUALS(horse_idle1_layer.get_frame_timing()->size(), size_t{24});
 	TESTEQUALS(horse_idle2_layer.get_frame_timing()->size(), size_t{12});
@@ -326,18 +318,6 @@ void fvd_scenario() {
 			           death_row * 60 + frame);
 		}
 	}
-	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(0.26),
-	                                  time::TIME_ZERO), size_t{2});
-	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(1.95),
-	                                  time::TIME_ZERO), size_t{15});
-	TESTEQUALS(idle_frames->get_frame(time::time_t::from_double(2.05),
-	                                  time::TIME_ZERO), size_t{0});
-	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(0.16),
-	                                  time::TIME_ZERO), size_t{2});
-	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(1.38),
-	                                  time::TIME_ZERO), size_t{19});
-	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(1.45),
-	                                  time::TIME_ZERO), size_t{0});
 	const auto horse_idle1_frames = horse_idle1_layer.get_frame_timing();
 	const auto horse_idle2_frames = horse_idle2_layer.get_frame_timing();
 	TESTEQUALS(horse_idle1_frames->get_frame(time::time_t::from_double(0.91),
@@ -348,19 +328,12 @@ void fvd_scenario() {
 	                                        time::TIME_ZERO), size_t{2});
 	TESTEQUALS(horse_idle2_frames->get_frame(time::time_t::from_double(5.9),
 	                                        time::TIME_ZERO), size_t{2});
-	// Phase is relative to the host's start time, not packet arrival.
-	TESTEQUALS(walk_frames->get_frame(time::time_t::from_double(10.16),
-	                                  time::time_t::from_int(10)), size_t{2});
-	auto idle_sheet = renderer::resources::parser::parse_texture_file(
-		graphics / "orc" / "x256p_Spritesheets" / "Idle_Unarmed"
-		         / "Idle_Unarmed_Body_180.texture");
-	auto walk_sheet = renderer::resources::parser::parse_texture_file(
-		graphics / "orc" / "x256p_Spritesheets" / "Walk_Unarmed"
-		         / "Walk_Unarmed_Body_180.texture");
-	TESTEQUALS(idle_sheet.get_size(), (std::pair<int32_t, int32_t>{1024, 1024}));
-	TESTEQUALS(walk_sheet.get_size(), (std::pair<int32_t, int32_t>{1280, 1024}));
-	TESTEQUALS(idle_sheet.get_subtex_count(), size_t{16});
-	TESTEQUALS(walk_sheet.get_subtex_count(), size_t{20});
+	auto builder_sheet = renderer::resources::parser::parse_texture_file(
+		graphics / "builder.texture");
+	TESTEQUALS(builder_sheet.get_size(), (std::pair<int32_t, int32_t>{1080, 1080}));
+	TESTEQUALS(builder_sheet.get_subtex_count(), size_t{1});
+	TESTEQUALS(builder_sheet.get_subtex_info(0).get_anchor_pos()[0], 540);
+	TESTEQUALS(builder_sheet.get_subtex_info(0).get_anchor_pos()[1], 740);
 	auto horse_sheet = renderer::resources::parser::parse_texture_file(
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-gallop.texture");
 	TESTEQUALS(horse_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
@@ -411,6 +384,7 @@ void fvd_scenario() {
 	}
 	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
+	TESTEQUALS(builder_graphics.get_scalefactor(), 0.125f);
 	TESTEQUALS(tower_graphics.get_scalefactor(), 0.5f);
 	TESTEQUALS(horse_death.get_scalefactor(), 2.0f);
 	for (const auto &info : {plains_graphics.get_texture(0),
@@ -446,7 +420,7 @@ void fvd_scenario() {
 	// only on the authoritative host). Resolve the same namespaced sprite
 	// references used by Idle::idle for all four FVD entity definitions.
 	const std::array<std::pair<std::string, size_t>, 3> idle_resources{{
-		{"fvd.data.entities.Builder", 16},
+		{"fvd.data.entities.Builder", 1},
 		{"fvd.data.entities.Tower", 1},
 		{"fvd.data.entities.Foundation", 1},
 	}};

@@ -99,9 +99,6 @@ void structure_shadow_depth() {
 
 	auto rear = render(true, false);
 	auto combined = render(true, true);
-	// Team colour compiles and draws through the ordinary sprite shader,
-	// without additional sprite-sheet textures. Visual recolour acceptance
-	// awaits a deliberately magenta-painted asset.
 	auto owned = render(true, false, true);
 	TESTEQUALS(owned.get_info().get_row_size(), rear.get_info().get_row_size());
 	auto luminance_on_white = [](const uint8_t *value) {
@@ -135,6 +132,37 @@ void structure_shadow_depth() {
 		                     << ": front tower shadow darkened the rear sample by "
 		                     << darkening * 100.0 << "%");
 	}
+
+	// Render the smaller Builder at native texture resolution so this test
+	// measures team-colour coverage independently of its gameplay scale.
+	camera->set_zoom(0.125f);
+	camera_manager->update();
+	auto render_builder = [&](uint64_t owner) {
+		stage->clear_entities();
+		auto entity = std::make_shared<RenderEntity>();
+		entity->update(1, coord::phys3{0, 0, 0}, "builder.sprite", time::TIME_ZERO);
+		entity->set_occlusion_mode(occlusion_mode::NONE, owner);
+		stage->add_render_entity(entity);
+		stage->update(time::TIME_ZERO);
+		graphics_renderer->render(stage->get_render_pass());
+		return stage->get_render_pass()->get_target()->into_data();
+	};
+	auto blue_builder = render_builder(2);
+	auto green_builder = render_builder(3);
+	size_t recoloured_pixels = 0;
+	for (size_t y = 0; y < TEST_TARGET_HEIGHT; ++y) {
+		for (size_t x = 0; x < TEST_TARGET_WIDTH; ++x) {
+			const auto blue = pixel(blue_builder, x, y);
+			const auto green = pixel(green_builder, x, y);
+			if (blue[0] == green[0]
+			    and blue[1] == green[1]
+			    and blue[2] == green[2]) {
+				continue;
+			}
+			++recoloured_pixels;
+		}
+	}
+	TESTEQUALS(recoloured_pixels > 800, true);
 	window->close();
 }
 

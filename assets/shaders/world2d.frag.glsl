@@ -9,8 +9,8 @@ uniform bool cbits = false;
 
 // FVD team-colour artwork convention:
 // Paint the recolourable fabric, banners, trim, etc. magenta (HSL hue
-// 280–300 degrees, saturation >= 55%). Edge pixels blend between 275–305
-// degrees and 40–55% saturation to avoid ugly anti-aliased outlines.
+// 280–340 degrees, saturation >= 30%). Edge pixels blend between 275–345
+// degrees and 10–30% saturation to avoid ugly anti-aliased outlines.
 // This uses one sprite texture for all players: no tinted texture copies.
 // Set only for entities with a valid player owner.
 uniform bool team_color_enabled = false;
@@ -65,19 +65,19 @@ vec3 hsl_to_rgb(vec3 hsl) {
 
 vec3 apply_team_color(vec3 rgb) {
 	vec3 source = rgb_to_hsl(rgb);
-	const float source_hue = 290.0 / 360.0;
-	float difference = abs(source.x - source_hue);
-	float hue_distance = min(difference, 1.0 - difference) * 360.0;
-	// Full replacement within 280–300 degrees, feather to 275–305.
-	float hue_weight = 1.0 - smoothstep(10.0, 15.0, hue_distance);
-	float saturation_weight = smoothstep(0.40, 0.55, source.y);
+	float source_hue_degrees = source.x * 360.0;
+	float hue_difference = abs(source_hue_degrees - 310.0);
+	float hue_distance = min(hue_difference, 360.0 - hue_difference);
+	// Full replacement within 280–340 degrees, feather to 275–345.
+	float hue_weight = 1.0 - smoothstep(30.0, 35.0, hue_distance);
+	float saturation_weight = smoothstep(0.10, 0.30, source.y);
 	float mask = hue_weight * saturation_weight;
 	if (mask <= 0.0) return rgb;
 
 	vec3 target = rgb_to_hsl(team_color.rgb);
-	// Preserve lightness and painted saturation variation; also allow low-
-	// saturation player colours (including grey) to stay desaturated.
-	float saturation = clamp(source.y * target.y / 0.75, 0.0, 1.0);
+	// Preserve painted lightness. Shaded source pixels approach the target
+	// saturation smoothly, while player colours such as grey stay desaturated.
+	float saturation = target.y * min(source.y / 0.40, 1.0);
 	vec3 replaced = hsl_to_rgb(vec3(target.x, saturation, source.z));
 	return mix(rgb, replaced, mask);
 }

@@ -5,8 +5,8 @@ version 1
 
 imagefile "builder.png"
 
-size 192 256
+size 1080 1080
 
 pxformat rgba8 cbits=False
 
-subtex 0 0 192 256 96 252
+subtex 0 0 1080 1080 540 740

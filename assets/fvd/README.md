@@ -3,18 +3,12 @@
 This directory contains original development graphics for the FVD tower defense prototype.
 The initial set uses a fixed orthographic isometric view, neutral upper-left lighting, transparent sprite backgrounds, and a flat seamless terrain texture.
 
-**Animation prototype:** Builders temporarily use the existing Orc Unarmed directional
-spritesheets (16 angles each) for 16-frame idle and 20-frame walk cycles. Idle
-frames last 0.125 seconds and walking frames 0.07 seconds. The
-original `builder.sprite`, `builder.texture`, and `builder.png` are retained;
-you can restore them in `data/entities.nyan`. The proof-of-concept uses the
-existing images without modifying them or requiring an external graphics tool.
-FVD uses the host-selected Idle/Move animation and simulation-time animation
-start for both local and guest rendering, not guest-estimated velocity.
+Builders currently use the single-frame `builder.sprite` for both idle and movement.
+Magenta clothing in `builder.png` is recoloured for the owning player by the world sprite shader.
+The retained Orc spritesheets can be used when directional Builder animations are ready.
 
-To try it, start a solo match with `bin/run game --solo --modpacks fvd`,
-select your Builder and right-click around the map. You should see the
-Orc idle loop while stopped and its 16-direction walk cycle when moving.
+To try it, start a solo match with `bin/run game --solo --modpacks fvd`, select your Builder and right-click around the map.
+The still Builder graphic should remain anchored to its world position while moving.
 Hunter Horses use a 12-frame gallop cycle for each of 16 directions at 0.08 seconds per frame.
 Every Builder constructs the same medieval tower, whose sixteen 512 by 512 idle frames advance every 0.125 seconds.
 Their 16-frame attack cycle lasts 0.6 seconds, matching the authoritative melee cooldown, and damage lands at the 75% hit frame.
@@ -45,12 +39,12 @@ uses the **same sprite sheets and textures**; no per-player exports or texture
 cache copies are needed. This works for the host and multiplayer guests.
 
 - Paint the changeable areas (cloth, flags, trim, shields) with **magenta**:
-  HSL **hue 280–300 degrees, saturation at least 55%**. A convenient base is
-  **HSL(290, 75%, 50%)**, approximately **#BF20DF**.
+  HSL **hue 280–340 degrees, saturation at least 30%**. A convenient base is
+  **HSL(310, 50%, 50%)**, approximately **#BF409F**.
 - Vary **lightness** to paint highlights and shadows in these areas. The shader
-  preserves each pixel's original HSL lightness and relative saturation, but
-  replaces its hue with the owning player's hue.
-- The mask softens over **275–305 degrees** and **40–55% saturation**, so
+  preserves each pixel's original HSL lightness and replaces its hue with the
+  owning player's hue.
+- The mask softens over **275–345 degrees** and **10–30% saturation**, so
   antialiasing and subtle colour transitions do not create hard magenta rims.
   For reliable full recolouring, keep the main painted pixels in the narrower
   range above.
@@ -80,11 +74,9 @@ are not recoloured. The current implementation is an HSL *colour-key*
 technique, not a separate mask texture; avoid using that magenta range for
 scenery you want to remain magenta.
 
-**Verification:** Re-render one tower with magenta accents, load the revised
-sprite sheet, then inspect towers owned by two different Builder players.
-The same image should show two different team hues without creating extra
-texture files. Full GPU compilation and visual acceptance must still be
-checked on Windows and Linux.
+**Verification:** Load a sprite with magenta accents, then inspect Builders or towers owned by two different Builder players.
+The same image should show two different team hues without creating extra texture files.
+Full GPU compilation and visual acceptance must still be checked on Windows and Linux.
 
 ## Playing
 
