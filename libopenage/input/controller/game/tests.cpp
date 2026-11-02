@@ -2,6 +2,8 @@
 
 #include "controller.h"
 
+#include "input/input_context.h"
+#include "input/input_manager.h"
 #include "testing/testing.h"
 
 namespace openage::input::game::tests {
@@ -116,6 +118,19 @@ void fvd_structure_group_selection() {
 }
 
 void tower_placement_mode() {
+	// A real Qt double click is a distinct input class. It must reach the
+	// game binding rather than disappearing at InputManager's global context.
+	auto routing = std::make_shared<input::InputContext>("double_click_regression");
+	input::setup_defaults(routing);
+	const input::Event dbl{input::event_class::MOUSE_BUTTON_DBL,
+	                       Qt::MouseButton::LeftButton,
+	                       Qt::KeyboardModifier::NoModifier,
+	                       QEvent::MouseButtonDblClick};
+	TESTEQUALS(routing->is_bound(dbl), true);
+	const auto &actions = routing->lookup(dbl);
+	TESTEQUALS(actions.size(), size_t{2});
+	TESTEQUALS(actions.front().action_type == input::input_action_t::GAME, true);
+
 	fvd_structure_group_selection();
 	Controller controller{{1, 2, 3}, 2};
 	controller.set_drag_select_start({320, 180}, {10, 20});
