@@ -243,8 +243,11 @@ void setup_defaults(const std::shared_ptr<InputContext> &ctx) {
 	ctx->bind(ev_mouse_lmb, {game_action, hud_action});
 	ctx->bind(ev_mouse_rmb, {game_action, hud_action});
 
-	// also forward all other mouse button events
+	// Also forward all other mouse button events. Qt's double-click event
+	// uses MOUSE_BUTTON_DBL, a sibling (not a subclass) of MOUSE_BUTTON;
+	// without a separate binding the game controller never sees double-clicks.
 	ctx->bind(event_class::MOUSE_BUTTON, {game_action, hud_action});
+	ctx->bind(event_class::MOUSE_BUTTON_DBL, {game_action, hud_action});
 }
 
 
