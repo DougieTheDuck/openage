@@ -697,7 +697,10 @@ void fvd_scenario() {
 
 	auto builder_pos = std::dynamic_pointer_cast<component::Position>(
 		builder_entity->get_component(component::component_t::POSITION));
-	TESTEQUALS(place(2, {builders[2]}, builder_pos->get_positions().get(time::TIME_ZERO)), false);
+	TESTEQUALS(fvd->can_place_tower(
+	               state, 2, {builders[2]},
+	               builder_pos->get_positions().get(time::TIME_ZERO), time::TIME_ZERO),
+	           true);
 	TESTEQUALS(state->get_game_entities().size(), 8);
 	TESTEQUALS(place(2, {builders[2]}, {10, 10, 0}), true);
 	TESTEQUALS(fvd->is_tile_reserved(coord::tile{10, 10}), true);
@@ -815,13 +818,17 @@ void fvd_garrison() {
 	auto t = [](double seconds) { return time::time_t::from_double(seconds); };
 
 	entity_id_t builder = 0;
+	bool found_builder = false;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
 		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
-		if (ownership->get_owners().get(t(0)) == player_id_t{2}) builder = id;
+		if (ownership->get_owners().get(t(0)) == player_id_t{2}) {
+			builder = id;
+			found_builder = true;
+		}
 	}
-	TESTEQUALS(builder != 0, true);
+	TESTEQUALS(found_builder, true);
 	TESTEQUALS(fvd->request_build(state, 2, {builder}, {61, 66, 0}, t(0)), true);
 	loop->reach_time(t(0.2), state);
 	entity_id_t tower = 0;
@@ -1007,15 +1014,23 @@ void fvd_allied_garrison() {
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 	entity_id_t own_builder = 0;
 	entity_id_t allied_builder = 0;
+	bool found_own_builder = false;
+	bool found_allied_builder = false;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
 		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
 		auto player = ownership->get_owners().get(at(0));
-		if (player == 2) own_builder = id;
-		if (player == 3) allied_builder = id;
+		if (player == 2) {
+			own_builder = id;
+			found_own_builder = true;
+		}
+		if (player == 3) {
+			allied_builder = id;
+			found_allied_builder = true;
+		}
 	}
-	TESTEQUALS(own_builder != 0 and allied_builder != 0, true);
+	TESTEQUALS(found_own_builder and found_allied_builder, true);
 	TESTEQUALS(fvd->request_build(state, 3, {allied_builder}, {61, 66, 0}, at(0)), true);
 	loop->reach_time(at(0.2), state);
 	entity_id_t tower = 0;
@@ -1098,13 +1113,17 @@ void fvd_garrison_hop() {
 	tests::use_centre_test_layout(state);
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 	entity_id_t builder = 0;
+	bool found_builder = false;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
 		auto owner = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
-		if (owner->get_owners().get(at(0)) == player_id_t{2}) builder = id;
+		if (owner->get_owners().get(at(0)) == player_id_t{2}) {
+			builder = id;
+			found_builder = true;
+		}
 	}
-	TESTEQUALS(builder != 0, true);
+	TESTEQUALS(found_builder, true);
 	TESTEQUALS(fvd->request_build(state, 2, {builder}, {61, 66, 0}, at(0)), true);
 	loop->reach_time(at(0.2), state);
 	TESTEQUALS(fvd->request_build(state, 2, {builder}, {62, 66, 0}, at(0.2)), true);
@@ -1164,13 +1183,17 @@ void fvd_garrison_all_sides() {
 	tests::use_centre_test_layout(state);
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 	entity_id_t builder = 0;
+	bool found_builder = false;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
 		auto owner = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
-		if (owner->get_owners().get(at(0)) == player_id_t{2}) builder = id;
+		if (owner->get_owners().get(at(0)) == player_id_t{2}) {
+			builder = id;
+			found_builder = true;
+		}
 	}
-	TESTEQUALS(builder != 0, true);
+	TESTEQUALS(found_builder, true);
 	TESTEQUALS(fvd->request_build(state, 2, {builder}, {61, 66, 0}, at(0)), true);
 	loop->reach_time(at(0.5), state);
 	entity_id_t tower = 0;
@@ -1227,6 +1250,10 @@ void fvd_construction() {
 			entity->get_component(component::component_t::OWNERSHIP));
 		builders.at(ownership->get_owners().get(time::TIME_ZERO)) = id;
 	}
+	auto construction_builder_position = std::dynamic_pointer_cast<component::Position>(
+		state->get_game_entity(builders[2])->get_component(component::component_t::POSITION));
+	construction_builder_position->set_position(
+		time::TIME_ZERO, coord::tile{60, 65}.to_phys3_center());
 	auto t = [](double seconds) {
 		return time::time_t::from_double(seconds);
 	};
@@ -1301,11 +1328,16 @@ void fvd_construction() {
 	TESTEQUALS(first_tower != 0, true);
 	fvd->refresh_paths(state, t(0.05));
 	TESTEQUALS((routed_position->get_positions().get(t(0.5)).to_tile() != coord::tile{61, 66}), true);
+	const auto construction_stand = construction_builder_position->get_positions().get(t(0.05));
+	TESTEQUALS(construction_builder_position->get_positions().get(t(0.1)), construction_stand);
+	TESTNOTEQUALS(routed_position->get_positions().get(t(0.1)).to_tile(),
+	              construction_stand.to_tile());
 	loop->reach_time(t(0.1), state);
 	TESTEQUALS(state->get_game_entities().size(), 8);
 	TESTEQUALS(fvd->is_tile_reserved({61, 66}), false);
 	TESTEQUALS(fvd->get_build_order(builders[2]) == nullptr, true);
 	TESTEQUALS(fvd->get_construction_state().empty(), true);
+	TESTEQUALS(state->get_game_entities().contains(first_tower), true);
 	bool completed = false;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() == "fvd.data.entities.Tower") {
@@ -2697,15 +2729,23 @@ void fvd_foundation_push_and_timeout() {
 	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
 	entity_id_t builder = 0;
 	entity_id_t other_builder = 0;
+	bool found_builder = false;
+	bool found_other_builder = false;
 	for (const auto &[id, entity] : state->get_game_entities()) {
 		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
 		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
 			entity->get_component(component::component_t::OWNERSHIP));
 		const auto owner = ownership->get_owners().get(at(0));
-		if (owner == 2) builder = id;
-		if (owner == 3) other_builder = id;
+		if (owner == 2) {
+			builder = id;
+			found_builder = true;
+		}
+		if (owner == 3) {
+			other_builder = id;
+			found_other_builder = true;
+		}
 	}
-	TESTEQUALS(builder != 0 and other_builder != 0, true);
+	TESTEQUALS(found_builder and found_other_builder, true);
 	auto builder_pos = std::dynamic_pointer_cast<component::Position>(
 		state->get_game_entity(builder)->get_component(component::component_t::POSITION));
 	auto other_pos = std::dynamic_pointer_cast<component::Position>(

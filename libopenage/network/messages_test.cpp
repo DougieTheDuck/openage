@@ -270,7 +270,9 @@ void messages() {
 	// Tower-owner and occupant-player can differ; all viewers see the
 	// occupant's colour but only that player sees its concealed Builder ID.
 	auto allied_view = state;
+	allied_view.players.push_back({3, PlayerRole::BUILDER, false});
 	allied_view.entities[2].owner_id = 3;
+	allied_view.entities[2].tower_kills.reset();
 	TESTEQUALS(decode_world_state(encode_world_state(allied_view))
 	               .entities[2].garrison_player, std::optional<gamestate::player_id_t>{2});
 	auto wrong_player_view = allied_view;
