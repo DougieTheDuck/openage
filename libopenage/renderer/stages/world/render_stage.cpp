@@ -31,19 +31,25 @@ namespace {
 constexpr int64_t OCCLUDER_LAYER_PRIORITY = renderer::LAYER_PRIORITY_MAX - 2;
 constexpr int64_t OUTLINE_LAYER_PRIORITY = renderer::LAYER_PRIORITY_MAX - 1;
 
+/** Player numbers are 1-based. Keep this palette aligned with the
+ * garrison flag colours in assets/fvd/qml/main.qml. Both the unit outlines
+ * and the sprite's HSL hue replacement use these same RGB values. */
 Eigen::Vector4f get_player_outline_color(uint64_t player_id) {
+	const auto rgba = [](float r, float g, float b) {
+		return Eigen::Vector4f{r / 255.0f, g / 255.0f, b / 255.0f, 0.82f};
+	};
 	static const std::array<Eigen::Vector4f, 8> colors{
-		Eigen::Vector4f{0.18f, 0.48f, 1.00f, 0.82f},
-		Eigen::Vector4f{0.94f, 0.20f, 0.18f, 0.82f},
-		Eigen::Vector4f{0.20f, 0.78f, 0.30f, 0.82f},
-		Eigen::Vector4f{0.96f, 0.82f, 0.18f, 0.82f},
-		Eigen::Vector4f{0.18f, 0.82f, 0.92f, 0.82f},
-		Eigen::Vector4f{0.68f, 0.30f, 0.90f, 0.82f},
-		Eigen::Vector4f{0.78f, 0.78f, 0.78f, 0.82f},
-		Eigen::Vector4f{0.96f, 0.50f, 0.14f, 0.82f},
+		rgba(214, 93, 82),   // 1: Hunter red
+		rgba(67, 139, 229),  // 2: Builder blue
+		rgba(223, 87, 83),   // 3: Builder red
+		rgba(85, 182, 111),  // 4: Builder green
+		rgba(232, 209, 106), // 5: Builder yellow
+		rgba(87, 198, 209),  // 6: Builder cyan
+		rgba(170, 117, 217), // 7: Builder purple
+		rgba(236, 155, 76),  // 8: Builder orange
 	};
 	if (player_id == 0) {
-		return colors[6];
+		return rgba(149, 171, 183);
 	}
 	return colors[(player_id - 1) % colors.size()];
 }
@@ -155,13 +161,20 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 				std::vector<std::shared_ptr<renderer::UniformInput>> occlusion_unifs;
 				for (auto layer_pos : layer_positions) {
 					// Set uniforms that don't change or are not changed often
+					// A single texture serves every player; ownership only
+					// changes these per-renderable shader uniforms.
+					const auto owner = obj->get_player_id();
 					auto layer_unifs = this->display_shader->new_uniform_input(
 						"model",
 						model_matrix,
 						"flip_x",
 						false,
 						"flip_y",
-						false);
+						false,
+						"team_color_enabled",
+						owner != 0,
+						"team_color",
+						get_player_outline_color(owner));
 
 					Renderable display_obj{
 						layer_unifs,
