@@ -37,6 +37,55 @@ The runtime files follow the openage [texture](../../doc/media/openage/texture_f
 The source images were generated with OpenAI's built-in image generation tool and resized for an HD gameplay presentation.
 The prompts used for the initial set are recorded in [prompts.md](prompts.md).
 
+## Team-colour sprite authoring
+
+FVD recolours specially painted areas **on the GPU** in the active
+[`world2d.frag.glsl`](../shaders/world2d.frag.glsl) shader. Every owner
+uses the **same sprite sheets and textures**; no per-player exports or texture
+cache copies are needed. This works for the host and multiplayer guests.
+
+- Paint the changeable areas (cloth, flags, trim, shields) with **magenta**:
+  HSL **hue 280–300 degrees, saturation at least 55%**. A convenient base is
+  **HSL(290, 75%, 50%)**, approximately **#BF20DF**.
+- Vary **lightness** to paint highlights and shadows in these areas. The shader
+  preserves each pixel's original HSL lightness and relative saturation, but
+  replaces its hue with the owning player's hue.
+- The mask softens over **275–305 degrees** and **40–55% saturation**, so
+  antialiasing and subtle colour transitions do not create hard magenta rims.
+  For reliable full recolouring, keep the main painted pixels in the narrower
+  range above.
+- Leave ordinary stone, wood and other untinted elements outside that hue
+  range. Existing transparency, dark drop-shadows, depth, fog dimming and
+  legacy `cbits=True` textures retain their previous behaviour.
+- Export as **RGBA PNG** and keep `.texture` metadata at
+  `pxformat rgba8 cbits=False`, as FVD's current tower textures already do.
+
+Team colours (shared between sprites, unit outlines and garrison flags):
+
+| Player | Colour | Hex |
+| --- | --- | --- |
+| 1 (Hunter) | Red | `#d65d52` |
+| 2 | Blue | `#438be5` |
+| 3 | Green | `#55b66f` |
+| 4 | Yellow | `#e8d16a` |
+| 5 | Cyan | `#57c6d1` |
+| 6 | Purple | `#aa75d9` |
+| 7 | Grey | `#bbbbc7` |
+| 8 | Orange | `#ec9b4c` |
+
+The RGB palette lives in
+`libopenage/renderer/stages/world/render_stage.cpp`; the garrison-flag
+colours in `assets/fvd/qml/main.qml` must stay in sync. Ownerless sprites
+are not recoloured. The current implementation is an HSL *colour-key*
+technique, not a separate mask texture; avoid using that magenta range for
+scenery you want to remain magenta.
+
+**Verification:** Re-render one tower with magenta accents, load the revised
+sprite sheet, then inspect towers owned by two different Builder players.
+The same image should show two different team hues without creating extra
+texture files. Full GPU compilation and visual acceptance must still be
+checked on Windows and Linux.
+
 ## Playing
 
 Start the engine with `run game` (or simply `run`) to open the relay lobby menu.
@@ -66,7 +115,7 @@ nyan-resolved Idle sprite animations as host entities. The guest does not
 derive graphics filenames from untrusted network messages or load raw
 animation attributes directly (doing so produced red-X placeholder sprites).
 Movement currently updates at snapshot/delta cadence; interpolation is future
-work. Player-specific recolouring is also deferred.
+work. Player-specific recolouring is performed at render time in the world sprite shader.
  The **guest** displays replicated units and sends Move, AttackMove and
 BuildTower intents; the host checks player ownership and sends an acceptance
 or rejection. Online number-key role switching is disabled. **F10** leaves the
