@@ -34,8 +34,10 @@ Item {
 	readonly property int ungarrisonErrorSerial: hud === null ? 0 : hud.ungarrisonErrorSerial
 
 	function flagColor(player) {
-		var colors = ["#95abb7", "#d65d52", "#438be5", "#df5753",
-		              "#55b66f", "#e8d16a", "#57c6d1", "#aa75d9", "#ec9b4c"]
+		// Keep player indices identical to the shader/outline palette
+		// in renderer/stages/world/render_stage.cpp.
+		var colors = ["#95abb7", "#d65d52", "#438be5", "#55b66f",
+		              "#e8d16a", "#57c6d1", "#aa75d9", "#bbbbc7", "#ec9b4c"]
 		return colors[player] || "#e6e1cd"
 	}
 
