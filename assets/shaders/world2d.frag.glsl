@@ -6,6 +6,15 @@ layout(location=0) out vec4 col;
 
 uniform sampler2D tex;
 uniform bool cbits = false;
+
+// FVD team-colour artwork convention:
+// Paint the recolourable fabric, banners, trim, etc. magenta (HSL hue
+// 280–300 degrees, saturation >= 55%). Edge pixels blend between 275–305
+// degrees and 40–55% saturation to avoid ugly anti-aliased outlines.
+// This uses one sprite texture for all players: no tinted texture copies.
+// Set only for entities with a valid player owner.
+uniform bool team_color_enabled = false;
+uniform vec4 team_color = vec4(1.0);
 // Below 1 for things remembered in explored fog rather than seen now.
 uniform float brightness = 1.0;
 
@@ -24,6 +33,55 @@ bool is_shadow(vec4 value, int alpha) {
 	    && max(max(value.r, value.g), value.b) <= shadow_rgb_max;
 }
 
+// Convert displayed (sRGB-encoded) sprite colours to HSL for *artistic*
+// hue selection. No texture preprocessing or change to the alpha channel.
+vec3 rgb_to_hsl(vec3 rgb) {
+	float high = max(max(rgb.r, rgb.g), rgb.b);
+	float low = min(min(rgb.r, rgb.g), rgb.b);
+	float delta = high - low;
+	float lightness = 0.5 * (high + low);
+	if (delta <= 0.00001) return vec3(0.0, 0.0, lightness);
+	float saturation = delta / max(0.00001, 1.0 - abs(2.0 * lightness - 1.0));
+	float hue;
+	if (high == rgb.r) hue = mod((rgb.g - rgb.b) / delta, 6.0);
+	else if (high == rgb.g) hue = ((rgb.b - rgb.r) / delta) + 2.0;
+	else hue = ((rgb.r - rgb.g) / delta) + 4.0;
+	return vec3(hue / 6.0, saturation, lightness);
+}
+
+vec3 hsl_to_rgb(vec3 hsl) {
+	float c = (1.0 - abs(2.0 * hsl.z - 1.0)) * hsl.y;
+	float section = mod(hsl.x * 6.0, 6.0);
+	float x = c * (1.0 - abs(mod(section, 2.0) - 1.0));
+	vec3 rgb;
+	if      (section < 1.0) rgb = vec3(c, x, 0.0);
+	else if (section < 2.0) rgb = vec3(x, c, 0.0);
+	else if (section < 3.0) rgb = vec3(0.0, c, x);
+	else if (section < 4.0) rgb = vec3(0.0, x, c);
+	else if (section < 5.0) rgb = vec3(x, 0.0, c);
+	else                    rgb = vec3(c, 0.0, x);
+	return rgb + vec3(hsl.z - 0.5 * c);
+}
+
+vec3 apply_team_color(vec3 rgb) {
+	vec3 source = rgb_to_hsl(rgb);
+	const float source_hue = 290.0 / 360.0;
+	float difference = abs(source.x - source_hue);
+	float hue_distance = min(difference, 1.0 - difference) * 360.0;
+	// Full replacement within 280–300 degrees, feather to 275–305.
+	float hue_weight = 1.0 - smoothstep(10.0, 15.0, hue_distance);
+	float saturation_weight = smoothstep(0.40, 0.55, source.y);
+	float mask = hue_weight * saturation_weight;
+	if (mask <= 0.0) return rgb;
+
+	vec3 target = rgb_to_hsl(team_color.rgb);
+	// Preserve lightness and painted saturation variation; also allow low-
+	// saturation player colours (including grey) to stay desaturated.
+	float saturation = clamp(source.y * target.y / 0.75, 0.0, 1.0);
+	vec3 replaced = hsl_to_rgb(vec3(target.x, saturation, source.z));
+	return mix(rgb, replaced, mask);
+}
+
 void main() {
 	vec4 tex_val = texture(tex, uv);
 	int alpha = int(round(tex_val.a * 255));
@@ -39,7 +97,13 @@ void main() {
 	             ? 1.0
 	             : gl_FragCoord.z;
 	if (!cbits) {
-		col = vec4(tex_val.rgb * brightness, tex_val.a);
+		// Preserve transparency, depth sorting, dimmed fog, and near-black
+		// painted shadows. Anti-aliased magenta edges are still recoloured.
+		vec3 rgb = tex_val.rgb;
+		if (team_color_enabled && !is_shadow(tex_val, alpha)) {
+			rgb = apply_team_color(rgb);
+		}
+		col = vec4(rgb * brightness, tex_val.a);
 		return;
 	}
 	switch (alpha) {
