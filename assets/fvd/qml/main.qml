@@ -663,8 +663,10 @@ Item {
 		anchors.left: parent.left
 		anchors.bottom: parent.bottom
 		visible: root.hud !== null && root.minimapPixels > 0
-		width: 264
-		height: 144
+		// Same height as the build panel beside it (which grows with its
+		// buttons); the diamond is 2:1, so the width follows the height.
+		height: buildPanel.height
+		width: minimapDiamond.width + 16
 		radius: 6
 		color: "#ee182824"
 		border.width: 1
@@ -673,8 +675,9 @@ Item {
 		Item {
 			id: minimapDiamond
 			anchors.centerIn: parent
-			width: 248
-			height: 124
+			// 2:1 diamond, growing with the panels up to a sensible size.
+			height: Math.min(parent.height - 16, 190)
+			width: height * 2
 			// Side of the square image before it is turned into the diamond.
 			readonly property real side: width / Math.SQRT2
 
@@ -735,7 +738,8 @@ Item {
 		anchors.left: minimapPanel.visible ? minimapPanel.right : parent.left
 		anchors.bottom: parent.bottom
 		width: 284
-		height: panelContent.implicitHeight + 24
+		// At least the minimap's height, so the two boxes always line up.
+		height: Math.max(panelContent.implicitHeight + 24, 160)
 		radius: 6
 		color: "#ee182824"
 		border.width: 1
@@ -939,11 +943,12 @@ Item {
 	// Shown to everyone the moment the Hunter's horses start spawning.
 	Item {
 		id: unleashedBanner
+		// Half the window wide, in the upper part of the screen.
 		anchors.horizontalCenter: parent.horizontalCenter
-		y: parent.height * 0.22
+		y: parent.height * 0.26 - height / 2
 		z: 9
-		width: unleashedText.implicitWidth + 80
-		height: unleashedText.implicitHeight + 36
+		width: parent.width * 0.5
+		height: unleashedText.implicitHeight + 32
 		opacity: 0
 		visible: opacity > 0
 
@@ -961,10 +966,11 @@ Item {
 			text: "HUNTER UNLEASHED"
 			color: "#ffd2a6"
 			style: Text.Outline
-			styleColor: "#5a1d08"
-			font.pixelSize: 54
-			font.bold: true
-			font.letterSpacing: 4
+			styleColor: "#3a0f02"
+			// Text fills most of the banner's width.
+			font.pixelSize: Math.min(root.height * 0.08, root.width * 0.034)
+			font.weight: Font.Black
+			font.letterSpacing: 6
 		}
 
 		SequentialAnimation {
