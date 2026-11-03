@@ -2,9 +2,12 @@
 
 #include "renderer/stages/world/render_stage.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <QWindow>
 
@@ -19,6 +22,8 @@
 #include "renderer/resources/assets/asset_manager.h"
 #include "renderer/resources/texture_data.h"
 #include "renderer/stages/camera/manager.h"
+#include "renderer/stages/terrain/render_entity.h"
+#include "renderer/stages/terrain/render_stage.h"
 #include "renderer/stages/world/render_entity.h"
 #include "renderer/window.h"
 #include "testing/testing.h"
@@ -163,6 +168,89 @@ void structure_shadow_depth() {
 		}
 	}
 	TESTEQUALS(recoloured_pixels > 800, true);
+	window->close();
+}
+
+// Render the shader itself, not a CPU approximation of its blend. Existing
+// per-tile fog data must produce dark interiors and soft tile-edge transitions.
+void terrain_fog_soft_edges() {
+	auto root = util::Path{
+		std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto gui_app = std::make_shared<gui::GuiApplicationWithLogger>();
+	window_settings settings{};
+	settings.width = TEST_TARGET_WIDTH;
+	settings.height = TEST_TARGET_HEIGHT;
+	settings.vsync = false;
+	auto window = Window::create("openage softened terrain fog test", settings);
+	window->get_qt_window()->setVisible(false);
+	auto graphics_renderer = window->make_renderer();
+	auto camera = std::make_shared<renderer::camera::Camera>(
+		graphics_renderer, window->get_size());
+	camera->set_zoom(1.0f);
+	camera->look_at_coord(coord::scene3{1.5, 1.5, 0});
+	auto camera_manager = std::make_shared<renderer::camera::CameraManager>(camera);
+	camera_manager->update();
+	auto assets = std::make_shared<resources::AssetManager>(
+		graphics_renderer, root / "assets" / "fvd" / "graphics");
+	auto clock = std::make_shared<time::Clock>();
+	auto stage = std::make_shared<terrain::TerrainRenderStage>(
+		window, graphics_renderer, camera, root / "assets" / "shaders", assets, clock);
+
+	terrain::RenderEntity::tiles_t tiles{};
+	for (int i = 0; i < 9; ++i) {
+		tiles.emplace_back(terrain::RenderEntity::terrain_elevation_t{0}, "grass.terrain");
+	}
+	auto entity = std::make_shared<terrain::RenderEntity>();
+	entity->update(util::Vector2s{3, 3}, tiles, time::TIME_ZERO);
+	stage->add_render_entity(entity, util::Vector2s{3, 3}, coord::scene2_delta{0, 0});
+
+	auto render = [&](const std::vector<uint8_t> &fog_levels, float edge_width) {
+		stage->set_fog(3, fog_levels);
+		stage->set_fog_edge_width(edge_width);
+		stage->update();
+		graphics_renderer->render(stage->get_render_pass());
+		return stage->get_render_pass()->get_target()->into_data();
+	};
+	const std::vector<uint8_t> all_visible(9, 255);
+	// Fog rows are NE (height), columns SE (width): first SE column visible.
+	const std::vector<uint8_t> revealed{
+		255, 0, 0,
+		255, 0, 0,
+		255, 0, 0,
+	};
+	auto full = render(all_visible, 0.55f);
+	auto soft = render(revealed, 0.55f);
+	auto hard = render(revealed, 0.0f);
+	auto sample = [camera](const resources::Texture2dData &image,
+	                       float se, float ne) {
+		const Eigen::Vector3f world = coord::scene3{ne, se, 0}.to_world_space();
+		const auto matrix = camera->get_projection_matrix() * camera->get_view_matrix();
+		const Eigen::Vector4f projected = matrix * Eigen::Vector4f{
+			world.x(), world.y(), world.z(), 1.0f};
+		const auto x = static_cast<size_t>(std::clamp(
+			std::lround((projected.x() / projected.w() * 0.5 + 0.5) * TEST_TARGET_WIDTH),
+			0l, static_cast<long>(TEST_TARGET_WIDTH - 1)));
+		const auto y = static_cast<size_t>(std::clamp(
+			std::lround((projected.y() / projected.w() * 0.5 + 0.5) * TEST_TARGET_HEIGHT),
+			0l, static_cast<long>(TEST_TARGET_HEIGHT - 1)));
+		const uint8_t *rgba = pixel(image, x, y);
+		return 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2];
+	};
+	const double full_center = sample(full, 0.5f, 1.5f);
+	const double full_edge = sample(full, 1.0f, 1.5f);
+	const double full_hidden = sample(full, 1.5f, 1.5f);
+	TESTEQUALS(full_center > 0.0, true);
+	TESTEQUALS(full_edge > 0.0, true);
+	TESTEQUALS(full_hidden > 0.0, true);
+	// Fog softness doesn't wash out well inside visible and unseen tiles.
+	TESTEQUALS(sample(soft, 0.5f, 1.5f) > full_center * 0.95, true);
+	TESTEQUALS(sample(soft, 1.5f, 1.5f) < full_hidden * 0.05, true);
+	// Between different tile centres, the new shader renders a partial fade.
+	TESTEQUALS(sample(soft, 1.0f, 1.5f) > full_edge * 0.20, true);
+	TESTEQUALS(sample(soft, 1.0f, 1.5f) < full_edge * 0.85, true);
+	// A width of zero restores the earlier hard tile boundary.
+	TESTEQUALS(sample(hard, 0.88f, 1.5f) > full_edge * 0.95, true);
+	TESTEQUALS(sample(hard, 1.12f, 1.5f) < full_edge * 0.05, true);
 	window->close();
 }
 
