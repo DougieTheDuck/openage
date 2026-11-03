@@ -249,6 +249,11 @@ def tests_cpp():
         "FVD line placement queues valid tower foundations in order",
         lambda env: env["has_assets"],
     )
+    yield (
+        "openage::gamestate::tests::fvd_build_double_row",
+        "FVD Builder finishes two touching rows without orphaning foundations",
+        lambda env: env["has_assets"],
+    )
     yield "openage::gamestate::tests::fvd_animation_phase"
     yield (
         "openage::gamestate::tests::fvd_retask_foundation",

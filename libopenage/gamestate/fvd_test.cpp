@@ -3116,6 +3116,80 @@ void fvd_build_line_order() {
 	TESTEQUALS(fvd->cancel_build(state, *builder, completed_at), true);
 }
 
+// Touching rows of foundations, as players shift-drag them: the Builder
+// must find somewhere to stand for every site (on his own queued foundations
+// if need be) and finish them all, instead of skipping sites as "occupied"
+// and leaving orphaned foundations.
+void fvd_build_double_row() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	std::optional<entity_id_t> builder{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto owner = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (owner->get_owners().get(time::TIME_ZERO) == player_id_t{2}) {
+			builder = id;
+			break;
+		}
+	}
+	builder.has_value() or TESTFAIL;
+	event::SendCommandHandler command;
+	const std::vector<entity_id_t> selected{*builder};
+	auto submit_line = [&](const std::vector<coord::phys3> &line, const time::time_t &time) {
+		bool accepted = false;
+		command.invoke(*loop, nullptr, state, time,
+		               {{"type", component::command::command_t::BUILD_TOWER},
+		                {"owner", player_id_t{2}}, {"queue", true},
+		                {"entity_ids", selected}, {"target", line.front()},
+		                {"build_line", line},
+		                {"result_cb", std::function<void(bool)>{[&](bool result) {
+			                accepted = result;
+		                }}}});
+		return accepted;
+	};
+	// Three touching rows, back and forth. Once the first row stands, every
+	// neighbour of a middle-row site is a tower or one of his own queued
+	// foundations: he has to stand on one of those foundations.
+	for (int row = 0; row < 3; ++row) {
+		std::vector<coord::phys3> line{};
+		for (int i = 0; i < 6; ++i) {
+			const double ne = row % 2 == 0 ? 55.5 + i : 60.5 - i;
+			line.push_back({coord::phys_t{ne}, coord::phys_t{71.5 + row}, 0});
+		}
+		TESTEQUALS(submit_line(line, time::TIME_ZERO), true);
+	}
+
+	const auto done = time::time_t::from_int(150);
+	loop->reach_time(done, state);
+	size_t towers = 0;
+	size_t foundations = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		auto position = std::dynamic_pointer_cast<component::Position>(
+			entity->get_component(component::component_t::POSITION));
+		const auto tile = position->get_positions().get(done).to_tile();
+		const bool in_rows = tile.ne >= 55 and tile.ne <= 60 and tile.se >= 71 and tile.se <= 73;
+		if (not in_rows) continue;
+		if (entity->get_definition() == "fvd.data.entities.Tower") ++towers;
+		if (entity->get_definition() == "fvd.data.entities.Foundation") ++foundations;
+	}
+	if (towers != 18 or foundations != 0) {
+		TESTFAILMSG(__FILE__ << ":" << __LINE__ << ": touching rows finished " << towers
+		                     << " of 18 towers, " << foundations << " foundations left");
+	}
+	TESTEQUALS(fvd->get_build_order(*builder) == nullptr, true);
+}
+
 void fvd_retask_foundation() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");

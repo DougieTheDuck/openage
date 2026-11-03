@@ -677,8 +677,14 @@ std::optional<coord::phys3> FVD::find_build_stand(
 		coord::tile candidate{site.ne + offset.ne, site.se + offset.se};
 		if (candidate.ne < 0 or candidate.se < 0
 		    or candidate.ne >= this->map_size or candidate.se >= this->map_size
-		    or this->is_tile_reserved(candidate)
 		    or this->tile_occupied(state, candidate, time, entity->get_id())) {
+			continue;
+		}
+		// A Builder may stand on his own queued foundations: they are
+		// walkable until built, and with touching rows they can be the
+		// only tiles left beside a site. Never on anyone else's.
+		auto reserved = this->reserved_tiles.find(candidate);
+		if (reserved != this->reserved_tiles.end() and reserved->second != entity->get_id()) {
 			continue;
 		}
 		candidates.push_back(candidate);
