@@ -39,6 +39,7 @@ Item {
 	readonly property var minimapView: hud === null || hud.minimapView === undefined ? [] : hud.minimapView
 	readonly property bool optionsOpen: hud !== null && hud.optionsOpen === true
 	readonly property bool flaring: hud !== null && hud.flaring === true
+	readonly property bool towerLabelsOn: hud === null || hud.towerLabelsOn !== false
 	readonly property var flareMarkers: hud === null || hud.flareMarkers === undefined ? [] : hud.flareMarkers
 	readonly property var minimapFlares: hud === null || hud.minimapFlares === undefined ? [] : hud.minimapFlares
 
@@ -125,13 +126,14 @@ Item {
 				color: "#ffffff"
 				font.bold: true
 				font.pixelSize: 15
-				text: "Sound"
+				text: "Options"
 			}
 
 			Repeater {
 				model: [
 					{ name: "fvdMusicToggle", label: "Music", on: root.musicOn },
-					{ name: "fvdEffectsToggle", label: "Sound effects", on: root.effectsOn }
+					{ name: "fvdEffectsToggle", label: "Sound effects", on: root.effectsOn },
+					{ name: "fvdTowerLabelsToggle", label: "Builder tower labels", on: root.towerLabelsOn }
 				]
 
 				delegate: Rectangle {
@@ -276,6 +278,7 @@ Item {
 		Connections {
 			target: root
 			function onSiteMarkersChanged() { constructionSites.requestPaint() }
+			function onTowerLabelsOnChanged() { constructionSites.requestPaint() }
 			function onReservedFootprintsChanged() { constructionSites.requestPaint() }
 		}
 		onPaint: {
@@ -297,12 +300,14 @@ Item {
 				ctx.stroke()
 			}
 			var sites = root.siteMarkers
+			var labels = root.towerLabelsOn
 			ctx.font = "bold 11px sans-serif"
 			ctx.textAlign = "center"
 			ctx.textBaseline = "middle"
 			for (var j = 0; j < sites.length; ++j) {
 				var site = sites[j]
 				var text = "P" + site.owner + " " + site.phase.toUpperCase()
+				if (labels) {
 				var labelWidth = ctx.measureText(text).width + 12
 				var left = site.x - labelWidth / 2
 				var top = site.y - 34
@@ -318,6 +323,7 @@ Item {
 				ctx.strokeRect(left, top, labelWidth, 18)
 				ctx.fillStyle = outline
 				ctx.fillText(text, site.x, top + 9)
+				}
 				if (site.queueNumber > 0) {
 					var number = String(site.queueNumber)
 					ctx.font = "bold 10px sans-serif"
@@ -690,8 +696,8 @@ Item {
 		Item {
 			id: minimapDiamond
 			anchors.centerIn: parent
-			// 2:1 diamond, growing with the panels up to a sensible size.
-			height: Math.min(parent.height - 16, 190)
+			// 2:1 diamond, centred in the full-height panel.
+			height: Math.min(parent.height - 16, 200)
 			width: height * 2
 			// Side of the square image before it is turned into the diamond.
 			readonly property real side: width / Math.SQRT2
@@ -779,8 +785,10 @@ Item {
 		anchors.left: minimapPanel.visible ? minimapPanel.right : parent.left
 		anchors.bottom: parent.bottom
 		width: 284
-		// At least the minimap's height, so the two boxes always line up.
-		height: Math.max(panelContent.implicitHeight + 24, 160)
+		// Always the size of its tallest layout (measured: a Builder with a
+		// tower selected while placing, or the Hunter targeting with
+		// horses), so the HUD never jumps. Grows only if text wraps further.
+		height: Math.max(panelContent.implicitHeight + 24, 344)
 		radius: 6
 		color: "#ee182824"
 		border.width: 1

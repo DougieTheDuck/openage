@@ -26,6 +26,7 @@ public:
 		TOGGLE_MUSIC,
 		TOGGLE_EFFECTS,
 		FLARE,
+		TOGGLE_TOWER_LABELS,
 	};
 
 	struct Result {

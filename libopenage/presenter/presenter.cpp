@@ -236,6 +236,7 @@ void Presenter::init_audio() {
 		                QStringLiteral("openage"), QStringLiteral("fvd")};
 		this->audio_settings->music_enabled = saved.value(QStringLiteral("audio/music"), true).toBool();
 		this->audio_settings->effects_enabled = saved.value(QStringLiteral("audio/effects"), true).toBool();
+		this->fvd_tower_labels = saved.value(QStringLiteral("hud/towerLabels"), true).toBool();
 	}
 	this->publish_fvd_options();
 	if (not this->audio_enabled) {
@@ -269,6 +270,7 @@ void Presenter::publish_fvd_options() {
 	this->fvd_hud_state->insert("optionsOpen", this->fvd_options_open);
 	this->fvd_hud_state->insert("musicOn", this->audio_settings->music_enabled.load());
 	this->fvd_hud_state->insert("effectsOn", this->audio_settings->effects_enabled.load());
+	this->fvd_hud_state->insert("towerLabelsOn", this->fvd_tower_labels);
 	QString note{};
 	if (not this->audio_enabled) {
 		note = QStringLiteral("Sound is off (--no-audio)");
@@ -1508,7 +1510,8 @@ void Presenter::init_input() {
 			         std::pair{"fvdOptionsButton", HudAction::OPTIONS},
 			         std::pair{"fvdMusicToggle", HudAction::TOGGLE_MUSIC},
 			         std::pair{"fvdEffectsToggle", HudAction::TOGGLE_EFFECTS},
-			         std::pair{"fvdFlareButton", HudAction::FLARE}}) {
+			         std::pair{"fvdFlareButton", HudAction::FLARE},
+			         std::pair{"fvdTowerLabelsToggle", HudAction::TOGGLE_TOWER_LABELS}}) {
 				if (this->gui->contains_item(name, ev.position())) {
 					hovered_action = action;
 					break;
@@ -1560,6 +1563,7 @@ void Presenter::init_input() {
 			case HudAction::OPTIONS:
 			case HudAction::TOGGLE_MUSIC:
 			case HudAction::TOGGLE_EFFECTS:
+			case HudAction::TOGGLE_TOWER_LABELS:
 				break;
 			}
 		}
@@ -1589,6 +1593,11 @@ void Presenter::init_input() {
 				this->publish_fvd_options();
 				break;
 			}
+			case HudAction::TOGGLE_TOWER_LABELS:
+				this->fvd_tower_labels = not this->fvd_tower_labels;
+				save("hud/towerLabels", this->fvd_tower_labels);
+				this->publish_fvd_options();
+				break;
 			default:
 				break;
 			}
