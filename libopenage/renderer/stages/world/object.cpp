@@ -306,6 +306,10 @@ uint64_t WorldObject::get_player_id() const {
 	return this->player_id;
 }
 
+Eigen::Vector3f WorldObject::get_rendered_world_position() const {
+	return this->rendered_position.to_world_space();
+}
+
 const renderer::resources::MeshData WorldObject::get_mesh() {
 	return resources::MeshData::make_quad();
 }
