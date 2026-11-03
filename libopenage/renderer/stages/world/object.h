@@ -105,6 +105,11 @@ public:
 	/** Get the player whose color identifies this object. */
 	uint64_t get_player_id() const;
 
+	/** Ground anchor used by the sprite on its last rendering update.
+	 * Selection rings use this so their movement matches interpolation
+	 * exactly, including guest-simulated position curves. */
+	Eigen::Vector3f get_rendered_world_position() const;
+
 	/**
 	 * Get the quad for creating the geometry.
 	 *
