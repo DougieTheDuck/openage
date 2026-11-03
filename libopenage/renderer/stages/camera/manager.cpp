@@ -2,6 +2,7 @@
 
 #include "manager.h"
 
+#include <algorithm>
 #include <eigen3/Eigen/Dense>
 #include <numbers>
 
@@ -15,7 +16,9 @@ CameraManager::CameraManager(const std::shared_ptr<renderer::camera::Camera> &ca
 	camera{camera},
 	move_motion_directions{static_cast<int>(MoveDirection::NONE)},
 	zoom_motion_direction{static_cast<int>(ZoomDirection::NONE)},
-	move_motion_speed{0.2f},
+	// Scene units per second. The old fixed 0.2 per frame was tuned at
+	// 60 fps and ran several times too fast on high-refresh machines.
+	move_motion_speed{24.0f},
 	zoom_motion_speed{0.05f},
 	camera_boundaries{camera_boundaries} {
 	this->uniforms = this->camera->get_uniform_buffer()->new_uniform_input(
@@ -26,7 +29,15 @@ CameraManager::CameraManager(const std::shared_ptr<renderer::camera::Camera> &ca
 }
 
 void CameraManager::update() {
-	this->update_motion();
+	const auto now = std::chrono::steady_clock::now();
+	float seconds = 0.0f;
+	if (this->last_update) {
+		// A long stall (loading, a dragged window) must not jump the view.
+		seconds = std::clamp(std::chrono::duration<float>(now - *this->last_update).count(),
+		                     0.0f, MAX_MOTION_STEP);
+	}
+	this->last_update = now;
+	this->update_motion(seconds);
 	this->update_uniforms();
 }
 
@@ -72,15 +83,18 @@ void CameraManager::set_camera_boundaries(const CameraBoundaries &camera_boundar
 	this->camera_boundaries = camera_boundaries;
 }
 
-void CameraManager::update_motion() {
+void CameraManager::update_motion(float seconds) {
 	if (this->move_motion_directions != static_cast<int>(MoveDirection::NONE)) {
 		Eigen::Vector3f move_dir{0.0f, 0.0f, 0.0f};
 
+		// Sideways is halved, as in move_frame(): forward/back and left/right
+		// are 1:2 on screen in our projection, so all four directions now
+		// scroll at the same on-screen speed.
 		if (this->move_motion_directions & static_cast<int>(MoveDirection::LEFT)) {
-			move_dir += Eigen::Vector3f(-1.0f, 0.0f, 1.0f);
+			move_dir += Eigen::Vector3f(-0.5f, 0.0f, 0.5f);
 		}
 		if (this->move_motion_directions & static_cast<int>(MoveDirection::RIGHT)) {
-			move_dir += Eigen::Vector3f(1.0f, 0.0f, -1.0f);
+			move_dir += Eigen::Vector3f(0.5f, 0.0f, -0.5f);
 		}
 		if (this->move_motion_directions & static_cast<int>(MoveDirection::FORWARD)) {
 			move_dir += Eigen::Vector3f(-1.0f, 0.0f, -1.0f);
@@ -89,7 +103,7 @@ void CameraManager::update_motion() {
 			move_dir += Eigen::Vector3f(1.0f, 0.0f, 1.0f);
 		}
 
-		this->camera->move_rel(move_dir, this->move_motion_speed, this->camera_boundaries);
+		this->camera->move_rel(move_dir, this->move_motion_speed * seconds, this->camera_boundaries);
 	}
 
 	if (this->zoom_motion_direction != static_cast<int>(ZoomDirection::NONE)) {

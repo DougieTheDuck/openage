@@ -2,7 +2,9 @@
 
 #pragma once
 
+#include <chrono>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "renderer/camera/camera.h"
@@ -96,14 +98,14 @@ public:
 	/**
 	 * Set the move speed of the camera.
 	 *
-	 * @param speed Speed of the camera.
+	 * @param speed Scene units per second.
 	 */
 	void set_move_motion_speed(float speed);
 
 	/**
 	 * Set the zoom speed of the camera.
 	 *
-	 * @param speed Speed of the camera.
+	 * @param speed Scene units per second.
 	 */
 	void set_zoom_motion_speed(float speed);
 
@@ -118,7 +120,13 @@ private:
 	/**
 	 * Update the camera parameters.
 	 */
-	void update_motion();
+	void update_motion(float seconds);
+
+	/** Longest frame time applied to edge scrolling, in seconds. */
+	static constexpr float MAX_MOTION_STEP = 0.1f;
+
+	/** When update() last ran, to scroll by elapsed time, not by frame. */
+	std::optional<std::chrono::steady_clock::time_point> last_update{};
 
 	/**
 	 * Update the camera uniform buffer.
@@ -141,7 +149,7 @@ private:
 	int zoom_motion_direction;
 
 	/**
-	 * Move motion speed of the camera.
+	 * Edge-scroll speed of the camera, in scene units per second.
 	 */
 	float move_motion_speed;
 
