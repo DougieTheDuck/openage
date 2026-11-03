@@ -8,3 +8,5 @@
 - [x] 1.6 Test vision ranges, hidden-target rejection, chase loss, explored memory, remembered buildings, filtered capture and the fog wire format.
 - [ ] 1.7 Verify interactively in solo (switching sides) and on two processes.
 - [x] 1.8 Dim remembered buildings in explored fog to match the ground.
+- [x] 1.9 Render softer fog boundaries in the terrain shader without changing exact gameplay visibility, with a 0.55-tile configurable fade and gently irregular contours. Add GPU regression for visible/unseen centres and optional hard-edge rendering.
+- [ ] 1.10 Run `bin/run test openage::renderer::world::tests::terrain_fog_soft_edges -a --have-assets` and inspect visibility boundaries on Windows/Linux with both Hunter and Builder perspectives.
