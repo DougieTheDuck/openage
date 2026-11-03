@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -327,6 +328,87 @@ void selection_ground_rings() {
 		}
 	}
 	TESTEQUALS(shown_pixels == size_t{0}, true);
+	window->close();
+}
+
+// Adjacent towers must overlap like AoE2 buildings: whatever is nearer the
+// camera is in front, whatever order the towers were built in.
+void adjacent_tower_draw_order() {
+	auto root = util::Path{
+		std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto gui_app = std::make_shared<gui::GuiApplicationWithLogger>();
+	window_settings settings{};
+	settings.width = TEST_TARGET_WIDTH;
+	settings.height = TEST_TARGET_HEIGHT;
+	settings.vsync = false;
+	auto window = Window::create("openage tower draw order test", settings);
+	window->get_qt_window()->setVisible(false);
+	auto graphics_renderer = window->make_renderer();
+	auto camera = std::make_shared<renderer::camera::Camera>(graphics_renderer, window->get_size());
+	camera->set_zoom(1.0f);
+	camera->look_at_coord(coord::scene3{1, 1, 0});
+	auto camera_manager = std::make_shared<renderer::camera::CameraManager>(camera);
+	camera_manager->update();
+	auto assets = std::make_shared<resources::AssetManager>(
+		graphics_renderer, root / "assets" / "fvd" / "graphics");
+	auto clock = std::make_shared<time::Clock>();
+	auto stage = std::make_shared<WorldRenderStage>(
+		window, graphics_renderer, camera, root / "assets" / "shaders", assets, clock);
+
+	using tiles_t = std::vector<std::pair<int, int>>;
+	auto render = [&](const tiles_t &tiles) {
+		stage->clear_entities();
+		uint32_t id = 1;
+		for (auto [ne, se] : tiles) {
+			auto entity = std::make_shared<RenderEntity>();
+			entity->update(id++,
+			               coord::phys3{coord::phys_t::from_int(ne) + coord::phys_t{0.5},
+			                            coord::phys_t::from_int(se) + coord::phys_t{0.5}, 0},
+			               "tower.sprite", time::TIME_ZERO);
+			entity->set_occlusion_mode(occlusion_mode::OCCLUDER, 2);
+			stage->add_render_entity(entity);
+		}
+		stage->update(time::TIME_ZERO);
+		graphics_renderer->render(stage->get_render_pass());
+		return stage->get_render_pass()->get_target()->into_data();
+	};
+	auto same = [](const resources::Texture2dData &a, const resources::Texture2dData &b) {
+		for (size_t y = 0; y < TEST_TARGET_HEIGHT; ++y) {
+			for (size_t x = 0; x < TEST_TARGET_WIDTH; ++x) {
+				if (std::memcmp(pixel(a, x, y), pixel(b, x, y), 4) != 0) return false;
+			}
+		}
+		return true;
+	};
+
+	// A 3x3 block and a row of equal-depth towers, built in both orders.
+	tiles_t grid{{0, 0}, {0, 1}, {0, 2}, {1, 0}, {1, 1}, {1, 2}, {2, 0}, {2, 1}, {2, 2}};
+	tiles_t row{{0, 0}, {1, 1}, {2, 2}};
+	for (const auto &tiles : {grid, row}) {
+		auto reversed = tiles;
+		std::reverse(reversed.begin(), reversed.end());
+		same(render(tiles), render(reversed)) or TESTFAILMSG("tower overlap depends on build order");
+	}
+
+	// The nearer tower (higher SE) is drawn completely over the rear one,
+	// even when it was built first.
+	const auto front_alone = render({{0, 1}});
+	const auto both = render({{0, 1}, {0, 0}});
+	size_t front_pixels = 0;
+	size_t covered = 0;
+	for (size_t y = 0; y < TEST_TARGET_HEIGHT; ++y) {
+		for (size_t x = 0; x < TEST_TARGET_WIDTH; ++x) {
+			const auto *front = pixel(front_alone, x, y);
+			if (front[3] < 250) continue;
+			++front_pixels;
+			if (std::memcmp(front, pixel(both, x, y), 4) == 0) ++covered;
+		}
+	}
+	(front_pixels > 10000) or TESTFAIL;
+	if (covered < front_pixels * 99 / 100) {
+		TESTFAILMSG(__FILE__ << ":" << __LINE__ << ": rear tower drawn over the front one ("
+		                     << front_pixels - covered << " of " << front_pixels << " pixels)");
+	}
 	window->close();
 }
 

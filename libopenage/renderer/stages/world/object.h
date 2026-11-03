@@ -84,6 +84,9 @@ public:
 	 */
 	uint32_t get_id();
 
+	/** Uniform inputs of this object's sprite layers (one per drawn layer). */
+	const std::vector<std::shared_ptr<renderer::UniformInput>> &get_layer_uniforms() const;
+
 	/** Whether the corresponding game entity is active. */
 	bool is_active() const;
 

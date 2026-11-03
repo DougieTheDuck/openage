@@ -278,6 +278,10 @@ uint32_t WorldObject::get_id() {
 	return this->ref_id;
 }
 
+const std::vector<std::shared_ptr<renderer::UniformInput>> &WorldObject::get_layer_uniforms() const {
+	return this->layer_uniforms;
+}
+
 bool WorldObject::is_active() const {
 	return this->render_entity->is_active();
 }

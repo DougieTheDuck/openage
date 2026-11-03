@@ -65,26 +65,17 @@ void RenderPass::add_renderables(std::vector<Renderable> &&renderables, int64_t 
 		return;
 	}
 
-	// Index of the layer where the renderables will be inserted
+	// Layers are kept sorted by priority. Use the layer with exactly this
+	// priority, or create it before the first layer with a higher one.
+	// (Inserting anywhere else breaks the sort, and every later call then
+	// creates yet another layer: each would clear depth and draw on top.)
 	size_t layer_index = 0;
-
-	// Priority of the last observed layer
-	int64_t current_priority = LAYER_PRIORITY_MAX;
-
-	// Find the index in renderables to insert the renderables
-	for (size_t i = 0; i < this->layers.size(); i++) {
-		auto &layer = this->layers.at(i);
-		if (layer.priority > priority) {
-			// Priority of the next layer is lower than the desired priority
-			// Insert the renderables directly before this layer
-			break;
-		}
-		current_priority = layer.priority;
-		layer_index = i;
+	while (layer_index < this->layers.size()
+	       and this->layers[layer_index].priority < priority) {
+		++layer_index;
 	}
-
-	if (current_priority != priority) {
-		// Lazily add a new layer with the desired priority
+	if (layer_index == this->layers.size()
+	    or this->layers[layer_index].priority != priority) {
 		this->add_layer(layer_index, priority);
 	}
 

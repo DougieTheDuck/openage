@@ -210,6 +210,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::renderer::world::tests::adjacent_tower_draw_order",
+        "FVD adjacent towers overlap nearest-in-front, whatever order they were built",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::renderer::world::tests::terrain_fog_soft_edges",
         "FVD GPU fog softens tile edges while preserving visibility centres",
         lambda env: env["has_assets"],

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -25,6 +26,7 @@ class Renderer;
 class RenderPass;
 class ShaderProgram;
 class Texture2d;
+class UniformInput;
 class Window;
 
 namespace camera {
@@ -135,7 +137,23 @@ public:
 	 */
 	void resize(size_t width, size_t height);
 
+	/** Draw order of one sprite: further from the camera first, then left to right. */
+	struct DrawKey {
+		/** Distance from the camera, in 1/10000 scene units. */
+		int64_t depth = 0;
+		/** Screen-horizontal position, in 1/10000 scene units. */
+		int64_t across = 0;
+		/** Last resort for sprites in exactly the same place. */
+		uint32_t id = 0;
+	};
+
+	/** Whether a sprite with key `a` must be drawn before one with `b`. */
+	static bool draw_before(const DrawKey &a, const DrawKey &b);
+
 private:
+	/** Order sprite renderables far to near, after new sprites were added. */
+	void sort_back_to_front();
+
 	/**
 	 * Create the render pass for world drawing.
 	 *

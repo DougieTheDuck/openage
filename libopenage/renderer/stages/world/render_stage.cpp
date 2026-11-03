@@ -3,6 +3,8 @@
 #include "render_stage.h"
 
 #include <array>
+#include <cmath>
+#include <unordered_map>
 
 #include <eigen3/Eigen/Dense>
 
@@ -142,6 +144,7 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 	lock_profile.finish();
 	auto current_time = presentation_time.value_or(this->clock->get_real_time());
 	auto &camera_frustum = this->camera->get_frustum_2d();
+	bool sprites_added = false;
 	for (auto &obj : this->render_objects) {
 		obj->fetch_updates(current_time);
 		obj->set_concealed(this->shown_ids and not this->shown_ids->contains(obj->get_id()));
@@ -235,12 +238,17 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 				}
 
 				obj->clear_requires_renderable();
+				sprites_added = true;
 
 				// update remaining uniforms for the object
 				obj->set_uniforms(std::move(transform_unifs), std::move(occlusion_unifs));
 			}
 		}
 		obj->update_uniforms(current_time);
+	}
+
+	if (sprites_added) {
+		this->sort_back_to_front();
 	}
 
 	// A transient layer containing only the selected, actually visible units.
@@ -267,6 +275,47 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 	}
 	this->render_pass->set_layer_renderables(
 		SELECTION_RING_LAYER_PRIORITY, std::move(rings));
+}
+
+void WorldRenderStage::sort_back_to_front() {
+	// The depth buffer settles opaque pixels, but soft sprite edges and
+	// shadows are blended and write no depth, so they still depend on draw
+	// order. Draw far to near, then left to right, so the picture never
+	// depends on spawn order. Only done when sprites are added: moving units
+	// keep their slot, and depth testing still covers their opaque pixels.
+	const Eigen::Matrix4f &view = this->camera->get_view_matrix();
+	std::unordered_map<const UniformInput *, DrawKey> keys{};
+	keys.reserve(this->render_objects.size());
+	for (const auto &obj : this->render_objects) {
+		const Eigen::Vector3f position = obj->get_rendered_world_position();
+		const Eigen::Vector4f in_view = view * Eigen::Vector4f{position.x(), position.y(), position.z(), 1.0f};
+		// Quantised so equal depths tie exactly (a strict weak order).
+		const DrawKey key{std::llround(-in_view.z() * 10000.0f),
+		                  std::llround(in_view.x() * 10000.0f),
+		                  obj->get_id()};
+		for (const auto &uniform : obj->get_layer_uniforms()) {
+			keys.emplace(uniform.get(), key);
+		}
+	}
+	const auto key_of = [&keys](const Renderable &renderable) {
+		auto key = keys.find(renderable.uniform.get());
+		return key == keys.end() ? DrawKey{} : key->second;
+	};
+	// Layers without sprites (rings, occluders, outlines) all tie and keep
+	// their order: the sort is stable.
+	this->render_pass->sort([&](const Renderable &a, const Renderable &b) {
+		return draw_before(key_of(a), key_of(b));
+	});
+}
+
+bool WorldRenderStage::draw_before(const DrawKey &a, const DrawKey &b) {
+	if (a.depth != b.depth) {
+		return a.depth > b.depth;
+	}
+	if (a.across != b.across) {
+		return a.across < b.across;
+	}
+	return a.id < b.id;
 }
 
 void WorldRenderStage::set_shown(std::optional<std::unordered_set<uint32_t>> ids) {
