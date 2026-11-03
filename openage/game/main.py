@@ -27,6 +27,11 @@ def add_network_arguments(cli: ArgumentParser) -> None:
     )
 
 
+def add_audio_arguments(cli: ArgumentParser) -> None:
+    """Add the sound switch shared by both game entry points."""
+    cli.add_argument("--no-audio", action="store_true", help="run without sound or an audio device")
+
+
 def init_subparser(cli: ArgumentParser) -> None:
     """Initializes the parser for game-specific args."""
     cli.set_defaults(entrypoint=main)
@@ -42,6 +47,7 @@ def init_subparser(cli: ArgumentParser) -> None:
         "--solo", "--single-player", action="store_true", help="skip the lobby and start local FVD gameplay"
     )
     add_network_arguments(cli)
+    add_audio_arguments(cli)
 
     cli.add_argument("--check-updates", action="store_true", help="Check if the assets are up to date")
 

@@ -1,0 +1,7 @@
+# Copyright 2026-2026 the openage authors. See copying.md for legal info.
+
+# FVD sound volumes, as percentages (0-100). Press M in a match to mute.
+# Override in your own config folder (e.g. ~/.config/openage/audio.oac).
+set AUDIO_MASTER_VOLUME 100
+set AUDIO_MUSIC_VOLUME 70
+set AUDIO_EFFECTS_VOLUME 100

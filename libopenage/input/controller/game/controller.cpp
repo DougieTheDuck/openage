@@ -286,6 +286,22 @@ bool Controller::issue_hunter_stance(gamestate::HunterStance stance) {
 	return true;
 }
 
+void Controller::set_order_feedback(std::function<void()> feedback) {
+	std::unique_lock lock{this->mutex};
+	this->order_feedback = std::move(feedback);
+}
+
+void Controller::notify_order_issued() {
+	std::function<void()> feedback;
+	{
+		std::unique_lock lock{this->mutex};
+		feedback = this->order_feedback;
+	}
+	if (feedback) {
+		feedback();
+	}
+}
+
 void Controller::cancel_hunter_targeting() {
 	std::unique_lock lock{this->mutex};
 	this->hunter_targeting = HunterTargeting::NONE;
@@ -702,6 +718,7 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 			return;
 		}
 		controller->cancel_hunter_targeting();
+		controller->notify_order_issued();
 		if (guest_world and guest_world().has_value()) {
 			if (send_guest_command) {
 				send_guest_command(network::CommandIntent{
@@ -1003,6 +1020,13 @@ void setup_defaults(const std::shared_ptr<BindingContext> &ctx,
 				simulation->get_game()->get_state(),
 				time_loop->get_clock()->get_time(), params);
 			return;
+		}
+		// Acknowledge orders to the player's own units, as AoE2 does.
+		if (not selection.ids.empty()
+		    and ((owner == 1 and (selection.kind == SelectionKind::HORSE
+		                          or selection.kind == SelectionKind::GROUP_HORSES))
+		         or (owner >= 2 and selection.kind == SelectionKind::BUILDER))) {
+			controller->notify_order_issued();
 		}
 		if (guest_world) {
 			auto replica = guest_world();

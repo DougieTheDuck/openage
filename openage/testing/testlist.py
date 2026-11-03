@@ -190,6 +190,20 @@ def tests_cpp():
         "Box selections keep horses and leave out the Hunter tower",
     )
     yield "openage::presenter::tests::hud_mouse_capture"
+    yield "openage::presenter::tests::fvd_combat_sounds", "FVD hits and deaths map to sounds"
+    yield (
+        "openage::presenter::tests::fvd_construction_sounds",
+        "FVD foundation and tower-built sounds fire only on real transitions",
+    )
+    yield "openage::audio::tests::audio_settings", "Audio volume config parsing"
+    yield "openage::audio::tests::audio_mixer_effects", "Audio mixer plays, pans and limits effects"
+    yield "openage::audio::tests::audio_mixer_volume", "Audio mixer volume and mute ramps"
+    yield "openage::audio::tests::audio_mixer_music", "Audio music loops and crossfades"
+    yield "openage::audio::tests::audio_decode_wav", "Audio WAV decoding and bad files"
+    yield "openage::audio::tests::fvd_audio_files", "FVD sound file naming"
+    yield "openage::audio::tests::fvd_audio_placement", "FVD sounds fade beyond the screen edge"
+    yield "openage::audio::tests::fvd_audio_throttle", "FVD sound bursts are rate-limited"
+    yield "openage::audio::tests::fvd_audio_bank", "FVD sound variants are picked at random"
     yield "openage::presenter::tests::guest_interpolation"
     yield "openage::presenter::tests::guest_clock_jitter"
     yield "openage::presenter::tests::guest_response_latency"

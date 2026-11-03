@@ -1,4 +1,6 @@
 add_sources(libopenage
+	fvd_sound_events.cpp
+	fvd_sound_events_test.cpp
 	guest_clock.cpp
 	guest_clock_test.cpp
 	hud_mouse_capture.cpp

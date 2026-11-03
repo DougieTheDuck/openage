@@ -186,6 +186,12 @@ public:
 	/** Issue a stance for the currently selected Hunter horses, when permitted. */
 	bool issue_hunter_stance(gamestate::HunterStance stance);
 
+	/** Called whenever the local player orders their own units (sound feedback). */
+	void set_order_feedback(std::function<void()> feedback);
+
+	/** Report that an order was sent for the selected units. */
+	void notify_order_issued();
+
 	/** Whether the next normal map click should place a tower. */
 	bool is_tower_placement_active() const;
 
@@ -265,6 +271,7 @@ private:
 	bool garrison_mode = false;
 	HunterTargeting hunter_targeting = HunterTargeting::NONE;
 	std::function<void(gamestate::HunterStance)> hunter_stance_action{};
+	std::function<void()> order_feedback{};
 
 	/**
 	 * Screen and world positions captured at the start of a drag selection.

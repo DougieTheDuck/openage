@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 
+#include "audio/fvd_audio.h"
+#include "audio/settings.h"
 #include "error/error.h"
 #include "gamestate/api/ability.h"
 #include "gamestate/api/animation.h"
@@ -141,6 +143,8 @@ void Presenter::run(const renderer::window_settings window_settings,
 
 	this->init_input();
 
+	this->init_audio();
+
 	if (on_initialized) {
 		on_initialized();
 	}
@@ -184,6 +188,8 @@ void Presenter::run(const renderer::window_settings window_settings,
 	});
 
 	log::log(MSG(info) << "Presenter: Draw loop exited");
+	// QAudioSink belongs to this thread's event loop.
+	this->fvd_audio.reset();
 	this->window->close();
 
 	if (frame_error) {
@@ -208,6 +214,70 @@ void Presenter::set_time_loop(const std::shared_ptr<time::TimeLoop> &time_loop) 
 
 void Presenter::set_fvd_replication(const std::shared_ptr<network::ReplicationTracker> &replication) {
 	this->fvd_replication = replication;
+}
+
+void Presenter::set_audio(bool enabled, const std::shared_ptr<audio::Settings> &settings) {
+	this->audio_enabled = enabled;
+	this->audio_settings = settings;
+}
+
+void Presenter::init_audio() {
+	if (not this->audio_enabled) {
+		log::log(INFO << "Audio: disabled by --no-audio");
+		return;
+	}
+	if (not this->simulation or not this->simulation->get_game()
+	    or not this->simulation->get_game()->get_state()->get_fvd()) {
+		return;
+	}
+	if (not this->audio_settings) {
+		this->audio_settings = std::make_shared<audio::Settings>();
+	}
+	this->fvd_audio = std::make_unique<audio::FvdAudio>(
+		this->root_dir / "assets" / "fvd" / "sound", this->audio_settings);
+	if (this->game_controller) {
+		this->game_controller->set_order_feedback([this]() {
+			if (this->fvd_audio) {
+				this->fvd_audio->play(audio::Cue::ORDER);
+			}
+		});
+	}
+}
+
+void Presenter::update_fvd_audio() {
+	if (not this->fvd_audio or not this->fvd_audio->active()) {
+		return;
+	}
+	if (this->fvd_lobby_enabled and not this->fvd_gameplay_active) {
+		this->fvd_audio->set_music(audio::MusicState::LOBBY);
+	}
+	else {
+		this->fvd_audio->set_music(audio::MusicState::MATCH);
+	}
+	if (this->camera) {
+		this->fvd_audio->set_view(
+			this->camera->get_projection_matrix() * this->camera->get_view_matrix());
+	}
+}
+
+void Presenter::record_construction_sounds(const network::WorldState &world, bool reset) {
+	if (not this->fvd_audio or not this->fvd_audio->active() or not this->game_controller) {
+		return;
+	}
+	// The host rebuilds its local view every frame; diff only new ticks.
+	if (not reset and this->fvd_construction_sound_time == world.simulation_time) {
+		return;
+	}
+	this->fvd_construction_sound_time = world.simulation_time;
+	const auto local = static_cast<gamestate::player_id_t>(this->game_controller->get_controlled());
+	for (const auto &sound : this->fvd_construction_sounds.update(world, local, reset)) {
+		if (sound.local) {
+			this->fvd_audio->play(sound.cue);
+		}
+		else {
+			this->fvd_audio->play_at(sound.cue, sound.position.to_scene3().to_world_space());
+		}
+	}
 }
 
 std::shared_ptr<qtgui::GuiApplication> Presenter::init_window_system() {
@@ -951,6 +1021,13 @@ void Presenter::record_confirmed_combat_effects(
 		const auto confirmed = network::confirmed_combat_effects(
 			*this->fvd_previous_combat_world, world);
 		const auto now = std::chrono::steady_clock::now();
+		if (this->fvd_audio) {
+			for (const auto &effect : confirmed) {
+				if (auto cue = combat_cue(effect)) {
+					this->fvd_audio->play_at(*cue, effect.position.to_scene3().to_world_space());
+				}
+			}
+		}
 		for (const auto &effect : confirmed) {
 			if (this->fvd_combat_visuals.size() >= 512) break;
 			std::shared_ptr<renderer::world::RenderEntity> render_entity{};
@@ -974,6 +1051,7 @@ void Presenter::record_confirmed_combat_effects(
 		}
 	}
 	this->fvd_previous_combat_world = world;
+	this->record_construction_sounds(world, reset);
 }
 
 void Presenter::clear_fvd_combat_visuals() {
@@ -1149,6 +1227,13 @@ void Presenter::init_input() {
 			// GuiRendererImpl already forwards every key to its QQuickWindow.
 			// Forwarding here too makes each character appear twice in TextInput.
 			// Do not dispatch lobby keystrokes to gameplay bindings either.
+			return;
+		}
+		// M mutes all sound. Handled here, not as a game binding, because
+		// it isn't a game action and needs no selection.
+		if (ev.type() == QEvent::KeyRelease and ev.key() == Qt::Key_M
+		    and ev.modifiers() == Qt::NoModifier and this->fvd_audio) {
+			this->fvd_audio->toggle_mute();
 			return;
 		}
 		// Route T directly at the Presenter boundary. This works even when
@@ -1600,6 +1685,7 @@ void Presenter::render() {
 		util::StallProfiler profile{"render.camera_update"};
 		this->camera_manager->update();
 	}
+	this->update_fvd_audio();
 	{
 		util::StallProfiler profile{"render.terrain_update"};
 		this->terrain_renderer->update();

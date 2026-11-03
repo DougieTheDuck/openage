@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import typing
 
-from ..game.main import add_network_arguments
+from ..game.main import add_audio_arguments, add_network_arguments
 from ..log import info
 
 if typing.TYPE_CHECKING:
@@ -30,6 +30,7 @@ def init_subparser(cli: ArgumentParser):
         "--solo", "--single-player", action="store_true", help="skip the lobby and start local FVD gameplay"
     )
     add_network_arguments(cli)
+    add_audio_arguments(cli)
 
     cli.add_argument(
         "--window-size",

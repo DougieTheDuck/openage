@@ -49,6 +49,7 @@ void CVarManager::load_config(const util::Path &path) {
 void CVarManager::load_all() {
 	log::log(INFO << "loading configuration files...");
 	this->load_config(this->path["keybinds.oac"]);
+	this->load_config(this->path["audio.oac"]);
 }
 
 pyinterface::PyIfFunc<void, CVarManager *, const util::Path &> pyx_load_config_file;

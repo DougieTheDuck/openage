@@ -7,6 +7,7 @@
 #include <future>
 #include <mutex>
 
+#include "audio/settings.h"
 #include "cvar/cvar.h"
 #include "gamestate/simulation.h"
 #include "log/log.h"
@@ -23,7 +24,8 @@ Engine::Engine(mode mode,
                const std::vector<std::string> &mods,
                const renderer::window_settings &window_settings,
                bool fvd_lobby_enabled,
-               std::chrono::milliseconds network_update_interval) :
+               std::chrono::milliseconds network_update_interval,
+               bool audio_enabled) :
 	running{false},
 	run_mode{mode},
 	root_dir{root_dir},
@@ -35,6 +37,9 @@ Engine::Engine(mode mode,
 
 	// read and apply the configuration files
 	this->cvar_manager = std::make_shared<cvar::CVarManager>(this->root_dir["cfg"]);
+	// Register before loading so the AUDIO_* values in audio.oac apply.
+	auto audio_settings = std::make_shared<audio::Settings>();
+	audio::register_cvars(*this->cvar_manager, audio_settings);
 	cvar_manager->load_all();
 
 	// time loop
@@ -55,6 +60,7 @@ Engine::Engine(mode mode,
 		                                                         this->simulation,
 		                                                         this->time_loop);
 		this->presenter->set_fvd_lobby_enabled(fvd_lobby_enabled, network_update_interval);
+		this->presenter->set_audio(audio_enabled, audio_settings);
 	}
 }
 

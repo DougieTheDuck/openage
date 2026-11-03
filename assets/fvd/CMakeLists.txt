@@ -1,6 +1,6 @@
 # Copyright 2026-2026 the openage authors. See copying.md for legal info.
 
-install(DIRECTORY "graphics" "data" "qml"
+install(DIRECTORY "graphics" "data" "qml" "sound"
 	DESTINATION "${ASSET_DIR}/fvd"
 )
 

@@ -15,6 +15,7 @@
 #include "coord/pixel.h"
 #include "gamestate/types.h"
 #include "network/messages.h"
+#include "presenter/fvd_sound_events.h"
 #include "presenter/guest_clock.h"
 #include "presenter/hud_mouse_capture.h"
 
@@ -31,6 +32,11 @@ class GuiApplication;
 }
 
 namespace openage {
+
+namespace audio {
+class FvdAudio;
+struct Settings;
+} // namespace audio
 
 namespace gamestate {
 class GameSimulation;
@@ -148,6 +154,14 @@ public:
 	void set_fvd_replication(const std::shared_ptr<network::ReplicationTracker> &replication);
 
 	/**
+	 * Configure sound before run(). Disabled audio never opens a device.
+	 *
+	 * @param enabled false for --no-audio.
+	 * @param settings volumes shared with the AUDIO_* config variables.
+	 */
+	void set_audio(bool enabled, const std::shared_ptr<audio::Settings> &settings);
+
+	/**
 	 * Configure the relay lobby and host world replication cadence before starting.
 	 *
 	 * @param enabled Whether to present the online lobby (solo CLI skips it).
@@ -188,7 +202,17 @@ protected:
 	 */
 	void init_final_render_pass();
 
-	// void init_audio();
+	/**
+	 * Load FVD sounds and open the audio device, unless audio is disabled.
+	 * Must run on the Qt GUI thread, after the window system is up.
+	 */
+	void init_audio();
+
+	/** Follow the camera and the lobby/match state for music and placement. */
+	void update_fvd_audio();
+
+	/** Play construction sounds for one recipient world (host or guest). */
+	void record_construction_sounds(const network::WorldState &world, bool reset);
 
 	/**
 	 * Render all configured render passes in sequence.
@@ -280,6 +304,15 @@ protected:
 		std::shared_ptr<renderer::world::RenderEntity> render_entity{};
 	};
 	std::vector<CombatVisual> fvd_combat_visuals{};
+
+	/** --no-audio turns this off; the settings are shared with the cvars. */
+	bool audio_enabled{true};
+	std::shared_ptr<audio::Settings> audio_settings;
+	/** FVD music and effects; null until init_audio(). */
+	std::unique_ptr<audio::FvdAudio> fvd_audio;
+	ConstructionSoundTracker fvd_construction_sounds{};
+	/** Simulation time of the last world diffed for construction sounds. */
+	std::optional<time::time_t> fvd_construction_sound_time{};
 
 	/** Last processed authoritative projectile ID (avoid duplicate visuals). */
 	uint64_t fvd_last_guest_arrow_id{0};

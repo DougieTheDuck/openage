@@ -55,7 +55,7 @@ int run_game(const main_arguments &args) {
 	win_settings.mode = wmode;
 	win_settings.debug = args.gl_debug;
 
-	openage::engine::Engine engine{run_mode, args.root_path, args.mods, win_settings, not args.solo and not args.headless and std::find(args.mods.begin(), args.mods.end(), "fvd") != args.mods.end(), std::chrono::milliseconds{args.network_update_interval_ms}};
+	openage::engine::Engine engine{run_mode, args.root_path, args.mods, win_settings, not args.solo and not args.headless and std::find(args.mods.begin(), args.mods.end(), "fvd") != args.mods.end(), std::chrono::milliseconds{args.network_update_interval_ms}, not args.no_audio};
 
 	engine.loop();
 
