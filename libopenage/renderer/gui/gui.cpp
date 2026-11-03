@@ -86,6 +86,16 @@ bool GUI::contains_item(const QString &object_name, const QPointF &scene_positio
 	       and item->contains(item->mapFromScene(scene_position));
 }
 
+bool GUI::map_to_item(const QString &object_name, const QPointF &scene_position, QPointF &local) const {
+	auto window = this->gui_renderer->get_window();
+	auto item = find_visual_item(window->contentItem(), object_name);
+	if (not item or not item->isVisible()) {
+		return false;
+	}
+	local = item->mapFromScene(scene_position);
+	return true;
+}
+
 void GUI::clear_input_focus() {
 	this->gui_renderer->get_window()->contentItem()->forceActiveFocus();
 }

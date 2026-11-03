@@ -1,4 +1,6 @@
 add_sources(libopenage
+	fvd_minimap.cpp
+	fvd_minimap_test.cpp
 	fvd_sound_events.cpp
 	fvd_sound_events_test.cpp
 	guest_clock.cpp

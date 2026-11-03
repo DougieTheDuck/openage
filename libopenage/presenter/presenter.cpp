@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <QBuffer>
+#include <QByteArray>
 #include <QEvent>
 #include <QGuiApplication>
 #include <QMouseEvent>
@@ -23,6 +25,7 @@
 #include <vector>
 
 #include "audio/fvd_audio.h"
+#include "presenter/fvd_minimap.h"
 #include "audio/settings.h"
 #include "error/error.h"
 #include "gamestate/api/ability.h"
@@ -273,11 +276,67 @@ void Presenter::publish_fvd_options() {
 	this->fvd_hud_state->insert("audioNote", note);
 }
 
+void Presenter::update_fvd_minimap(const network::WorldState *world) {
+	if (not this->fvd_hud_state or not world or world->map_size == 0 or not this->camera) {
+		return;
+	}
+	// Repaint at most 4 times a second, and only when the world moved on.
+	const auto now = std::chrono::steady_clock::now();
+	if ((not this->fvd_minimap_time or *this->fvd_minimap_time != world->simulation_time
+	     or this->fvd_minimap_size != world->map_size)
+	    and now - this->fvd_minimap_painted >= std::chrono::milliseconds{250}) {
+		const QImage image = render_minimap(*world, this->fvd_fog_levels);
+		QByteArray png;
+		QBuffer buffer{&png};
+		buffer.open(QIODevice::WriteOnly);
+		image.save(&buffer, "PNG");
+		this->fvd_hud_state->insert("minimapImage",
+			QStringLiteral("data:image/png;base64,") + QString::fromLatin1(png.toBase64()));
+		this->fvd_hud_state->insert("minimapPixels", image.width());
+		this->fvd_minimap_painted = now;
+		this->fvd_minimap_time = world->simulation_time;
+		this->fvd_minimap_size = world->map_size;
+	}
+
+	// The camera's view: the four window corners projected onto the ground.
+	const auto viewport = this->camera->get_viewport_size();
+	QVariantList view;
+	for (const auto &[x, y] : {std::pair<size_t, size_t>{0, 0}, {viewport[0], 0},
+	                           {viewport[0], viewport[1]}, {0, viewport[1]}}) {
+		const auto ground = coord::input{static_cast<coord::pixel_t>(x), static_cast<coord::pixel_t>(y)}
+		                        .to_phys3(this->camera);
+		const auto [px, py] = minimap_position_to_pixel(ground, world->map_size);
+		view.append(px);
+		view.append(py);
+	}
+	if (view != this->fvd_hud_state->value("minimapView").toList()) {
+		this->fvd_hud_state->insert("minimapView", view);
+	}
+}
+
+bool Presenter::fvd_minimap_look_at(const QPointF &position) {
+	QPointF local;
+	if (not this->gui or not this->camera or this->fvd_minimap_size == 0
+	    or not this->gui->map_to_item("fvdMinimapSurface", position, local)) {
+		return false;
+	}
+	const double extent = static_cast<double>(this->fvd_minimap_size) * MINIMAP_TILE_PIXELS;
+	if (local.x() < 0 or local.y() < 0 or local.x() > extent or local.y() > extent) {
+		return false;
+	}
+	const auto tile = minimap_pixel_to_tile(local.x(), local.y(), this->fvd_minimap_size);
+	const coord::phys3 centre{coord::phys_t::from_int(tile.ne) + coord::phys_t{0.5},
+	                          coord::phys_t::from_int(tile.se) + coord::phys_t{0.5}, 0};
+	this->camera->look_at_coord(centre.to_scene3());
+	return true;
+}
+
 bool Presenter::over_fvd_hud(const QPointF &position) const {
 	if (not this->fvd_hud_state or not this->gui) {
 		return false;
 	}
 	return this->gui->contains_item("fvdBuildPanel", position)
+	       or this->gui->contains_item("fvdMinimapPanel", position)
 	       or this->gui->contains_item("fvdOptionsButton", position)
 	       or (this->fvd_options_open and this->gui->contains_item("fvdOptionsPanel", position));
 }
@@ -1333,6 +1392,17 @@ void Presenter::init_input() {
 			}
 			return;
 		}
+		// Left-click or drag on the minimap moves the camera there.
+		if (this->fvd_hud_state and ev.button() == Qt::LeftButton) {
+			if (ev.type() == QEvent::MouseButtonPress and this->fvd_minimap_look_at(ev.position())) {
+				this->fvd_minimap_dragging = true;
+				return;
+			}
+			if (ev.type() == QEvent::MouseButtonRelease and this->fvd_minimap_dragging) {
+				this->fvd_minimap_dragging = false;
+				return;
+			}
+		}
 		using HudAction = HudMouseCapture::Action;
 		auto hovered_action = HudAction::NONE;
 		// Hit-test buttons independently of the panel bounds. Qt Quick can
@@ -1459,6 +1529,10 @@ void Presenter::init_input() {
 		if (this->gui) {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
+		}
+		if (this->fvd_minimap_dragging) {
+			this->fvd_minimap_look_at(ev.position());
+			return;
 		}
 		const bool over_hud = this->over_fvd_hud(ev.position());
 		if (not over_hud and not this->fvd_hud_capture.is_capturing()) {
@@ -1991,6 +2065,7 @@ void Presenter::render() {
 						this->time_loop->get_clock()->get_real_time());
 				}
 				this->update_fvd_fog(construction_world);
+				this->update_fvd_minimap(construction_world);
 				// The Hunter's own horse stances arrive in the same snapshot locally
 				// and on guests; a group with different stances reads as Mixed.
 				QString stance_label{};

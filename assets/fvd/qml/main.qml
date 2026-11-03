@@ -34,6 +34,9 @@ Item {
 	readonly property int ungarrisonErrorSerial: hud === null ? 0 : hud.ungarrisonErrorSerial
 	readonly property int unleashedSerial: hud === null || hud.unleashedSerial === undefined
 	                                       ? 0 : hud.unleashedSerial
+	readonly property string minimapImage: hud === null || hud.minimapImage === undefined ? "" : hud.minimapImage
+	readonly property int minimapPixels: hud === null || hud.minimapPixels === undefined ? 0 : hud.minimapPixels
+	readonly property var minimapView: hud === null || hud.minimapView === undefined ? [] : hud.minimapView
 	readonly property bool optionsOpen: hud !== null && hud.optionsOpen === true
 	readonly property bool musicOn: hud === null || hud.musicOn !== false
 	readonly property bool effectsOn: hud === null || hud.effectsOn !== false
@@ -651,10 +654,85 @@ Item {
 		}
 	}
 
+	// Minimap, bottom left. The viewer's own fog and state only; the
+	// presenter paints it top-down and this item turns it into an AoE2-style
+	// diamond. Clicks are routed by the presenter ("fvdMinimapSurface").
+	Rectangle {
+		id: minimapPanel
+		objectName: "fvdMinimapPanel"
+		anchors.left: parent.left
+		anchors.bottom: parent.bottom
+		visible: root.hud !== null && root.minimapPixels > 0
+		width: 264
+		height: 144
+		radius: 6
+		color: "#ee182824"
+		border.width: 1
+		border.color: "#72918b"
+
+		Item {
+			id: minimapDiamond
+			anchors.centerIn: parent
+			width: 248
+			height: 124
+			// Side of the square image before it is turned into the diamond.
+			readonly property real side: width / Math.SQRT2
+
+			Item {
+				id: minimapSurface
+				objectName: "fvdMinimapSurface"
+				width: Math.max(root.minimapPixels, 1)
+				height: width
+				x: (minimapDiamond.width - width) / 2
+				y: (minimapDiamond.height - height) / 2
+				readonly property real fit: minimapDiamond.side / width
+				transform: [
+					Rotation { origin.x: minimapSurface.width / 2; origin.y: minimapSurface.height / 2; angle: 45 },
+					Scale {
+						origin.x: minimapSurface.width / 2
+						origin.y: minimapSurface.height / 2
+						xScale: minimapSurface.fit
+						yScale: minimapSurface.fit / 2
+					}
+				]
+
+				Image {
+					anchors.fill: parent
+					source: root.minimapImage
+					smooth: true
+					cache: false
+					asynchronous: false
+				}
+
+				Canvas {
+					id: minimapView
+					anchors.fill: parent
+					onPaint: {
+						var ctx = getContext("2d")
+						ctx.reset()
+						var v = root.minimapView
+						if (v.length !== 8) return
+						ctx.strokeStyle = "#ffffff"
+						ctx.lineWidth = 2 / minimapSurface.fit
+						ctx.beginPath()
+						ctx.moveTo(v[0], v[1])
+						for (var i = 2; i < 8; i += 2) ctx.lineTo(v[i], v[i + 1])
+						ctx.closePath()
+						ctx.stroke()
+					}
+					Connections {
+						target: root
+						function onMinimapViewChanged() { minimapView.requestPaint() }
+					}
+				}
+			}
+		}
+	}
+
 	Rectangle {
 		id: buildPanel
 		objectName: "fvdBuildPanel"
-		anchors.left: parent.left
+		anchors.left: minimapPanel.visible ? minimapPanel.right : parent.left
 		anchors.bottom: parent.bottom
 		width: 284
 		height: panelContent.implicitHeight + 24

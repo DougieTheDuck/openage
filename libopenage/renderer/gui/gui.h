@@ -57,6 +57,12 @@ public:
 	 */
 	std::shared_ptr<qtgui::GuiInput> get_input_handler() const;
 
+	/**
+	 * Map a window position into a named item's own coordinates (including
+	 * its transforms). Returns false if the item is missing or hidden.
+	 */
+	bool map_to_item(const QString &object_name, const QPointF &scene_position, QPointF &local) const;
+
 	/** Hit test a named QML control in current scene coordinates. */
 	bool contains_item(const QString &object_name, const QPointF &scene_position) const;
 

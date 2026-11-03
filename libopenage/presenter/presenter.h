@@ -225,6 +225,22 @@ protected:
 	/** Bumped each time the Hunter is unleashed; QML replays its banner. */
 	int fvd_unleashed_serial{0};
 
+	/** Repaint the minimap (throttled) and its camera box for this world. */
+	void update_fvd_minimap(const network::WorldState *world);
+
+	/**
+	 * Move the camera to a minimap click.
+	 * @returns whether the position was on the minimap
+	 */
+	bool fvd_minimap_look_at(const QPointF &position);
+
+	/** When the minimap image was last painted, and for which state. */
+	std::chrono::steady_clock::time_point fvd_minimap_painted{};
+	std::optional<time::time_t> fvd_minimap_time{};
+	uint32_t fvd_minimap_size{0};
+	/** Left button went down on the minimap and is still held. */
+	bool fvd_minimap_dragging{false};
+
 	/** Options panel shown under the top-right Options button. */
 	bool fvd_options_open{false};
 
