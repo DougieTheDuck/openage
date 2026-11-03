@@ -12,6 +12,14 @@ reconnecting.
 - **WHEN** the last living Builder is killed
 - **THEN** every player sees the Hunter wins screen and no further orders are accepted
 
+#### Scenario: Last Builder is garrisoned
+- **WHEN** every other Builder is gone and the last one is sheltering in a tower
+- **THEN** the match continues: a garrisoned Builder is alive
+
+#### Scenario: Hunter stops after the result
+- **WHEN** the match has ended
+- **THEN** the Hunter tower no longer fires and no more horses spawn
+
 #### Scenario: Last Builder disconnects
 - **WHEN** the only remaining Builder player disconnects and does not reconnect
 - **THEN** the Hunter wins, and that player's towers are still standing

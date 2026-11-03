@@ -5,7 +5,8 @@
   start is included. Show the remaining time in the HUD.
 - A Builder's towers collapse with the existing demolition animation; towers
   under construction and foundations are removed too.
-- Garrisoned Builders (if `builder-garrison` lands) count as alive.
+- Garrisoned Builders count as alive (confirmed by Dougie, 2026-11-03; covered by
+  `fvd_match_end_garrison_and_hunter_stop`).
 
 ## Decisions (Dougie, 2026-10-28)
 
@@ -18,6 +19,8 @@
   added later, they count as dead only once their rejoin window has passed.
 - A Builder killed in play loses all their towers.
 
-## Still to decide
+## Decided
 
-- Does the Hunter tower keep firing after the result?
+- The Hunter tower stops firing and no more horses spawn once the match has a
+  result (Dougie, 2026-11-03). Already the behaviour; now covered by
+  `fvd_match_end_garrison_and_hunter_stop`.

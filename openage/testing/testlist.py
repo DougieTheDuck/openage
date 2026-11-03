@@ -250,6 +250,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_match_end_garrison_and_hunter_stop",
+        "FVD garrisoned Builders count as alive; the Hunter tower and spawns stop after the match",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_build_double_row",
         "FVD Builder finishes two touching rows without orphaning foundations",
         lambda env: env["has_assets"],

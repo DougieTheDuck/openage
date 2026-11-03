@@ -1764,6 +1764,77 @@ void fvd_match_outcome_rules() {
 	TESTEQUALS(state_on_wire.match_outcome, fvd->get_match_outcome());
 }
 
+// Rules confirmed by Dougie, 2026-11-03: a garrisoned Builder is alive for
+// "all Builders dead", and once the match has a result the Hunter side stops:
+// no horses spawn and the Hunter tower never fires.
+void fvd_match_end_garrison_and_hunter_stop() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
+	auto t = [](double seconds) { return time::time_t::from_double(seconds); };
+
+	std::optional<entity_id_t> builder{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Builder") continue;
+		auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (ownership->get_owners().get(t(0)) == player_id_t{2}) builder = id;
+	}
+	builder.has_value() or TESTFAIL;
+	TESTEQUALS(fvd->request_build(state, 2, {*builder}, {61, 66, 0}, t(0)), true);
+	loop->reach_time(t(0.2), state);
+	std::optional<entity_id_t> tower{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != "fvd.data.entities.Tower") continue;
+		tower = id;
+	}
+	tower.has_value() or TESTFAIL;
+	TESTEQUALS(fvd->request_garrison(state, 2, {*builder}, *tower, t(0.2)), true);
+	loop->reach_time(t(1), state);
+	TESTEQUALS(fvd->is_garrisoned(*builder), true);
+
+	// The match is running; every other Builder has gone. Player 2 is only
+	// sheltering in a tower, so the Hunter has not won.
+	fvd->start_hunter_wave(state, t(1));
+	fvd->evaluate_match_outcome(state, t(2), {3, 4, 5, 6, 7, 8});
+	TESTEQUALS(fvd->get_match_outcome().has_value(), false);
+
+	// Ending the match stops the Hunter side for good.
+	fvd->evaluate_match_outcome(state, t(3), {2, 3, 4, 5, 6, 7, 8});
+	TESTEQUALS(fvd->get_match_outcome().has_value(), true);
+	auto health_of = [&](entity_id_t id, const time::time_t &time) {
+		auto live = std::dynamic_pointer_cast<component::Live>(
+			state->get_game_entity(id)->get_component(component::component_t::LIVE));
+		return live->get_attribute(time, "fvd.data.entities.Health")->get(time);
+	};
+	std::vector<std::pair<entity_id_t, int64_t>> builders{};
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Builder") {
+			builders.emplace_back(id, health_of(id, t(3)));
+		}
+	}
+	loop->reach_time(t(60), state);
+	size_t horses = 0;
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() == "fvd.data.entities.Horse") ++horses;
+	}
+	TESTEQUALS(horses, size_t{0});
+	for (const auto &[id, health] : builders) {
+		TESTEQUALS(health_of(id, t(60)), health);
+	}
+}
+
 void fvd_hunter_spawning() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
