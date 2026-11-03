@@ -28,6 +28,8 @@ namespace openage::renderer::world {
 
 namespace {
 
+// Render ground markers before the unit sprites and outline/occluder layers.
+constexpr int64_t SELECTION_RING_LAYER_PRIORITY = -1;
 constexpr int64_t OCCLUDER_LAYER_PRIORITY = renderer::LAYER_PRIORITY_MAX - 2;
 constexpr int64_t OUTLINE_LAYER_PRIORITY = renderer::LAYER_PRIORITY_MAX - 1;
 
@@ -98,6 +100,8 @@ void WorldRenderStage::add_render_entity(const std::shared_ptr<RenderEntity> ent
 void WorldRenderStage::clear_entities() {
 	std::unique_lock lock{this->mutex};
 	this->render_objects.clear();
+	this->selection_ring_ids.clear();
+	this->selection_footprint_width = 0.0f;
 	this->render_pass->clear_renderables();
 }
 
@@ -238,11 +242,44 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 		}
 		obj->update_uniforms(current_time);
 	}
+
+	// A transient layer containing only the selected, actually visible units.
+	// Use the same interpolated world positions as their sprite quads. Replacing
+	// this layer never invalidates the long-lived sprite renderables.
+	std::vector<Renderable> rings;
+	rings.reserve(this->selection_ring_ids.size());
+	if (this->selection_footprint_width > 0.0f) {
+		for (const auto &obj : this->render_objects) {
+			if (not this->selection_ring_ids.contains(obj->get_id())
+			    or not obj->is_active() or obj->is_concealed()
+			    or obj->get_occlusion_mode() != occlusion_mode::OUTLINED) {
+				continue;
+			}
+			// Scale to 150% of the Selectable rectangle's half-width so the
+			// stroke clears the unit's feet (Builder=0.5, Horse=0.8 tiles).
+			const float radius = this->selection_footprint_width * 0.75f;
+			auto uniforms = this->selection_ring_shader->new_uniform_input(
+				"unit_position", obj->get_rendered_world_position(),
+				"footprint_radius", radius);
+			rings.push_back(Renderable{uniforms, this->default_geometry,
+			                            true, false, false, true});
+		}
+	}
+	this->render_pass->set_layer_renderables(
+		SELECTION_RING_LAYER_PRIORITY, std::move(rings));
 }
 
 void WorldRenderStage::set_shown(std::optional<std::unordered_set<uint32_t>> ids) {
 	std::unique_lock lock{this->mutex};
 	this->shown_ids = std::move(ids);
+}
+
+void WorldRenderStage::set_selected_unit_rings(
+	const std::vector<uint32_t> &ids, float footprint_width) {
+	std::unique_lock lock{this->mutex};
+	this->selection_ring_ids.clear();
+	this->selection_ring_ids.insert(ids.begin(), ids.end());
+	this->selection_footprint_width = footprint_width;
 }
 
 void WorldRenderStage::set_dimmed(std::unordered_set<uint32_t> ids) {
@@ -299,8 +336,26 @@ void WorldRenderStage::initialize_render_pass(size_t width,
 	this->outline_shader = this->renderer->add_shader({vert_shader_src, outline_frag_shader_src});
 	this->outline_shader->bind_uniform_buffer("camera", this->camera->get_uniform_buffer());
 
+	// Selection circles are analytic ellipses in screen pixels; they share
+	// the camera uniforms and quad geometry but need no sprite textures.
+	auto ring_vert_file = (shaderdir / "world_selection_ring.vert.glsl").open();
+	auto ring_vert_src = renderer::resources::ShaderSource(
+		resources::shader_lang_t::glsl,
+		resources::shader_stage_t::vertex,
+		ring_vert_file.read());
+	ring_vert_file.close();
+	auto ring_frag_file = (shaderdir / "world_selection_ring.frag.glsl").open();
+	auto ring_frag_src = renderer::resources::ShaderSource(
+		resources::shader_lang_t::glsl,
+		resources::shader_stage_t::fragment,
+		ring_frag_file.read());
+	ring_frag_file.close();
+	this->selection_ring_shader = this->renderer->add_shader({ring_vert_src, ring_frag_src});
+	this->selection_ring_shader->bind_uniform_buffer("camera", this->camera->get_uniform_buffer());
+
 	auto fbo = this->renderer->create_texture_target({this->output_texture, this->depth_texture});
 	this->render_pass = this->renderer->add_render_pass({}, fbo);
+	this->render_pass->add_layer(SELECTION_RING_LAYER_PRIORITY, false);
 	this->render_pass->add_layer(OCCLUDER_LAYER_PRIORITY, true);
 	this->render_pass->add_layer(OUTLINE_LAYER_PRIORITY, false);
 }
