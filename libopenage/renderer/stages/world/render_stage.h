@@ -119,6 +119,14 @@ public:
 	void set_dimmed(std::unordered_set<uint32_t> ids);
 
 	/**
+	 * Draw ground selection rings under these movable units only.
+	 * footprint_width is the unit's selection-box width in world tile units.
+	 * The presenter passes only Builder / Horse selection, not structures.
+	 */
+	void set_selected_unit_rings(const std::vector<uint32_t> &ids,
+	                             float footprint_width);
+
+	/**
 	 * Resize the FBO for the world rendering. This basically updates the output
 	 * texture size.
 	 *
@@ -179,10 +187,17 @@ private:
 	/** Entity IDs drawn darker because they are only remembered. */
 	std::unordered_set<uint32_t> dimmed_ids;
 
+	/** Selected movable unit IDs and their common footprint width. */
+	std::unordered_set<uint32_t> selection_ring_ids;
+	float selection_footprint_width = 0.0f;
+
 	/**
 	 * Shader for rendering the world objects.
 	 */
 	std::shared_ptr<renderer::ShaderProgram> display_shader;
+
+	/** Shader for AoE2-style white ground ellipses with a 1px dark edge. */
+	std::shared_ptr<renderer::ShaderProgram> selection_ring_shader;
 
 	/** Shader that writes opaque structure pixels to depth only. */
 	std::shared_ptr<renderer::ShaderProgram> occluder_shader;
