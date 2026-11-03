@@ -40,6 +40,19 @@ const Path Pathfinder::get_path(const PathRequest &request) {
 		return Path{request.grid_id, PathResult::OUT_OF_BOUNDS, {}};
 	}
 
+	// A unit standing off the map (pushed or overshooting at the edge) must
+	// not index outside the cost fields: that was an out_of_range crash.
+	if (request.start.ne < 0
+	    or request.start.se < 0
+	    or request.start.ne >= static_cast<coord::tile_t>(grid_width)
+	    or request.start.se >= static_cast<coord::tile_t>(grid_height)) {
+		log::log(WARN << "Path not found (start = "
+		              << request.start << "; target = "
+		              << request.target << "): "
+		              << "Start is out of bounds.");
+		return Path{request.grid_id, PathResult::OUT_OF_BOUNDS, {}};
+	}
+
 	auto start_sector_x = request.start.ne / sector_size;
 	auto start_sector_y = request.start.se / sector_size;
 	auto start_sector = grid->get_sector(start_sector_x, start_sector_y);
