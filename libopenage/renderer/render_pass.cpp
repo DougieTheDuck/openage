@@ -2,6 +2,9 @@
 
 #include "render_pass.h"
 
+#include <stdexcept>
+#include <utility>
+
 #include "log/log.h"
 
 
@@ -40,6 +43,17 @@ void RenderPass::set_target(const std::shared_ptr<RenderTarget> &target) {
 void RenderPass::set_renderables(std::vector<Renderable> &&renderables) {
 	this->clear_renderables();
 	this->add_renderables(std::move(renderables));
+}
+
+void RenderPass::set_layer_renderables(int64_t priority,
+                                       std::vector<Renderable> &&draw_calls) {
+	for (size_t i = 0; i < this->layers.size(); ++i) {
+		if (this->layers[i].priority == priority) {
+			this->renderables[i] = std::move(draw_calls);
+			return;
+		}
+	}
+	throw std::logic_error("Cannot replace renderables: layer priority not found");
 }
 
 void RenderPass::add_renderables(std::vector<Renderable> &&renderables, int64_t priority) {
