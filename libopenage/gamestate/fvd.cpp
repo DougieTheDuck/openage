@@ -680,13 +680,10 @@ std::optional<coord::phys3> FVD::find_build_stand(
 		    or this->tile_occupied(state, candidate, time, entity->get_id())) {
 			continue;
 		}
-		// A Builder may stand on his own queued foundations: they are
-		// walkable until built, and with touching rows they can be the
-		// only tiles left beside a site. Never on anyone else's.
-		auto reserved = this->reserved_tiles.find(candidate);
-		if (reserved != this->reserved_tiles.end() and reserved->second != entity->get_id()) {
-			continue;
-		}
+		// Unbuilt foundations (anyone's) are walkable and can be stood on;
+		// with touching rows they may be the only tiles beside a site. A
+		// tower under construction already blocks its tile (occupancy and
+		// path cost), so reservations need no separate check here.
 		candidates.push_back(candidate);
 	}
 	std::stable_sort(candidates.begin(), candidates.end(),
@@ -1040,8 +1037,8 @@ void FVD::push_build_site_blockers(
 					if (std::max(std::abs(ne - site.ne), std::abs(se - site.se)) != radius
 					    or ne < 0 or se < 0 or ne >= this->map_size or se >= this->map_size) continue;
 					const coord::tile candidate{ne, se};
-					if (this->is_tile_reserved(candidate)
-					    or this->tile_occupied(state, candidate, time, id)
+					// Unbuilt foundations are fine to stand on.
+					if (this->tile_occupied(state, candidate, time, id)
 					    or std::find(destinations.begin(), destinations.end(), candidate) != destinations.end())
 						continue;
 					auto sector = grid->get_sector(candidate.ne / sector_size,
@@ -1625,7 +1622,8 @@ bool FVD::eject_builder(const std::shared_ptr<GameState> &state,
 		if (ne < 0 or se < 0 or ne >= static_cast<coord::tile_t>(this->map_size)
 		    or se >= static_cast<coord::tile_t>(this->map_size)) return;
 		const coord::tile candidate{ne, se};
-		if (this->is_tile_reserved(candidate) or this->tile_occupied(state, candidate, time)) return;
+		// Unbuilt foundations are fine to stand on.
+		if (this->tile_occupied(state, candidate, time)) return;
 		auto sector = grid->get_sector(candidate.ne / sector_size,
 		                              candidate.se / sector_size);
 		auto local = candidate - sector->get_position().to_tile(sector_size);
@@ -1925,7 +1923,7 @@ void FVD::relax_horse_crowd(const std::shared_ptr<GameState> &state,
 
 	// Use the same land cost field as construction and normal pathfinding.
 	// Sample the four disk extremities so a shove cannot pass through a
-	// blocked tower footprint or a reserved construction tile.
+	// blocked tower footprint.
 	auto grid = state->get_map()->get_pathfinder()->get_grid(
 		state->get_map()->get_grid_id("fvd.data.terrain.Land"));
 	const auto sector_size = grid->get_sector_size();
@@ -1944,9 +1942,7 @@ void FVD::relax_horse_crowd(const std::shared_ptr<GameState> &state,
 			auto tile = coord::tile{
 				static_cast<coord::tile_t>(x),
 				static_cast<coord::tile_t>(y)};
-			if (this->is_tile_reserved(tile)) {
-				return false;
-			}
+			// Unbuilt foundations are walkable; towers block via path cost.
 			auto sector = grid->get_sector(tile.ne / sector_size, tile.se / sector_size);
 			auto local = tile - sector->get_position().to_tile(sector_size);
 			if (sector->get_cost_field()->get_cost(local) >= path::COST_IMPASSABLE) {
