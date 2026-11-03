@@ -254,4 +254,80 @@ void terrain_fog_soft_edges() {
 	window->close();
 }
 
+// Selection rings must appear under selected movable units and disappear
+// immediately on deselection or when the unit is hidden by fog.
+void selection_ground_rings() {
+	auto root = util::Path{
+		std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto gui_app = std::make_shared<gui::GuiApplicationWithLogger>();
+	window_settings settings{};
+	settings.width = TEST_TARGET_WIDTH;
+	settings.height = TEST_TARGET_HEIGHT;
+	settings.vsync = false;
+	auto window = Window::create("openage selection ring test", settings);
+	window->get_qt_window()->setVisible(false);
+	auto graphics_renderer = window->make_renderer();
+	auto camera = std::make_shared<renderer::camera::Camera>(
+		graphics_renderer, window->get_size());
+	camera->set_zoom(0.5f);
+	camera->look_at_coord(coord::scene3{0, 0, 0});
+	auto camera_manager = std::make_shared<renderer::camera::CameraManager>(camera);
+	camera_manager->update();
+	auto assets = std::make_shared<resources::AssetManager>(
+		graphics_renderer, root / "assets" / "fvd" / "graphics");
+	auto clock = std::make_shared<time::Clock>();
+	auto stage = std::make_shared<WorldRenderStage>(
+		window, graphics_renderer, camera, root / "assets" / "shaders", assets, clock);
+
+	auto builder = std::make_shared<RenderEntity>();
+	builder->update(17, coord::phys3{0, 0, 0}, "builder.sprite", time::TIME_ZERO);
+	builder->set_occlusion_mode(occlusion_mode::OUTLINED, 2);
+	stage->add_render_entity(builder);
+	auto draw = [&] {
+		stage->update(time::TIME_ZERO);
+		graphics_renderer->render(stage->get_render_pass());
+		return stage->get_render_pass()->get_target()->into_data();
+	};
+	stage->set_selected_unit_rings({}, 0.0f);
+	auto plain = draw();
+	stage->set_selected_unit_rings({17}, 0.5f);
+	auto ringed = draw();
+	size_t ring_pixels = 0;
+	for (size_t y = 0; y < TEST_TARGET_HEIGHT; ++y) {
+		for (size_t x = 0; x < TEST_TARGET_WIDTH; ++x) {
+			const auto *a = pixel(plain, x, y);
+			const auto *b = pixel(ringed, x, y);
+			if (a[0] != b[0] or a[1] != b[1]
+			    or a[2] != b[2] or a[3] != b[3]) {
+				++ring_pixels;
+			}
+		}
+	}
+	TESTEQUALS(ring_pixels > size_t{40}, true);
+
+	// No stale renderable persists after the selection layer is replaced.
+	stage->set_selected_unit_rings({}, 0.0f);
+	auto deselected = draw();
+	for (size_t y = 0; y < TEST_TARGET_HEIGHT; y += 7) {
+		for (size_t x = 0; x < TEST_TARGET_WIDTH; x += 7) {
+			const auto *a = pixel(plain, x, y);
+			const auto *b = pixel(deselected, x, y);
+			TESTEQUALS(a[0] == b[0] and a[1] == b[1]
+			           and a[2] == b[2] and a[3] == b[3], true);
+		}
+	}
+
+	stage->set_selected_unit_rings({17}, 0.5f);
+	stage->set_shown(std::unordered_set<uint32_t>{});
+	auto hidden = draw();
+	size_t shown_pixels = 0;
+	for (size_t y = 0; y < TEST_TARGET_HEIGHT; ++y) {
+		for (size_t x = 0; x < TEST_TARGET_WIDTH; ++x) {
+			if (pixel(hidden, x, y)[3] > 5) ++shown_pixels;
+		}
+	}
+	TESTEQUALS(shown_pixels == size_t{0}, true);
+	window->close();
+}
+
 } // namespace openage::renderer::world::tests
