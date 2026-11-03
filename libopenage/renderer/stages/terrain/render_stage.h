@@ -178,7 +178,7 @@ private:
 	std::shared_ptr<renderer::Texture2d> fog_texture;
 	bool fog_enabled = false;
 	size_t fog_map_size = 1;
-	float fog_edge_width = 0.55f;
+	float fog_edge_width = 0.8f;
 
 	/** Apply the fog uniforms to one terrain mesh's uniform input. */
 	void apply_fog(const std::shared_ptr<renderer::UniformInput> &uniforms) const;
