@@ -5,13 +5,20 @@ add_sources(libopenage
 	dynamic_resource.cpp
 	error.cpp
 	format.cpp
+	fvd_audio.cpp
+	fvd_audio_test.cpp
 	in_memory_loader.cpp
 	in_memory_resource.cpp
 	opus_dynamic_loader.cpp
 	opus_in_memory_loader.cpp
 	opus_loading.cpp
 	loader_policy.cpp
+	mixer.cpp
+	mixer_test.cpp
+	output.cpp
+	pcm.cpp
 	resource.cpp
 	resource_def.cpp
+	settings.cpp
 	sound.cpp
 )
