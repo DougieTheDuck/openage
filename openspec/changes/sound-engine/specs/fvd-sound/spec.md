@@ -51,3 +51,13 @@ sound files.
 #### Scenario: No sound files
 - **WHEN** `assets/fvd/sound/` holds no sounds
 - **THEN** the game runs silently and logs that once
+
+### Requirement: Options menu
+
+An Options button SHALL sit at the top right of the match HUD. It SHALL open a
+panel with separate on/off switches for music and for sound effects, which
+SHALL be remembered between games. Clicking outside the panel SHALL close it.
+
+#### Scenario: Music off
+- **WHEN** a player turns Music off in Options and restarts the game
+- **THEN** no music plays, sound effects still play, and the switch still reads OFF

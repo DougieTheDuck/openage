@@ -214,6 +214,15 @@ protected:
 	/** Play construction sounds for one recipient world (host or guest). */
 	void record_construction_sounds(const network::WorldState &world, bool reset);
 
+	/** Push the options panel state (open, music/effects on) to the HUD. */
+	void publish_fvd_options();
+
+	/** Whether a window position is over any FVD HUD surface. */
+	bool over_fvd_hud(const QPointF &position) const;
+
+	/** Options panel shown under the top-right Options button. */
+	bool fvd_options_open{false};
+
 	/**
 	 * Render all configured render passes in sequence.
 	 */

@@ -76,6 +76,16 @@ void audio_settings() {
 	settings.muted = true;
 	TESTEQUALS(settings.music_gain(), 0.0f);
 	TESTEQUALS(settings.effects_gain(), 0.0f);
+
+	// The options switches turn one bus off without touching the other.
+	settings.muted = false;
+	settings.music_enabled = false;
+	TESTEQUALS(settings.music_gain(), 0.0f);
+	near(static_cast<int>(settings.effects_gain() * 100), 50, 0) or TESTFAIL;
+	settings.music_enabled = true;
+	settings.effects_enabled = false;
+	TESTEQUALS(settings.effects_gain(), 0.0f);
+	near(static_cast<int>(settings.music_gain() * 100), 25, 0) or TESTFAIL;
 }
 
 void audio_mixer_effects() {

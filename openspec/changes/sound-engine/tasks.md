@@ -7,5 +7,7 @@
 - [x] 1.5 On-screen placement, edge fade, pan and per-cue throttles.
 - [x] 1.6 Tests: decoding, mixing, volume, music, file names, placement,
       throttles, combat and construction cues.
-- [ ] 1.7 Choose and license sound files; add them under `assets/fvd/sound/`.
-- [ ] 1.8 Playtest on Linux (PipeWire) and Windows (WASAPI), solo and online.
+- [x] 1.7 Options button (top right) with Music and Sound effects on/off, saved in
+      the FVD QSettings file.
+- [ ] 1.8 Choose and license sound files; add them under `assets/fvd/sound/`.
+- [ ] 1.9 Playtest on Linux (PipeWire) and Windows (WASAPI), solo and online.

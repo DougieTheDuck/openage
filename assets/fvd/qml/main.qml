@@ -32,6 +32,10 @@ Item {
 	readonly property var attackOrderMarkers: hud === null ? [] : hud.attackOrderMarkers
 	readonly property var occupiedTowerFlags: hud === null ? [] : hud.occupiedTowerFlags
 	readonly property int ungarrisonErrorSerial: hud === null ? 0 : hud.ungarrisonErrorSerial
+	readonly property bool optionsOpen: hud !== null && hud.optionsOpen === true
+	readonly property bool musicOn: hud === null || hud.musicOn !== false
+	readonly property bool effectsOn: hud === null || hud.effectsOn !== false
+	readonly property string audioNote: hud === null || hud.audioNote === undefined ? "" : hud.audioNote
 
 	function flagColor(player) {
 		// Keep player indices identical to the shader/outline palette
@@ -47,10 +51,122 @@ Item {
 		return ("0" + minutes).slice(-2) + ":" + ("0" + seconds).slice(-2)
 	}
 
-	Text {
+	// Options (sound on/off). Clicks are routed by the presenter using the
+	// objectNames below, like the build panel buttons.
+	Rectangle {
+		id: optionsButton
+		objectName: "fvdOptionsButton"
 		anchors.top: parent.top
 		anchors.right: parent.right
-		anchors.margins: 13
+		anchors.margins: 8
+		z: 11
+		visible: root.hud !== null
+		width: 92
+		height: 28
+		radius: 4
+		color: root.optionsOpen ? "#ae6e30" : "#ee182824"
+		border.width: 1
+		border.color: "#b5d9c4"
+
+		Text {
+			anchors.centerIn: parent
+			color: "#ffffff"
+			font.bold: true
+			font.pixelSize: 13
+			text: "Options"
+		}
+	}
+
+	Rectangle {
+		id: optionsPanel
+		objectName: "fvdOptionsPanel"
+		anchors.top: optionsButton.bottom
+		anchors.right: parent.right
+		anchors.topMargin: 4
+		anchors.rightMargin: 8
+		z: 11
+		visible: optionsButton.visible && root.optionsOpen
+		width: 220
+		height: optionsContent.implicitHeight + 20
+		radius: 6
+		color: "#f2182824"
+		border.width: 1
+		border.color: "#72918b"
+
+		Column {
+			id: optionsContent
+			anchors.top: parent.top
+			anchors.left: parent.left
+			anchors.right: parent.right
+			anchors.margins: 10
+			spacing: 8
+
+			Text {
+				color: "#ffffff"
+				font.bold: true
+				font.pixelSize: 15
+				text: "Sound"
+			}
+
+			Repeater {
+				model: [
+					{ name: "fvdMusicToggle", label: "Music", on: root.musicOn },
+					{ name: "fvdEffectsToggle", label: "Sound effects", on: root.effectsOn }
+				]
+
+				delegate: Rectangle {
+					objectName: modelData.name
+					width: 200
+					height: 30
+					radius: 4
+					color: modelData.on ? "#3e7862" : "#4a3a30"
+					border.width: 1
+					border.color: "#b5d9c4"
+
+					Text {
+						anchors.left: parent.left
+						anchors.leftMargin: 10
+						anchors.verticalCenter: parent.verticalCenter
+						color: "#ffffff"
+						font.pixelSize: 13
+						text: modelData.label
+					}
+					Text {
+						anchors.right: parent.right
+						anchors.rightMargin: 10
+						anchors.verticalCenter: parent.verticalCenter
+						color: modelData.on ? "#c8f0d8" : "#ffb6a8"
+						font.bold: true
+						font.pixelSize: 13
+						text: modelData.on ? "ON" : "OFF"
+					}
+				}
+			}
+
+			Text {
+				visible: text.length > 0
+				width: 200
+				wrapMode: Text.WordWrap
+				color: "#f4c78c"
+				font.pixelSize: 11
+				text: root.audioNote
+			}
+
+			Text {
+				width: 200
+				wrapMode: Text.WordWrap
+				color: "#b5d9c4"
+				font.pixelSize: 11
+				text: "M mutes everything during a match."
+			}
+		}
+	}
+
+	Text {
+		anchors.top: parent.top
+		anchors.right: optionsButton.visible ? optionsButton.left : parent.right
+		anchors.topMargin: 13
+		anchors.rightMargin: 13
 		z: 10
 		visible: root.lobby !== null && root.lobby.phase === "playing"
 		text: "F10 — LEAVE MATCH"
@@ -62,7 +178,7 @@ Item {
 	Text {
 		anchors.top: parent.top
 		anchors.right: parent.right
-		anchors.topMargin: 35
+		anchors.topMargin: 44
 		anchors.rightMargin: 13
 		z: 10
 		visible: root.lobby !== null && root.lobby.builderDisconnected
@@ -75,7 +191,7 @@ Item {
 	Text {
 		anchors.top: parent.top
 		anchors.right: parent.right
-		anchors.topMargin: 56
+		anchors.topMargin: 65
 		anchors.rightMargin: 13
 		z: 10
 		visible: root.lobby !== null && root.lobby.departureNotice.length > 0

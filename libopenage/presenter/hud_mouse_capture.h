@@ -22,6 +22,9 @@ public:
 		AGGRESSIVE,
 		DEFENSIVE,
 		OBSERVE,
+		OPTIONS,
+		TOGGLE_MUSIC,
+		TOGGLE_EFFECTS,
 	};
 
 	struct Result {

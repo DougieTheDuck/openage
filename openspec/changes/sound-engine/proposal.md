@@ -17,6 +17,8 @@ tower or a Builder dies off to one side of the screen, and there is no music.
 - Foundation placed and order are heard only by the player who acted.
 - Master, music and effects volumes in `cfg/audio.oac`
   (`AUDIO_MASTER_VOLUME`, `AUDIO_MUSIC_VOLUME`, `AUDIO_EFFECTS_VOLUME`).
+- An Options button at the top right turns music and sound effects on or off
+  (remembered between games).
 - M mutes and unmutes during a match. `--no-audio` never opens a device.
 - The game plays whatever it finds in `assets/fvd/sound/` and is silent for
   anything missing. No sound files ship with this change.

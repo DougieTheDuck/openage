@@ -12,8 +12,8 @@ namespace openage::audio {
 
 namespace {
 
-float bus_gain(const Settings &settings, const std::atomic<int> &bus) {
-	if (settings.muted.load()) {
+float bus_gain(const Settings &settings, const std::atomic<int> &bus, bool enabled) {
+	if (settings.muted.load() or not enabled) {
 		return 0.0f;
 	}
 	return (static_cast<float>(settings.master.load()) / 100.0f)
@@ -23,11 +23,11 @@ float bus_gain(const Settings &settings, const std::atomic<int> &bus) {
 } // namespace
 
 float Settings::music_gain() const {
-	return bus_gain(*this, this->music);
+	return bus_gain(*this, this->music, this->music_enabled.load());
 }
 
 float Settings::effects_gain() const {
-	return bus_gain(*this, this->effects);
+	return bus_gain(*this, this->effects, this->effects_enabled.load());
 }
 
 int parse_volume(const std::string &value) {

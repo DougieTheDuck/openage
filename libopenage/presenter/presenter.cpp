@@ -222,6 +222,16 @@ void Presenter::set_audio(bool enabled, const std::shared_ptr<audio::Settings> &
 }
 
 void Presenter::init_audio() {
+	if (not this->audio_settings) {
+		this->audio_settings = std::make_shared<audio::Settings>();
+	}
+	{
+		QSettings saved{QSettings::IniFormat, QSettings::UserScope,
+		                QStringLiteral("openage"), QStringLiteral("fvd")};
+		this->audio_settings->music_enabled = saved.value(QStringLiteral("audio/music"), true).toBool();
+		this->audio_settings->effects_enabled = saved.value(QStringLiteral("audio/effects"), true).toBool();
+	}
+	this->publish_fvd_options();
 	if (not this->audio_enabled) {
 		log::log(INFO << "Audio: disabled by --no-audio");
 		return;
@@ -230,11 +240,9 @@ void Presenter::init_audio() {
 	    or not this->simulation->get_game()->get_state()->get_fvd()) {
 		return;
 	}
-	if (not this->audio_settings) {
-		this->audio_settings = std::make_shared<audio::Settings>();
-	}
 	this->fvd_audio = std::make_unique<audio::FvdAudio>(
 		this->root_dir / "assets" / "fvd" / "sound", this->audio_settings);
+	this->publish_fvd_options();
 	if (this->game_controller) {
 		this->game_controller->set_order_feedback([this]() {
 			if (this->fvd_audio) {
@@ -242,6 +250,32 @@ void Presenter::init_audio() {
 			}
 		});
 	}
+}
+
+void Presenter::publish_fvd_options() {
+	if (not this->fvd_hud_state or not this->audio_settings) {
+		return;
+	}
+	this->fvd_hud_state->insert("optionsOpen", this->fvd_options_open);
+	this->fvd_hud_state->insert("musicOn", this->audio_settings->music_enabled.load());
+	this->fvd_hud_state->insert("effectsOn", this->audio_settings->effects_enabled.load());
+	QString note{};
+	if (not this->audio_enabled) {
+		note = QStringLiteral("Sound is off (--no-audio)");
+	}
+	else if (not this->fvd_audio or not this->fvd_audio->active()) {
+		note = QStringLiteral("No sound files or audio device");
+	}
+	this->fvd_hud_state->insert("audioNote", note);
+}
+
+bool Presenter::over_fvd_hud(const QPointF &position) const {
+	if (not this->fvd_hud_state or not this->gui) {
+		return false;
+	}
+	return this->gui->contains_item("fvdBuildPanel", position)
+	       or this->gui->contains_item("fvdOptionsButton", position)
+	       or (this->fvd_options_open and this->gui->contains_item("fvdOptionsPanel", position));
 }
 
 void Presenter::update_fvd_audio() {
@@ -1307,16 +1341,17 @@ void Presenter::init_input() {
 			         std::pair{"fvdCancelButton", HudAction::CANCEL},
 			         std::pair{"fvdAggressiveButton", HudAction::AGGRESSIVE},
 			         std::pair{"fvdDefensiveButton", HudAction::DEFENSIVE},
-			         std::pair{"fvdObserveButton", HudAction::OBSERVE}}) {
+			         std::pair{"fvdObserveButton", HudAction::OBSERVE},
+			         std::pair{"fvdOptionsButton", HudAction::OPTIONS},
+			         std::pair{"fvdMusicToggle", HudAction::TOGGLE_MUSIC},
+			         std::pair{"fvdEffectsToggle", HudAction::TOGGLE_EFFECTS}}) {
 				if (this->gui->contains_item(name, ev.position())) {
 					hovered_action = action;
 					break;
 				}
 			}
 		}
-		const bool over_panel = this->fvd_hud_state and this->gui
-		                        and this->gui->contains_item("fvdBuildPanel", ev.position());
-		const bool over_hud = over_panel or hovered_action != HudAction::NONE;
+		const bool over_hud = this->over_fvd_hud(ev.position()) or hovered_action != HudAction::NONE;
 		const auto hud_input = this->fvd_hud_capture.process(
 			ev.type(), ev.button(), over_hud, hovered_action);
 		// An offscreen Qt Quick view cannot be relied upon to deliver a
@@ -1355,8 +1390,47 @@ void Presenter::init_input() {
 				this->game_controller->issue_hunter_stance(gamestate::HunterStance::OBSERVE);
 				break;
 			case HudAction::NONE:
+			case HudAction::OPTIONS:
+			case HudAction::TOGGLE_MUSIC:
+			case HudAction::TOGGLE_EFFECTS:
 				break;
 			}
+		}
+		// Options work for every role and need no controller.
+		if (this->audio_settings and hud_input.activated_action != HudAction::NONE) {
+			auto save = [](const char *key, bool value) {
+				QSettings saved{QSettings::IniFormat, QSettings::UserScope,
+				                QStringLiteral("openage"), QStringLiteral("fvd")};
+				saved.setValue(QString::fromUtf8(key), value);
+			};
+			switch (hud_input.activated_action) {
+			case HudAction::OPTIONS:
+				this->fvd_options_open = not this->fvd_options_open;
+				this->publish_fvd_options();
+				break;
+			case HudAction::TOGGLE_MUSIC: {
+				const bool on = not this->audio_settings->music_enabled.load();
+				this->audio_settings->music_enabled = on;
+				save("audio/music", on);
+				this->publish_fvd_options();
+				break;
+			}
+			case HudAction::TOGGLE_EFFECTS: {
+				const bool on = not this->audio_settings->effects_enabled.load();
+				this->audio_settings->effects_enabled = on;
+				save("audio/effects", on);
+				this->publish_fvd_options();
+				break;
+			}
+			default:
+				break;
+			}
+		}
+		// Clicking anywhere else closes the options panel, like a menu.
+		else if (this->fvd_options_open and ev.type() == QEvent::MouseButtonPress
+		         and not this->over_fvd_hud(ev.position())) {
+			this->fvd_options_open = false;
+			this->publish_fvd_options();
 		}
 		if (hud_input.consumed) {
 			if (this->game_controller) {
@@ -1382,8 +1456,7 @@ void Presenter::init_input() {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
 		}
-		const bool over_hud = this->fvd_hud_state and this->gui
-		                      and this->gui->contains_item("fvdBuildPanel", ev.position());
+		const bool over_hud = this->over_fvd_hud(ev.position());
 		if (not over_hud and not this->fvd_hud_capture.is_capturing()) {
 			this->input_manager->process(ev);
 		}
@@ -1397,8 +1470,7 @@ void Presenter::init_input() {
 			this->gui->get_input_handler()->process(
 				std::shared_ptr<QEvent>{ev.clone()});
 		}
-		if (this->fvd_hud_state and this->gui
-		    and this->gui->contains_item("fvdBuildPanel", ev.position())) {
+		if (this->over_fvd_hud(ev.position())) {
 			return;
 		}
 		this->input_manager->process(ev);

@@ -264,7 +264,7 @@ void FvdAudio::play_at(Cue cue, const Eigen::Vector3f &world) {
 }
 
 void FvdAudio::play_placed(Cue cue, float gain, float pan) {
-	if (not this->active()) {
+	if (not this->active() or not this->settings->effects_enabled.load()) {
 		return;
 	}
 	const auto index = static_cast<size_t>(cue);

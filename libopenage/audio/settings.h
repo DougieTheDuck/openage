@@ -22,6 +22,9 @@ struct Settings {
 	std::atomic<int> music{70};
 	std::atomic<int> effects{100};
 	std::atomic<bool> muted{false};
+	/** Options-menu switches, independent of the volumes. */
+	std::atomic<bool> music_enabled{true};
+	std::atomic<bool> effects_enabled{true};
 
 	/** Gain 0..1 for the music bus, including master and mute. */
 	float music_gain() const;
