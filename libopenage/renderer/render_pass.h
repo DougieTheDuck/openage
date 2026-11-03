@@ -73,6 +73,13 @@ public:
 	void set_renderables(std::vector<Renderable> &&renderables);
 
 	/**
+	 * Replace only one named layer without disturbing existing world sprites.
+	 * Useful for transient overlays such as selected-unit ground rings.
+	 * Requires the layer to have been added previously.
+	 */
+	void set_layer_renderables(int64_t priority, std::vector<Renderable> &&renderables);
+
+	/**
 	 * Append renderables to the render pass with a given priority.
 	 *
 	 * @param renderables New renderables.
