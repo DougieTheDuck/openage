@@ -148,6 +148,17 @@ size_t SoundBank::variants(Cue cue) const {
 	return this->clips.at(static_cast<size_t>(cue)).size();
 }
 
+size_t SoundBank::fill_missing(const SoundBank &other) {
+	size_t filled = 0;
+	for (size_t i = 0; i < CUE_COUNT; ++i) {
+		if (this->clips[i].empty() and not other.clips[i].empty()) {
+			this->clips[i] = other.clips[i];
+			++filled;
+		}
+	}
+	return filled;
+}
+
 size_t SoundBank::total() const {
 	size_t count = 0;
 	for (const auto &options : this->clips) {
@@ -156,18 +167,22 @@ size_t SoundBank::total() const {
 	return count;
 }
 
-FvdAudio::FvdAudio(const util::Path &sound_dir, std::shared_ptr<Settings> settings) :
-	settings{std::move(settings)},
-	random{std::random_device{}()} {
-	for (const auto &rule : RULES) {
-		this->throttles.emplace_back(rule.burst, rule.per_second);
-	}
+namespace {
 
-	size_t music_files = 0;
+size_t music_count(const MusicTracks &music) {
+	size_t count = 0;
+	for (const auto &tracks : music) {
+		count += tracks.size();
+	}
+	return count;
+}
+
+/** Read every effect and music file in one sound folder. Never throws. */
+void load_sound_folder(const util::Path &sound_dir, SoundBank &bank, MusicTracks &music) {
 	util::Path dir = sound_dir;
 	try {
 		if (not dir.is_dir()) {
-			log::log(INFO << "Audio: no sound folder at " << sound_dir << ", playing silently");
+			log::log(INFO << "Audio: no sound folder at " << sound_dir);
 			return;
 		}
 		for (auto &entry : dir.iterdir()) {
@@ -177,7 +192,7 @@ FvdAudio::FvdAudio(const util::Path &sound_dir, std::shared_ptr<Settings> settin
 				continue;
 			}
 			try {
-				this->bank.add(*cue, decode_clip(entry.open_r().read(), name));
+				bank.add(*cue, decode_clip(entry.open_r().read(), name));
 			}
 			catch (const std::exception &error) {
 				log::log(WARN << "Audio: skipping " << name << ": " << error.what());
@@ -189,8 +204,7 @@ FvdAudio::FvdAudio(const util::Path &sound_dir, std::shared_ptr<Settings> settin
 				const auto &name = entry.get_name();
 				for (auto state : {MusicState::LOBBY, MusicState::MATCH}) {
 					if (is_music_file(name, state) and entry.is_file()) {
-						this->music.at(static_cast<size_t>(state)).emplace_back(name, entry.open_r().read());
-						++music_files;
+						music.at(static_cast<size_t>(state)).emplace_back(name, entry.open_r().read());
 					}
 				}
 			}
@@ -199,7 +213,39 @@ FvdAudio::FvdAudio(const util::Path &sound_dir, std::shared_ptr<Settings> settin
 	catch (const std::exception &error) {
 		log::log(WARN << "Audio: could not read " << sound_dir << ": " << error.what());
 	}
+}
 
+} // namespace
+
+FvdAudio::FvdAudio(const util::Path &sound_dir,
+                   std::shared_ptr<Settings> settings,
+                   const std::optional<util::Path> &fallback_dir) :
+	settings{std::move(settings)},
+	random{std::random_device{}()} {
+	for (const auto &rule : RULES) {
+		this->throttles.emplace_back(rule.burst, rule.per_second);
+	}
+
+	load_sound_folder(sound_dir, this->bank, this->music);
+
+	if (fallback_dir) {
+		SoundBank placeholder_bank{};
+		MusicTracks placeholder_music{};
+		load_sound_folder(*fallback_dir, placeholder_bank, placeholder_music);
+		size_t filled = this->bank.fill_missing(placeholder_bank);
+		for (size_t state = 0; state < this->music.size(); ++state) {
+			if (this->music[state].empty() and not placeholder_music[state].empty()) {
+				this->music[state] = std::move(placeholder_music[state]);
+				++filled;
+			}
+		}
+		if (filled > 0) {
+			log::log(INFO << "Audio: using placeholder sounds from " << *fallback_dir
+			              << " for " << filled << " cues without a real file");
+		}
+	}
+
+	const size_t music_files = music_count(this->music);
 	if (this->bank.total() == 0 and music_files == 0) {
 		log::log(INFO << "Audio: no sound files in " << sound_dir << ", playing silently");
 		return;

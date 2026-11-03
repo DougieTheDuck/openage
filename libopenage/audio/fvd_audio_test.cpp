@@ -96,6 +96,19 @@ void fvd_audio_bank() {
 	}
 	TESTEQUALS(seen.size(), size_t{2});
 	TESTEQUALS(bank.pick(Cue::ORDER, random) == nullptr, true);
+
+	// Placeholders only fill cues without a real file.
+	SoundBank placeholders{};
+	auto fake_hit = std::make_shared<PcmClip>();
+	fake_hit->samples = {3, 3};
+	auto fake_order = std::make_shared<PcmClip>();
+	fake_order->samples = {4, 4};
+	placeholders.add(Cue::HIT, fake_hit);
+	placeholders.add(Cue::ORDER, fake_order);
+	TESTEQUALS(bank.fill_missing(placeholders), size_t{1});
+	TESTEQUALS(bank.variants(Cue::HIT), size_t{2});
+	TESTEQUALS(bank.pick(Cue::ORDER, random) == fake_order, true);
+	TESTEQUALS(bank.fill_missing(placeholders), size_t{0});
 }
 
 } // namespace openage::audio::tests

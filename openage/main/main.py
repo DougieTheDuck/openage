@@ -72,6 +72,7 @@ def main(args, error):
     from ..convert.tool.subtool.acquire_sourcedir import wanna_convert
     from ..cppinterface.setup import setup as cpp_interface_setup
     from ..cvar.location import get_config_path
+    from ..util.fslike.directory import Directory
     from ..util.fslike.union import Union
     from .main_cpp import run_game
 
@@ -94,6 +95,16 @@ def main(args, error):
     # mount the config folder at "cfg/"
     root["cfg"].mount(get_config_path(args.cfg_dir))
     args.cfg_dir = root["cfg"]
+
+    # TEMPORARY: generate placeholder FVD sounds for cues without a real
+    # recording; remove with placeholder_sounds.py once all sounds exist.
+    if not args.no_audio:
+        from ..game.placeholder_sounds import ensure_placeholder_sounds
+        try:
+            placeholder_path = ensure_placeholder_sounds()
+            root["fvd_placeholder_sounds"].mount(Directory(placeholder_path).root)
+        except OSError as placeholder_error:
+            info("could not create placeholder sounds: %s", placeholder_error)
 
     # ensure that the openage API is present
     if api_export_required(asset_path):

@@ -1,7 +1,25 @@
 # FVD sounds
 
-The game plays whatever it finds here and stays silent for anything missing.
-No sounds ship yet: which files we use, and under what licence, is still open.
+The game plays whatever it finds here. No real sounds ship yet.
+
+## Placeholders (temporary)
+
+Until every cue has a recording, the game generates simple synthesised
+placeholder sounds at startup (solo, host and guest alike) with
+`openage/game/placeholder_sounds.py`. They go to a per-user cache folder
+(`~/.cache/openage/fvd-placeholder-sounds-v1` on Linux, the openage data
+folder on Windows), never into this folder, and only missing files are
+written, so it takes about two seconds once and nothing after that.
+
+A real file here always wins: a placeholder is only used for a cue (or music
+state) that has no file in this folder. The log says how many cues fell back.
+`--no-audio` skips the generator.
+
+To remove the placeholders once all sounds exist: delete
+`openage/game/placeholder_sounds.py` (and its entry in
+`openage/game/CMakeLists.txt`), the `ensure_placeholder_sounds` block in
+`openage/game/main.py` and `openage/main/main.py`, and the
+`fvd_placeholder_sounds` fallback argument in `Presenter::init_audio`.
 
 Formats: Opus (`.opus`) or WAV (`.wav`, 8/16/24-bit or float, mono or stereo,
 any sample rate). Add variants with a number, e.g. `hit.opus`, `hit_2.opus`,

@@ -32,6 +32,7 @@ def tests_py():
     yield ("openage.testing.misc_cpp.enum", "tests the interface for C++'s util::Enum class")
     yield ("openage.util.fslike.test.test", "test the filesystem abstraction subsystem")
     yield "openage.util.threading.test_concurrent_chain"
+    yield ("openage.game.placeholder_sounds.test", "FVD placeholder sounds are generated once")
     yield "openage.nyan.tests.object_reference_members"
     yield (
         "openage.testing.network_two_process.test",

@@ -9,5 +9,9 @@
       throttles, combat and construction cues.
 - [x] 1.7 Options button (top right) with Music and Sound effects on/off, saved in
       the FVD QSettings file.
+- [x] 1.10 Temporary placeholder sounds generated at startup into a cache
+      folder and used per cue only where no real file exists.
+- [ ] 1.11 Remove the placeholder generator once every cue is recorded
+      (see `assets/fvd/sound/README.md`).
 - [ ] 1.8 Choose and license sound files; add them under `assets/fvd/sound/`.
 - [ ] 1.9 Playtest on Linux (PipeWire) and Windows (WASAPI), solo and online.

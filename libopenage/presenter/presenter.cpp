@@ -240,8 +240,12 @@ void Presenter::init_audio() {
 	    or not this->simulation->get_game()->get_state()->get_fvd()) {
 		return;
 	}
+	// Placeholder sounds generated at startup (openage/game/placeholder_sounds.py)
+	// fill any cue without a real recording in assets/fvd/sound.
 	this->fvd_audio = std::make_unique<audio::FvdAudio>(
-		this->root_dir / "assets" / "fvd" / "sound", this->audio_settings);
+		this->root_dir / "assets" / "fvd" / "sound",
+		this->audio_settings,
+		this->root_dir / "fvd_placeholder_sounds");
 	this->publish_fvd_options();
 	if (this->game_controller) {
 		this->game_controller->set_order_feedback([this]() {

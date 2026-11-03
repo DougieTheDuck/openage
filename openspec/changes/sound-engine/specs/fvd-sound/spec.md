@@ -49,8 +49,26 @@ audio device at all. The game SHALL run normally without an audio device or
 sound files.
 
 #### Scenario: No sound files
-- **WHEN** `assets/fvd/sound/` holds no sounds
+- **WHEN** `assets/fvd/sound/` holds no sounds and no placeholders could be made
 - **THEN** the game runs silently and logs that once
+
+### Requirement: Placeholder sounds (temporary)
+
+Until real recordings exist, every game start (solo, host or guest) without
+`--no-audio` SHALL generate synthesised placeholder sounds for every cue and
+music state into a per-user cache folder, writing only missing files and never
+into `assets/fvd/sound/`. A cue or music state SHALL use the placeholders only
+when `assets/fvd/sound/` has no file for it. Failing to write placeholders
+SHALL be logged and SHALL NOT stop the game. This requirement is removed once
+every cue has a real sound.
+
+#### Scenario: Partly recorded
+- **WHEN** `assets/fvd/sound/` holds only `hit.opus`
+- **THEN** hits play `hit.opus` and every other cue plays its placeholder
+
+#### Scenario: Second start
+- **WHEN** the placeholders already exist in the cache folder
+- **THEN** nothing is regenerated
 
 ### Requirement: Options menu
 

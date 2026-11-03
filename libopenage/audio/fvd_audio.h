@@ -13,14 +13,11 @@
 
 #include <eigen3/Eigen/Dense>
 
+#include "../util/path.h"
 #include "pcm.h"
 #include "settings.h"
 
 namespace openage {
-namespace util {
-class Path;
-}
-
 namespace audio {
 
 class Mixer;
@@ -85,6 +82,9 @@ private:
 	std::optional<clock::time_point> last{};
 };
 
+/** Raw music files (name, bytes) per MusicState, decoded when a track starts. */
+using MusicTracks = std::array<std::vector<std::pair<std::string, std::string>>, 3>;
+
 /** All variants of every cue, picked at random when played. */
 class SoundBank {
 public:
@@ -92,6 +92,12 @@ public:
 	std::shared_ptr<const PcmClip> pick(Cue cue, std::minstd_rand &random) const;
 	size_t variants(Cue cue) const;
 	size_t total() const;
+
+	/**
+	 * Copy the variants of every cue that has none here from `other`.
+	 * @returns how many cues were filled
+	 */
+	size_t fill_missing(const SoundBank &other);
 
 private:
 	std::array<std::vector<std::shared_ptr<const PcmClip>>, CUE_COUNT> clips{};
@@ -121,8 +127,14 @@ public:
 	 * Load sounds and open the default output device.
 	 * Never throws: problems are logged and the game stays silent.
 	 * Create on the Qt GUI thread.
+	 *
+	 * @param fallback_dir Same layout; used for each cue and music state
+	 *                     that has no file in sound_dir. Holds the generated
+	 *                     placeholder sounds until real ones exist.
 	 */
-	FvdAudio(const util::Path &sound_dir, std::shared_ptr<Settings> settings);
+	FvdAudio(const util::Path &sound_dir,
+	         std::shared_ptr<Settings> settings,
+	         const std::optional<util::Path> &fallback_dir = std::nullopt);
 	~FvdAudio();
 
 	FvdAudio(const FvdAudio &) = delete;
@@ -153,7 +165,7 @@ private:
 	std::unique_ptr<Output> output;
 	SoundBank bank;
 	/** Raw files per music state, decoded when the track starts. */
-	std::array<std::vector<std::pair<std::string, std::string>>, 3> music{};
+	MusicTracks music{};
 	MusicState music_state = MusicState::SILENT;
 	std::vector<Throttle> throttles;
 	std::optional<Eigen::Matrix4f> view{};
