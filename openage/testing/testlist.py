@@ -210,6 +210,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::renderer::world::tests::terrain_fog_soft_edges",
+        "FVD GPU fog softens tile edges while preserving visibility centres",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_construction",
         "FVD Builder movement, timed construction and cancellation",
         lambda env: env["has_assets"],
