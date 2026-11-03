@@ -30,6 +30,10 @@ std::optional<audio::Cue> combat_cue(const network::ConfirmedCombatEffect &effec
 	return std::nullopt;
 }
 
+bool hunter_unleashed(int previous_countdown, int countdown) {
+	return previous_countdown > 0 and countdown <= 0;
+}
+
 std::vector<ConstructionSound> ConstructionSoundTracker::update(
 	const network::WorldState &world,
 	gamestate::player_id_t local_player,

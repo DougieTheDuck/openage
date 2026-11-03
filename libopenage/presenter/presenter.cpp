@@ -2410,6 +2410,16 @@ void Presenter::render() {
 					: fvd->get_hunter_spawn_countdown(now);
 				this->fvd_hud_state->insert("hunterCountdown",
 					countdown.value_or(0));
+				const int countdown_seconds = static_cast<int>(countdown.value_or(0));
+				if (this->fvd_gameplay_active or not this->fvd_lobby_enabled) {
+					if (hunter_unleashed(this->fvd_previous_hunter_countdown, countdown_seconds)) {
+						this->fvd_hud_state->insert("unleashedSerial", ++this->fvd_unleashed_serial);
+						if (this->fvd_audio) {
+							this->fvd_audio->play(audio::Cue::HUNTER_UNLEASHED);
+						}
+					}
+					this->fvd_previous_hunter_countdown = countdown_seconds;
+				}
 				std::optional<time::time_t> match_deadline{};
 				if (construction_world) {
 					// Network matches start at simulation time zero. Authority

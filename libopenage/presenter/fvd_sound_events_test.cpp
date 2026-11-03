@@ -49,6 +49,14 @@ void fvd_combat_sounds() {
 	TESTEQUALS(combat_cue(effect).has_value(), false);
 }
 
+void fvd_hunter_unleashed() {
+	TESTEQUALS(hunter_unleashed(1, 0), true);
+	TESTEQUALS(hunter_unleashed(14, 0), true); // F9 skips the countdown
+	TESTEQUALS(hunter_unleashed(2, 1), false);
+	TESTEQUALS(hunter_unleashed(0, 0), false); // joined after the start
+	TESTEQUALS(hunter_unleashed(0, 20), false); // new match
+}
+
 void fvd_construction_sounds() {
 	ConstructionSoundTracker tracker{};
 	const auto empty = world_at(1, {});

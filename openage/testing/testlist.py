@@ -192,6 +192,7 @@ def tests_cpp():
     )
     yield "openage::presenter::tests::hud_mouse_capture"
     yield "openage::presenter::tests::fvd_combat_sounds", "FVD hits and deaths map to sounds"
+    yield "openage::presenter::tests::fvd_hunter_unleashed", "FVD Hunter unleashed fires once, when horses start spawning"
     yield (
         "openage::presenter::tests::fvd_construction_sounds",
         "FVD foundation and tower-built sounds fire only on real transitions",

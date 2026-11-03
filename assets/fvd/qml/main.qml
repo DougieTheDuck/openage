@@ -32,6 +32,8 @@ Item {
 	readonly property var attackOrderMarkers: hud === null ? [] : hud.attackOrderMarkers
 	readonly property var occupiedTowerFlags: hud === null ? [] : hud.occupiedTowerFlags
 	readonly property int ungarrisonErrorSerial: hud === null ? 0 : hud.ungarrisonErrorSerial
+	readonly property int unleashedSerial: hud === null || hud.unleashedSerial === undefined
+	                                       ? 0 : hud.unleashedSerial
 	readonly property bool optionsOpen: hud !== null && hud.optionsOpen === true
 	readonly property bool musicOn: hud === null || hud.musicOn !== false
 	readonly property bool effectsOn: hud === null || hud.effectsOn !== false
@@ -851,6 +853,55 @@ Item {
 				MouseArea {
 					anchors.fill: parent
 					cursorShape: Qt.PointingHandCursor
+				}
+			}
+		}
+	}
+
+	// Shown to everyone the moment the Hunter's horses start spawning.
+	Item {
+		id: unleashedBanner
+		anchors.horizontalCenter: parent.horizontalCenter
+		y: parent.height * 0.22
+		z: 9
+		width: unleashedText.implicitWidth + 80
+		height: unleashedText.implicitHeight + 36
+		opacity: 0
+		visible: opacity > 0
+
+		Rectangle {
+			anchors.fill: parent
+			radius: 8
+			color: "#e6261a14"
+			border.width: 2
+			border.color: "#e0763c"
+		}
+
+		Text {
+			id: unleashedText
+			anchors.centerIn: parent
+			text: "HUNTER UNLEASHED"
+			color: "#ffd2a6"
+			style: Text.Outline
+			styleColor: "#5a1d08"
+			font.pixelSize: 54
+			font.bold: true
+			font.letterSpacing: 4
+		}
+
+		SequentialAnimation {
+			id: unleashedAnimation
+			NumberAnimation { target: unleashedBanner; property: "opacity"; to: 1; duration: 180 }
+			NumberAnimation { target: unleashedBanner; property: "scale"; from: 1.25; to: 1; duration: 0 }
+			PauseAnimation { duration: 3000 }
+			NumberAnimation { target: unleashedBanner; property: "opacity"; to: 0; duration: 900 }
+		}
+
+		Connections {
+			target: root
+			function onUnleashedSerialChanged() {
+				if (root.unleashedSerial > 0) {
+					unleashedAnimation.restart()
 				}
 			}
 		}

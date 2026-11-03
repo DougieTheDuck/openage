@@ -32,6 +32,7 @@ enum class Cue : size_t {
 	FOUNDATION_PLACED,
 	TOWER_BUILT,
 	ORDER,
+	HUNTER_UNLEASHED,
 	COUNT,
 };
 

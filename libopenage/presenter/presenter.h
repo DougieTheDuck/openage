@@ -220,6 +220,11 @@ protected:
 	/** Whether a window position is over any FVD HUD surface. */
 	bool over_fvd_hud(const QPointF &position) const;
 
+	/** Hunter countdown last shown, to spot the moment horses start spawning. */
+	int fvd_previous_hunter_countdown{0};
+	/** Bumped each time the Hunter is unleashed; QML replays its banner. */
+	int fvd_unleashed_serial{0};
+
 	/** Options panel shown under the top-right Options button. */
 	bool fvd_options_open{false};
 

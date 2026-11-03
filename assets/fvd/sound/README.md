@@ -36,6 +36,7 @@ any sample rate). Add variants with a number, e.g. `hit.opus`, `hit_2.opus`,
 | `foundation_placed` | you place one of your own foundations                    | you only          |
 | `tower_built`       | a tower you can see finishes construction                | anyone who sees it |
 | `order`             | you give your own units a move/attack/patrol order       | you only          |
+| `hunter_unleashed`  | the Hunter's horses start spawning (with a big banner)   | everyone          |
 
 World sounds are full volume on screen, fade out just beyond the screen edge,
 and pan left/right with their position. Bursts are rate-limited per sound.

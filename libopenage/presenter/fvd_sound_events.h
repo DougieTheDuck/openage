@@ -19,6 +19,13 @@ namespace openage::presenter {
 /** Sound for a host-confirmed hit or death, if that kind of entity has one. */
 std::optional<audio::Cue> combat_cue(const network::ConfirmedCombatEffect &effect);
 
+/**
+ * Whether the Hunter's horses just started spawning: the countdown to the
+ * first spawn went from running to zero. A countdown first seen at zero
+ * (joining late, a reset) is not a start.
+ */
+bool hunter_unleashed(int previous_countdown, int countdown);
+
 /** A construction sound and where it happened. */
 struct ConstructionSound {
 	audio::Cue cue;
