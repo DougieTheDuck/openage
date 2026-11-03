@@ -215,6 +215,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::renderer::world::tests::selection_ground_rings",
+        "FVD AoE2-style selected unit rings are behind sprites, cleared on deselect and hidden by fog",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_construction",
         "FVD Builder movement, timed construction and cancellation",
         lambda env: env["has_assets"],
