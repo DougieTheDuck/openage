@@ -36,6 +36,9 @@
 #include "gamestate/game.h"
 #include "gamestate/game_entity.h"
 #include "gamestate/game_state.h"
+#include "event/event_loop.h"
+#include "gamestate/component/internal/commands/types.h"
+#include "gamestate/event/send_command.h"
 #include "gamestate/simulation.h"
 #include "input/controller/camera/binding_context.h"
 #include "input/controller/camera/controller.h"
@@ -314,21 +317,62 @@ void Presenter::update_fvd_minimap(const network::WorldState *world) {
 	}
 }
 
-bool Presenter::fvd_minimap_look_at(const QPointF &position) {
+std::optional<coord::phys3> Presenter::fvd_minimap_position(const QPointF &position) const {
 	QPointF local;
-	if (not this->gui or not this->camera or this->fvd_minimap_size == 0
+	if (not this->gui or this->fvd_minimap_size == 0
 	    or not this->gui->map_to_item("fvdMinimapSurface", position, local)) {
-		return false;
+		return std::nullopt;
 	}
 	const double extent = static_cast<double>(this->fvd_minimap_size) * MINIMAP_TILE_PIXELS;
 	if (local.x() < 0 or local.y() < 0 or local.x() > extent or local.y() > extent) {
-		return false;
+		return std::nullopt;
 	}
 	const auto tile = minimap_pixel_to_tile(local.x(), local.y(), this->fvd_minimap_size);
-	const coord::phys3 centre{coord::phys_t::from_int(tile.ne) + coord::phys_t{0.5},
-	                          coord::phys_t::from_int(tile.se) + coord::phys_t{0.5}, 0};
-	this->camera->look_at_coord(centre.to_scene3());
+	return coord::phys3{coord::phys_t::from_int(tile.ne) + coord::phys_t{0.5},
+	                    coord::phys_t::from_int(tile.se) + coord::phys_t{0.5}, 0};
+}
+
+bool Presenter::fvd_minimap_look_at(const QPointF &position) {
+	const auto centre = this->fvd_minimap_position(position);
+	if (not centre or not this->camera) {
+		return false;
+	}
+	this->camera->look_at_coord(centre->to_scene3());
 	return true;
+}
+
+void Presenter::set_fvd_flare_mode(bool on) {
+	const bool allowed = this->game_controller and this->game_controller->get_controlled() >= 2
+	                     and (not this->fvd_lobby_enabled or this->fvd_gameplay_active);
+	this->fvd_flare_mode = on and allowed;
+	if (this->fvd_hud_state) {
+		this->fvd_hud_state->insert("flaring", this->fvd_flare_mode);
+	}
+}
+
+void Presenter::send_fvd_flare(const coord::phys3 &position) {
+	if (not this->game_controller or not this->simulation) {
+		return;
+	}
+	const auto owner = static_cast<gamestate::player_id_t>(this->game_controller->get_controlled());
+	const coord::phys3 target{position.ne, position.se, 0};
+	if (this->fvd_lobby_enabled and not this->fvd_lobby_hosting) {
+		if (this->fvd_gameplay_active and this->fvd_lobby_client) {
+			this->fvd_lobby_client->send_guest_command(
+				network::CommandIntent{0, network::CommandKind::FLARE, {}, target});
+		}
+		return;
+	}
+	event::EventHandler::param_map::map_t params{
+		{"type", gamestate::component::command::command_t::FLARE},
+		{"target", target},
+		{"owner", owner},
+		{"entity_ids", std::vector<gamestate::entity_id_t>{}},
+	};
+	this->simulation->get_event_loop()->submit_event(
+		"game.send_command", this->simulation->get_commander(),
+		this->simulation->get_game()->get_state(),
+		this->time_loop->get_clock()->get_time(), params);
 }
 
 bool Presenter::over_fvd_hud(const QPointF &position) const {
@@ -555,6 +599,10 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 		this->fvd_guest_clock = GuestClock{};
 		this->fvd_guest_snapshot_generation = 0;
 		this->fvd_last_guest_arrow_id = 0;
+	this->fvd_last_flare_heard = 0;
+	this->fvd_flare_mode = false;
+		this->fvd_last_flare_heard = 0;
+		this->fvd_flare_mode = false;
 		this->fvd_guest_late_arrows.clear();
 		this->fvd_previous_combat_world.reset();
 		this->clear_fvd_combat_visuals();
@@ -618,6 +666,8 @@ void Presenter::handle_fvd_lobby_action(const std::string &action) {
 	this->fvd_guest_clock = GuestClock{};
 	this->fvd_guest_snapshot_generation = 0;
 	this->fvd_last_guest_arrow_id = 0;
+	this->fvd_last_flare_heard = 0;
+	this->fvd_flare_mode = false;
 	this->fvd_guest_late_arrows.clear();
 	this->fvd_previous_combat_world.reset();
 	this->clear_fvd_combat_visuals();
@@ -1063,6 +1113,8 @@ network::WorldState Presenter::fvd_local_view(const network::WorldState &world, 
 			return not shown.contains(order.horse_id)
 			       or (order.target_id and not shown.contains(*order.target_id));
 		});
+		// Same rule as the network: the Hunter never sees Builder flares.
+		view.flares.clear();
 	}
 	else {
 		view.attack_orders.clear();
@@ -1326,6 +1378,16 @@ void Presenter::init_input() {
 			// Do not dispatch lobby keystrokes to gameplay bindings either.
 			return;
 		}
+		// F arms a flare (Builders); Esc disarms it before anything else.
+		if (ev.type() == QEvent::KeyRelease and ev.key() == Qt::Key_F
+		    and ev.modifiers() == Qt::NoModifier and this->fvd_hud_state) {
+			this->set_fvd_flare_mode(not this->fvd_flare_mode);
+			return;
+		}
+		if (ev.key() == Qt::Key_Escape and this->fvd_flare_mode) {
+			if (ev.type() == QEvent::KeyRelease) this->set_fvd_flare_mode(false);
+			return;
+		}
 		// M mutes all sound. Handled here, not as a game binding, because
 		// it isn't a game action and needs no selection.
 		if (ev.type() == QEvent::KeyRelease and ev.key() == Qt::Key_M
@@ -1392,6 +1454,33 @@ void Presenter::init_input() {
 			}
 			return;
 		}
+		// Flare mode: the next left-click on the map or the minimap flares
+		// there; a right-click cancels. Neither click reaches the world.
+		if (this->fvd_flare_swallow_release and ev.type() == QEvent::MouseButtonRelease) {
+			this->fvd_flare_swallow_release = false;
+			return;
+		}
+		if (this->fvd_flare_mode and ev.type() == QEvent::MouseButtonPress) {
+			if (ev.button() == Qt::RightButton) {
+				this->set_fvd_flare_mode(false);
+				this->fvd_flare_swallow_release = true;
+				return;
+			}
+			if (ev.button() == Qt::LeftButton) {
+				std::optional<coord::phys3> target = this->fvd_minimap_position(ev.position());
+				if (not target and not this->over_fvd_hud(ev.position())) {
+					target = coord::input{static_cast<coord::pixel_t>(ev.position().x()),
+					                      static_cast<coord::pixel_t>(ev.position().y())}
+					             .to_phys3(this->camera);
+				}
+				if (target) {
+					this->send_fvd_flare(*target);
+					this->set_fvd_flare_mode(false);
+					this->fvd_flare_swallow_release = true;
+					return;
+				}
+			}
+		}
 		// Left-click or drag on the minimap moves the camera there.
 		if (this->fvd_hud_state and ev.button() == Qt::LeftButton) {
 			if (ev.type() == QEvent::MouseButtonPress and this->fvd_minimap_look_at(ev.position())) {
@@ -1418,7 +1507,8 @@ void Presenter::init_input() {
 			         std::pair{"fvdObserveButton", HudAction::OBSERVE},
 			         std::pair{"fvdOptionsButton", HudAction::OPTIONS},
 			         std::pair{"fvdMusicToggle", HudAction::TOGGLE_MUSIC},
-			         std::pair{"fvdEffectsToggle", HudAction::TOGGLE_EFFECTS}}) {
+			         std::pair{"fvdEffectsToggle", HudAction::TOGGLE_EFFECTS},
+			         std::pair{"fvdFlareButton", HudAction::FLARE}}) {
 				if (this->gui->contains_item(name, ev.position())) {
 					hovered_action = action;
 					break;
@@ -1462,6 +1552,9 @@ void Presenter::init_input() {
 				break;
 			case HudAction::OBSERVE:
 				this->game_controller->issue_hunter_stance(gamestate::HunterStance::OBSERVE);
+				break;
+			case HudAction::FLARE:
+				this->set_fvd_flare_mode(not this->fvd_flare_mode);
 				break;
 			case HudAction::NONE:
 			case HudAction::OPTIONS:
@@ -2328,6 +2421,36 @@ void Presenter::render() {
 				if (not attack_order_markers.isEmpty()
 				    or not this->fvd_hud_state->value("attackOrderMarkers").toList().empty()) {
 					this->fvd_hud_state->insert("attackOrderMarkers", attack_order_markers);
+				}
+				// Builder flares: a star on the map and the minimap, and one
+				// gling per new flare. The Hunter's world never has any.
+				QVariantList flare_markers;
+				QVariantList minimap_flares;
+				if (construction_world) {
+					const auto flare_time = guest_time.value_or(now);
+					uint64_t newest = this->fvd_last_flare_heard;
+					for (const auto &flare : construction_world->flares) {
+						const double age = (flare_time - flare.created_at).to_double();
+						if (age < 0.0 or age >= static_cast<double>(network::FLARE_SECONDS)) continue;
+						if (flare.flare_id > this->fvd_last_flare_heard) {
+							newest = std::max(newest, flare.flare_id);
+							if (this->fvd_audio) this->fvd_audio->play(audio::Cue::FLARE);
+						}
+						const auto screen = project_position(flare.position);
+						flare_markers.push_back(QVariantMap{
+							{"x", screen.x()}, {"y", screen.y()},
+							{"player", static_cast<int>(flare.owner_id)}, {"age", age}});
+						const auto [mx, my] = minimap_position_to_pixel(
+							flare.position, construction_world->map_size);
+						minimap_flares.push_back(QVariantMap{
+							{"x", mx}, {"y", my}, {"player", static_cast<int>(flare.owner_id)}});
+					}
+					this->fvd_last_flare_heard = newest;
+				}
+				if (not flare_markers.isEmpty()
+				    or not this->fvd_hud_state->value("flareMarkers").toList().empty()) {
+					this->fvd_hud_state->insert("flareMarkers", flare_markers);
+					this->fvd_hud_state->insert("minimapFlares", minimap_flares);
 				}
 				QVariantList footprint;
 				bool valid = false;

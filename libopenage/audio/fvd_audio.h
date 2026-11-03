@@ -33,6 +33,7 @@ enum class Cue : size_t {
 	TOWER_BUILT,
 	ORDER,
 	HUNTER_UNLEASHED,
+	FLARE,
 	COUNT,
 };
 

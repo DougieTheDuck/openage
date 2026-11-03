@@ -2451,6 +2451,39 @@ void FVD::remove_hunter_tower(const std::shared_ptr<GameState> &state, const tim
 	this->hunter_rally_point.reset();
 }
 
+bool FVD::flare(player_id_t owner, const coord::phys3 &position, const time::time_t &time) {
+	if (this->match_outcome or owner < 2 or owner > this->player_count
+	    or position.ne < 0 or position.se < 0
+	    or position.ne >= this->map_size or position.se >= this->map_size) {
+		return false;
+	}
+	std::lock_guard lock{this->flares_mutex};
+	auto last = this->last_flare_at.find(owner);
+	if (last != this->last_flare_at.end()
+	    and time < last->second + time::time_t::from_int(FLARE_COOLDOWN_SECONDS)) {
+		return false;
+	}
+	this->last_flare_at.insert_or_assign(owner, time);
+	std::erase_if(this->flares, [&](const FVDFlare &old) {
+		return old.created_at + time::time_t::from_int(FLARE_LIFETIME_SECONDS) <= time;
+	});
+	this->flares.push_back({this->next_flare_id++, owner,
+	                        coord::phys3{position.ne, position.se, 0}, time});
+	return true;
+}
+
+std::vector<FVDFlare> FVD::get_flares(const time::time_t &now) const {
+	std::lock_guard lock{this->flares_mutex};
+	std::vector<FVDFlare> result;
+	for (const auto &flare : this->flares) {
+		if (flare.created_at <= now
+		    and now < flare.created_at + time::time_t::from_int(FLARE_LIFETIME_SECONDS)) {
+			result.push_back(flare);
+		}
+	}
+	return result;
+}
+
 bool FVD::set_hunter_rally_point(const std::shared_ptr<GameState> &state,
                                  player_id_t owner, const std::vector<entity_id_t> &ids,
                                  const coord::phys3 &point, const time::time_t &time) {

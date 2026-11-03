@@ -24,6 +24,7 @@ enum class command_t {
 	GARRISON,
 	UNGARRISON,
 	SET_UNGARRISON_POINT,
+	FLARE,
 };
 
 } // namespace openage::gamestate::component::command

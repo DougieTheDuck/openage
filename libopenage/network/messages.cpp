@@ -119,7 +119,7 @@ private:
 
 bool is_known_command_kind(uint16_t value) {
 	return value >= static_cast<uint16_t>(CommandKind::MOVE)
-	    && value <= static_cast<uint16_t>(CommandKind::SET_UNGARRISON_POINT);
+	    && value <= static_cast<uint16_t>(CommandKind::FLARE);
 }
 
 bool is_known_hunter_stance(uint16_t value) {
@@ -470,6 +470,10 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 	if (intent.kind == CommandKind::SET_RALLY_POINT and intent.entity_ids.size() != 1) {
 		throw Error{MSG(err) << "FVD rally point requires exactly the Hunter tower"};
 	}
+	if (intent.kind == CommandKind::FLARE
+	    and (not intent.entity_ids.empty() or intent.target_entity)) {
+		throw Error{MSG(err) << "FVD flare carries only a position"};
+	}
 	if ((intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()
 	    or (intent.stance
 	        and not is_known_hunter_stance(static_cast<uint16_t>(*intent.stance)))) {
@@ -560,6 +564,8 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 	    or (intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()
 	    or (intent.kind == CommandKind::DEMOLISH_TOWER and intent.entity_ids.size() != 1)
 	    or (intent.kind == CommandKind::SET_RALLY_POINT and intent.entity_ids.size() != 1)
+	    or (intent.kind == CommandKind::FLARE
+	        and (not intent.entity_ids.empty() or intent.target_entity))
 	    or (intent.kind == CommandKind::SET_UNGARRISON_POINT
 	        and intent.entity_ids.size() != 1)
 	    or (intent.kind == CommandKind::GARRISON and intent.entity_ids.size() != 1)
@@ -626,7 +632,8 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 	    or state.reservations.size() > MAX_STATE_RESERVATIONS
 	    or state.constructions.size() > MAX_STATE_CONSTRUCTIONS
 	    or state.attack_orders.size() > MAX_STATE_ATTACK_ORDERS
-	    or state.arrows.size() > MAX_STATE_ARROWS) {
+	    or state.arrows.size() > MAX_STATE_ARROWS
+	    or state.flares.size() > MAX_STATE_FLARES) {
 		throw Error{MSG(err) << "FVD state collection exceeds its protocol limit"};
 	}
 
@@ -655,6 +662,7 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 	append_u32(output, static_cast<uint32_t>(state.constructions.size()));
 	append_u32(output, static_cast<uint32_t>(state.attack_orders.size()));
 	append_u32(output, static_cast<uint32_t>(state.arrows.size()));
+	append_u32(output, static_cast<uint32_t>(state.flares.size()));
 	bool found_local_player = false;
 	for (const auto &player : state.players) {
 		if (player.player_id == 0
@@ -825,6 +833,15 @@ std::vector<uint8_t> encode_world_state(const WorldState &state, bool partial) {
 		append_i64(output, arrow.launch_time.get_raw_value());
 		append_i64(output, arrow.impact_time.get_raw_value());
 	}
+	for (const auto &flare : state.flares) {
+		if (flare.flare_id == 0 or flare.owner_id < 2) {
+			throw Error{MSG(err) << "FVD state contains an invalid flare"};
+		}
+		append_u64(output, flare.flare_id);
+		append_u64(output, flare.owner_id);
+		append_position(output, flare.position);
+		append_i64(output, flare.created_at.get_raw_value());
+	}
 	validate_fog(state, partial);
 	append_u32(output, static_cast<uint32_t>(state.fog.size()));
 	for (const auto &fog : state.fog) {
@@ -894,12 +911,14 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 	auto construction_count = reader.u32();
 	auto attack_order_count = reader.u32();
 	auto arrow_count = reader.u32();
+	auto flare_count = reader.u32();
 	if (player_count > MAX_STATE_PLAYERS
 	    or entity_count > MAX_STATE_ENTITIES
 	    or reservation_count > MAX_STATE_RESERVATIONS
 	    or construction_count > MAX_STATE_CONSTRUCTIONS
 	    or attack_order_count > MAX_STATE_ATTACK_ORDERS
-	    or arrow_count > MAX_STATE_ARROWS) {
+	    or arrow_count > MAX_STATE_ARROWS
+	    or flare_count > MAX_STATE_FLARES) {
 		throw Error{MSG(err) << "FVD state collection exceeds its protocol limit"};
 	}
 	state.players.reserve(player_count);
@@ -1143,6 +1162,18 @@ WorldState decode_world_state(const std::vector<uint8_t> &payload, bool partial)
 			throw Error{MSG(err) << "FVD state contains an invalid arrow"};
 		}
 		state.arrows.push_back(arrow);
+	}
+	state.flares.reserve(flare_count);
+	for (uint32_t i = 0; i < flare_count; ++i) {
+		FlareState flare{};
+		flare.flare_id = reader.u64();
+		flare.owner_id = reader.u64();
+		flare.position = read_position(reader);
+		flare.created_at = time::time_t::from_raw_value(reader.i64());
+		if (flare.flare_id == 0 or flare.owner_id < 2) {
+			throw Error{MSG(err) << "FVD state contains an invalid flare"};
+		}
+		state.flares.push_back(flare);
 	}
 	const auto fog_count = reader.u32();
 	if (fog_count > 1) {

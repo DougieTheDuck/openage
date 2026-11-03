@@ -109,6 +109,14 @@ struct FVDArrowState {
 	time::time_t impact_time;
 };
 
+/** A Builder's map ping (see FVD::flare). */
+struct FVDFlare {
+	uint64_t flare_id;
+	player_id_t owner;
+	coord::phys3 position;
+	time::time_t created_at;
+};
+
 /** Side whose shared vision a player uses. */
 enum class FVDTeam : uint8_t {
 	HUNTER = 1,
@@ -409,6 +417,20 @@ public:
 
 	/** Definition of the rally point marker, which only the Hunter may see. */
 	const std::string &get_hunter_rally_marker_definition() const;
+
+	/** Seconds a flare stays on screen, and the minimum gap between one player's flares. */
+	static constexpr int64_t FLARE_LIFETIME_SECONDS = 5;
+	static constexpr int64_t FLARE_COOLDOWN_SECONDS = 2;
+
+	/**
+	 * A Builder player marks a map position for the other Builders.
+	 * Rejected for the Hunter, positions off the map, after the match, and
+	 * within FLARE_COOLDOWN_SECONDS of that player's previous flare.
+	 */
+	bool flare(player_id_t owner, const coord::phys3 &position, const time::time_t &time);
+
+	/** Flares still showing at `now`, oldest first. Thread-safe. */
+	std::vector<FVDFlare> get_flares(const time::time_t &now) const;
 
 	/**
 	 * Play without the Hunter tower: remove it, free its tile and spawn
@@ -732,6 +754,11 @@ private:
 		time::time_t launch_time;
 		time::time_t impact_time;
 	};
+	mutable std::mutex flares_mutex;
+	std::vector<FVDFlare> flares;
+	std::unordered_map<player_id_t, time::time_t> last_flare_at;
+	uint64_t next_flare_id = 1;
+
 	mutable std::mutex arrow_visuals_mutex;
 	std::vector<ArrowVisual> arrow_visuals;
 	bool projectile_replication_enabled = false;

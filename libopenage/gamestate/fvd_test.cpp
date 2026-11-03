@@ -1835,6 +1835,70 @@ void fvd_match_end_garrison_and_hunter_stop() {
 	}
 }
 
+// Builder flares: Builders only, on the map, rate-limited, five seconds,
+// sent to every Builder and never to the Hunter.
+void fvd_builder_flare() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	auto t = [](double seconds) { return time::time_t::from_double(seconds); };
+	const coord::phys3 spot{70, 70, 0};
+
+	TESTEQUALS(fvd->flare(1, spot, t(1)), false); // the Hunter
+	TESTEQUALS(fvd->flare(0, spot, t(1)), false);
+	TESTEQUALS(fvd->flare(9, spot, t(1)), false); // no such player
+	TESTEQUALS(fvd->flare(2, {-1, 5, 0}, t(1)), false); // off the map
+	TESTEQUALS(fvd->flare(2, spot, t(1)), true);
+	TESTEQUALS(fvd->flare(2, spot, t(2.5)), false); // 2 s cooldown
+	TESTEQUALS(fvd->flare(3, spot, t(2.5)), true); // per player
+	TESTEQUALS(fvd->flare(2, spot, t(3)), true);
+	TESTEQUALS(fvd->get_flares(t(3)).size(), size_t{3});
+	TESTEQUALS(fvd->get_flares(t(6)).size(), size_t{2}); // the first expired at 6 s
+	TESTEQUALS(fvd->get_flares(t(9)).size(), size_t{0});
+
+	// Through the normal command path, as the HUD and the network send it.
+	bool accepted = false;
+	event::SendCommandHandler command;
+	auto send = [&](player_id_t owner, std::vector<entity_id_t> ids, const time::time_t &at) {
+		accepted = false;
+		command.invoke(*loop, nullptr, state, at,
+		               {{"type", component::command::command_t::FLARE},
+		                {"owner", owner}, {"entity_ids", ids}, {"target", spot},
+		                {"result_cb", std::function<void(bool)>{[&](bool ok) { accepted = ok; }}}});
+		return accepted;
+	};
+	TESTEQUALS(send(4, {}, t(10)), true);
+	TESTEQUALS(send(5, {1}, t(10)), false); // a flare names no units
+	TESTEQUALS(send(1, {}, t(10)), false);
+
+	// Every Builder receives it; the Hunter's world has none, before and
+	// after the wire.
+	network::MatchConnectionState connections{fvd->get_player_count()};
+	for (gamestate::player_id_t recipient = 2; recipient <= 8; ++recipient) {
+		auto world = network::decode_world_state(network::encode_world_state(
+			network::capture_fvd_state(state, connections, t(10), 0, 1, recipient)));
+		TESTEQUALS(world.flares.size(), size_t{1});
+		TESTEQUALS(world.flares.front().owner_id, gamestate::player_id_t{4});
+	}
+	auto hunter_world = network::capture_fvd_state(state, connections, t(10), 0, 1, 1);
+	TESTEQUALS(hunter_world.flares.empty(), true);
+
+	// No flares once the match is over.
+	fvd->start_hunter_wave(state, t(10));
+	fvd->evaluate_match_outcome(state, t(11), {2, 3, 4, 5, 6, 7, 8});
+	TESTEQUALS(fvd->flare(6, spot, t(12)), false);
+}
+
 void fvd_hunter_spawning() {
 	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
 	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");

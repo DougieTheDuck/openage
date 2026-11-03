@@ -43,6 +43,7 @@ auto reservation_key = [](const TileReservation &r) { return r.tile; };
 auto construction_key = [](const ConstructionState &r) { return r.order_id; };
 auto attack_key = [](const AttackOrderState &r) { return r.horse_id; };
 auto arrow_key = [](const ArrowState &r) { return r.arrow_id; };
+auto flare_key = [](const FlareState &r) { return r.flare_id; };
 
 bool same(const PlayerState &a, const PlayerState &b) {
 	return a.player_id == b.player_id and a.role == b.role and a.connected == b.connected;
@@ -383,6 +384,17 @@ WorldDelta make_world_delta(const WorldState &previous, const WorldState &curren
 			delta.changed.arrows.push_back(arrow);
 		}
 	}
+	// Flares are immutable timed events too: send new ones only; every
+	// client drops them FLARE_SECONDS after creation.
+	std::unordered_set<uint64_t> old_flares;
+	for (const auto &flare : previous.flares) {
+		old_flares.insert(flare.flare_id);
+	}
+	for (const auto &flare : current.flares) {
+		if (not old_flares.contains(flare.flare_id)) {
+			delta.changed.flares.push_back(flare);
+		}
+	}
 	return delta;
 }
 
@@ -467,10 +479,18 @@ WorldState apply_world_delta(const WorldState &previous, const WorldDelta &delta
 		return arrow.impact_time + event_grace <= changed.simulation_time
 		    and not newly_received_arrows.contains(arrow.arrow_id);
 	});
+	static const std::vector<uint64_t> no_removed_flares{};
+	patch(next.flares, changed.flares, no_removed_flares, flare_key);
+	std::erase_if(next.flares, [&](const FlareState &flare) {
+		return flare.created_at + time::time_t::from_int(FLARE_SECONDS) <= changed.simulation_time;
+	});
 	if (std::none_of(next.players.begin(), next.players.end(), [&](const auto &player) {
 		return player.player_id == next.local_player_id;
 	})) {
 		throw Error{MSG(err) << "FVD delta removed the assigned player"};
+	}
+	if (next.local_player_id == 1 and not next.flares.empty()) {
+		throw Error{MSG(err) << "FVD delta disclosed Builder flares to the Hunter"};
 	}
 	for (const auto &entity : next.entities) {
 		if (entity.tower_kills and (entity.owner_id != next.local_player_id

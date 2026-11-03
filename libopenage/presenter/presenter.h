@@ -234,12 +234,28 @@ protected:
 	 */
 	bool fvd_minimap_look_at(const QPointF &position);
 
+	/** Map position (tile centre) under a window position on the minimap. */
+	std::optional<coord::phys3> fvd_minimap_position(const QPointF &position) const;
+
 	/** When the minimap image was last painted, and for which state. */
 	std::chrono::steady_clock::time_point fvd_minimap_painted{};
 	std::optional<time::time_t> fvd_minimap_time{};
 	uint32_t fvd_minimap_size{0};
 	/** Left button went down on the minimap and is still held. */
 	bool fvd_minimap_dragging{false};
+
+	/** Flare mode: the next left-click on the map or minimap flares there. */
+	bool fvd_flare_mode{false};
+	/** Swallow the release of the click that placed or cancelled a flare. */
+	bool fvd_flare_swallow_release{false};
+	/** Newest flare already announced with a sound. */
+	uint64_t fvd_last_flare_heard{0};
+
+	/** Arm or disarm flare mode (Builders in a match only). */
+	void set_fvd_flare_mode(bool on);
+
+	/** Send a flare at a map position through the local or guest command path. */
+	void send_fvd_flare(const coord::phys3 &position);
 
 	/** Options panel shown under the top-right Options button. */
 	bool fvd_options_open{false};

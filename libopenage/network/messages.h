@@ -42,6 +42,8 @@ constexpr uint32_t MAX_STATE_RESERVATIONS = 16384;
 constexpr uint32_t MAX_STATE_CONSTRUCTIONS = 1024;
 constexpr uint32_t MAX_STATE_ATTACK_ORDERS = 16384;
 constexpr uint32_t MAX_STATE_ARROWS = 2048;
+/** Flares live for a few seconds and are rate-limited; this is generous. */
+constexpr uint32_t MAX_STATE_FLARES = 64;
 /** Bounded future position keyframes sent per entity and snapshot. */
 constexpr uint16_t MAX_ENTITY_MOTION_KEYS = 16;
 constexpr uint16_t MAX_ENTITY_FACING_KEYS = 16;
@@ -69,6 +71,8 @@ enum class CommandKind : uint16_t {
 	UNGARRISON = 11,
 	/** Set the ejection destination or an adjacent tower-hop target. */
 	SET_UNGARRISON_POINT = 12,
+	/** A Builder marks a map position for the other Builders. No entities. */
+	FLARE = 13,
 };
 
 /** Host decision for one client command. */
@@ -289,6 +293,22 @@ struct ArrowState {
 	time::time_t impact_time{};
 };
 
+/**
+ * A Builder's map ping. Sent only to Builders; expires locally FLARE_SECONDS
+ * after `created_at`, so, like arrows, it needs no removal on the wire.
+ */
+struct FlareState {
+	uint64_t flare_id{0};
+	gamestate::player_id_t owner_id{0};
+	coord::phys3 position{0, 0, 0};
+	time::time_t created_at{};
+
+	bool operator==(const FlareState &other) const = default;
+};
+
+/** How long a flare is shown. */
+constexpr int64_t FLARE_SECONDS = 5;
+
 /** The authoritative winner, never inferred by a recipient from fogged state. */
 enum class MatchWinner : uint16_t {
 	HUNTER = 1,
@@ -327,6 +347,8 @@ struct WorldState {
 	std::vector<ConstructionState> constructions{};
 	std::vector<AttackOrderState> attack_orders{};
 	std::vector<ArrowState> arrows{};
+	/** Builder flares; never present in the Hunter's world. */
+	std::vector<FlareState> flares{};
 	/**
 	 * The recipient's side's view on the wire (in a delta: only when it
 	 * changed); both sides in a local presentation snapshot.

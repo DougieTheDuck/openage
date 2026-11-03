@@ -38,6 +38,21 @@ Item {
 	readonly property int minimapPixels: hud === null || hud.minimapPixels === undefined ? 0 : hud.minimapPixels
 	readonly property var minimapView: hud === null || hud.minimapView === undefined ? [] : hud.minimapView
 	readonly property bool optionsOpen: hud !== null && hud.optionsOpen === true
+	readonly property bool flaring: hud !== null && hud.flaring === true
+	readonly property var flareMarkers: hud === null || hud.flareMarkers === undefined ? [] : hud.flareMarkers
+	readonly property var minimapFlares: hud === null || hud.minimapFlares === undefined ? [] : hud.minimapFlares
+
+	// Five-pointed star path, centred on (x, y).
+	function starPath(ctx, x, y, outer, inner) {
+		ctx.beginPath()
+		for (var i = 0; i < 10; ++i) {
+			var r = i % 2 === 0 ? outer : inner
+			var a = -Math.PI / 2 + i * Math.PI / 5
+			if (i === 0) ctx.moveTo(x + r * Math.cos(a), y + r * Math.sin(a))
+			else ctx.lineTo(x + r * Math.cos(a), y + r * Math.sin(a))
+		}
+		ctx.closePath()
+	}
 	readonly property bool musicOn: hud === null || hud.musicOn !== false
 	readonly property bool effectsOn: hud === null || hud.effectsOn !== false
 	readonly property string audioNote: hud === null || hud.audioNote === undefined ? "" : hud.audioNote
@@ -732,6 +747,32 @@ Item {
 		}
 	}
 
+	// Flares on the minimap, drawn above the diamond so stars keep their shape.
+	Canvas {
+		id: minimapFlareLayer
+		parent: minimapPanel
+		anchors.fill: parent
+		visible: root.minimapFlares.length > 0
+		onPaint: {
+			var ctx = getContext("2d")
+			ctx.reset()
+			for (var i = 0; i < root.minimapFlares.length; ++i) {
+				var f = root.minimapFlares[i]
+				var p = minimapSurface.mapToItem(minimapPanel, f.x, f.y)
+				root.starPath(ctx, p.x, p.y, 7, 3)
+				ctx.fillStyle = root.flagColor(f.player)
+				ctx.fill()
+				ctx.lineWidth = 1
+				ctx.strokeStyle = "#ffffff"
+				ctx.stroke()
+			}
+		}
+		Connections {
+			target: root
+			function onMinimapFlaresChanged() { minimapFlareLayer.requestPaint() }
+		}
+	}
+
 	Rectangle {
 		id: buildPanel
 		objectName: "fvdBuildPanel"
@@ -915,6 +956,24 @@ Item {
 				}
 			}
 			Rectangle {
+				objectName: "fvdFlareButton"
+				visible: root.hud !== null && root.hud.controlled >= 2
+				width: 252
+				height: 32
+				radius: 4
+				color: root.flaring ? "#ae6e30" : "#3e7862"
+				border.width: 1
+				border.color: "#b5d9c4"
+
+				Text {
+					anchors.centerIn: parent
+					color: "#ffffff"
+					font.bold: true
+					font.pixelSize: 14
+					text: root.flaring ? "Click the map to flare (Esc cancels)" : "Flare (F)"
+				}
+			}
+			Rectangle {
 				objectName: "fvdCancelButton"
 				visible: root.canAttack && root.targeting
 				width: 252
@@ -937,6 +996,43 @@ Item {
 					cursorShape: Qt.PointingHandCursor
 				}
 			}
+		}
+	}
+
+	// Builder flares: a pulsing star in the flaring player's colour with an
+	// expanding ring, fading out over five seconds.
+	Canvas {
+		id: flareLayer
+		anchors.fill: parent
+		z: 8
+		visible: root.flareMarkers.length > 0
+		onPaint: {
+			var ctx = getContext("2d")
+			ctx.reset()
+			for (var i = 0; i < root.flareMarkers.length; ++i) {
+				var f = root.flareMarkers[i]
+				var fade = Math.max(0, 1 - f.age / 5)
+				var pulse = 1 + 0.18 * Math.sin(f.age * 9)
+				var color = root.flagColor(f.player)
+				ctx.globalAlpha = fade * 0.8
+				ctx.strokeStyle = color
+				ctx.lineWidth = 3
+				ctx.beginPath()
+				ctx.arc(f.x, f.y, 14 + (f.age % 1.25) * 40, 0, Math.PI * 2)
+				ctx.stroke()
+				ctx.globalAlpha = fade
+				root.starPath(ctx, f.x, f.y - 18, 20 * pulse, 8.5 * pulse)
+				ctx.fillStyle = color
+				ctx.fill()
+				ctx.lineWidth = 2
+				ctx.strokeStyle = "#ffffff"
+				ctx.stroke()
+			}
+			ctx.globalAlpha = 1
+		}
+		Connections {
+			target: root
+			function onFlareMarkersChanged() { flareLayer.requestPaint() }
 		}
 	}
 

@@ -53,6 +53,8 @@ gamestate::component::command::command_t simulation_command(CommandKind kind) {
 		return gamestate::component::command::command_t::UNGARRISON;
 	case CommandKind::SET_UNGARRISON_POINT:
 		return gamestate::component::command::command_t::SET_UNGARRISON_POINT;
+	case CommandKind::FLARE:
+		return gamestate::component::command::command_t::FLARE;
 	default:
 		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
 		                     << static_cast<uint16_t>(kind)};
@@ -235,6 +237,9 @@ WorldState capture_fvd_presentation_state(
 			order.focus_target,
 		});
 	}
+	for (const auto &flare : fvd->get_flares(time)) {
+		result.flares.push_back({flare.flare_id, flare.owner, flare.position, flare.created_at});
+	}
 	// Local presentation shows whichever side is controlled, so keep both.
 	for (auto team : {gamestate::FVDTeam::HUNTER, gamestate::FVDTeam::BUILDERS}) {
 		auto vision = fvd->get_vision(team);
@@ -394,6 +399,8 @@ WorldState capture_fvd_state(
 		result.attack_orders.clear();
 	}
 	else {
+		// Flares are Builder team talk: the Hunter is never sent them.
+		result.flares.clear();
 		std::unordered_set<gamestate::entity_id_t> included;
 		for (const auto &entity : result.entities) {
 			included.insert(entity.entity_id);

@@ -8,6 +8,60 @@
 
 namespace openage::network::tests {
 
+// Flares cross the wire in snapshots and deltas, expire locally after
+// FLARE_SECONDS, and are refused in the Hunter's world.
+void world_delta_flares() {
+	WorldState before{};
+	before.map_size = 128;
+	before.local_player_id = 2;
+	before.world_revision = 1;
+	before.simulation_time = time::time_t::from_int(10);
+	before.players = {{1, PlayerRole::HUNTER}, {2, PlayerRole::BUILDER}, {3, PlayerRole::BUILDER}};
+
+	auto after = before;
+	after.world_revision = 2;
+	after.simulation_time = time::time_t::from_int(11);
+	after.flares = {{7, 3, {40, 41, 0}, time::time_t::from_int(11)}};
+
+	TESTEQUALS(decode_world_state(encode_world_state(after)).flares, after.flares);
+	auto delta = decode_world_delta(encode_world_delta(make_world_delta(before, after)));
+	TESTEQUALS(delta.changed.flares.size(), size_t{1});
+	auto applied = apply_world_delta(before, delta);
+	TESTEQUALS(applied.flares, after.flares);
+
+	// An unchanged flare is not resent, and it disappears on its own.
+	auto later = after;
+	later.world_revision = 3;
+	later.simulation_time = time::time_t::from_int(13);
+	auto quiet = make_world_delta(after, later);
+	TESTEQUALS(quiet.changed.flares.empty(), true);
+	TESTEQUALS(apply_world_delta(applied, quiet).flares.size(), size_t{1});
+	auto expired = later;
+	expired.world_revision = 4;
+	expired.simulation_time = time::time_t::from_int(16);
+	expired.flares.clear();
+	TESTEQUALS(apply_world_delta(apply_world_delta(applied, quiet),
+	                             make_world_delta(later, expired)).flares.empty(), true);
+
+	// Malformed flares are rejected.
+	auto invalid = after;
+	invalid.flares.front().owner_id = 1;
+	TESTTHROWS(encode_world_state(invalid));
+
+	// A Hunter client never accepts Builder flares.
+	auto hunter_before = before;
+	hunter_before.local_player_id = 1;
+	auto hunter_after = after;
+	hunter_after.local_player_id = 1;
+	TESTTHROWS(apply_world_delta(hunter_before, make_world_delta(hunter_before, hunter_after)));
+
+	// The FLARE command carries only a position.
+	CommandIntent flare{5, CommandKind::FLARE, {}, {40, 41, 0}};
+	TESTEQUALS(decode_command_intent(encode_command_intent(flare)).kind, CommandKind::FLARE);
+	flare.entity_ids = {3};
+	TESTTHROWS(encode_command_intent(flare));
+}
+
 void world_delta() {
 	WorldState initial{};
 	initial.map_size = 128;

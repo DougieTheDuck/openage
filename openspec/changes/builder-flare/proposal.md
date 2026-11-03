@@ -25,4 +25,4 @@ coming this way") without typing. AoE2 players use flares for this.
 
 ## Status
 
-Proposed (Dougie, 2026-11-03). Not implemented. Needs a protocol bump.
+Implemented (Dougie, 2026-11-03). Protocol 22.

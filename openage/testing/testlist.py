@@ -124,6 +124,7 @@ def tests_cpp():
     )
     yield "openage::network::tests::replication"
     yield "openage::network::tests::world_delta"
+    yield "openage::network::tests::world_delta_flares", "FVD flares cross the wire and never reach the Hunter"
     yield "openage::network::tests::transport"
     yield (
         "openage::network::tests::transport_high_fd",
@@ -269,6 +270,11 @@ def tests_cpp():
     yield (
         "openage::gamestate::tests::fvd_match_end_garrison_and_hunter_stop",
         "FVD garrisoned Builders count as alive; the Hunter tower and spawns stop after the match",
+        lambda env: env["has_assets"],
+    )
+    yield (
+        "openage::gamestate::tests::fvd_builder_flare",
+        "FVD Builder flares: Builders only, rate-limited, five seconds, never sent to the Hunter",
         lambda env: env["has_assets"],
     )
     yield (
