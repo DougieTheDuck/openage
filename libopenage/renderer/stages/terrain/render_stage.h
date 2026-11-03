@@ -87,6 +87,13 @@ public:
 	void set_fog(size_t map_size, const std::vector<uint8_t> &levels);
 
 	/**
+	 * Control the visual fog transition width in tile units, 0 to 1.
+	 * This affects only the terrain shader; visibility and replication
+	 * continue using unmodified per-tile fog bitsets.
+	 */
+	void set_fog_edge_width(float tile_width);
+
+	/**
 	 * Add a new render entity to the terrain renderer.
 	 *
 	 * This creates a new terrain chunk and add it to the model.
@@ -171,6 +178,7 @@ private:
 	std::shared_ptr<renderer::Texture2d> fog_texture;
 	bool fog_enabled = false;
 	size_t fog_map_size = 1;
+	float fog_edge_width = 0.55f;
 
 	/** Apply the fog uniforms to one terrain mesh's uniform input. */
 	void apply_fog(const std::shared_ptr<renderer::UniformInput> &uniforms) const;
