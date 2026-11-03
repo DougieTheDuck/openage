@@ -2,6 +2,8 @@
 
 #include "render_stage.h"
 
+#include <algorithm>
+
 #include "error/error.h"
 
 #include "renderer/camera/camera.h"
@@ -103,10 +105,23 @@ void TerrainRenderStage::set_fog(size_t map_size, const std::vector<uint8_t> &le
 	}
 }
 
+void TerrainRenderStage::set_fog_edge_width(float tile_width) {
+	std::unique_lock lock{this->mutex};
+	this->fog_edge_width = std::clamp(tile_width, 0.0f, 1.0f);
+	for (auto &chunk : this->model->get_chunks()) {
+		for (auto &mesh : chunk->get_meshes()) {
+			if (mesh->get_uniforms()) {
+				mesh->get_uniforms()->update("fog_edge_width", this->fog_edge_width);
+			}
+		}
+	}
+}
+
 void TerrainRenderStage::apply_fog(const std::shared_ptr<renderer::UniformInput> &uniforms) const {
 	uniforms->update("fog", this->fog_texture);
 	uniforms->update("fog_enabled", this->fog_enabled);
 	uniforms->update("fog_map_size", static_cast<float>(this->fog_map_size));
+	uniforms->update("fog_edge_width", this->fog_edge_width);
 }
 
 void TerrainRenderStage::add_render_entity(const std::shared_ptr<RenderEntity> entity,
