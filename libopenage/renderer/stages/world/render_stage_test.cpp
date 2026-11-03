@@ -135,7 +135,7 @@ void structure_shadow_depth() {
 
 	// Render the smaller Builder at native texture resolution so this test
 	// measures team-colour coverage independently of its gameplay scale.
-	camera->set_zoom(0.125f);
+	camera->set_zoom(0.1375f);
 	camera_manager->update();
 	auto render_builder = [&](uint64_t owner) {
 		stage->clear_entities();

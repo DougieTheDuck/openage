@@ -50,7 +50,7 @@ Builder(engine.util.game_entity.GameEntity):
             AttributeSetting.starting_value = 25
 
     Move(engine.ability.type.Move):
-        Move.speed = 3.0
+        Move.speed = 2.8
         Move.modes = {}
         Move.path_type = fvd.data.terrain.Land
         Ability.properties = {engine.ability.property.type.Animated: Animated}
@@ -59,7 +59,7 @@ Builder(engine.util.game_entity.GameEntity):
             Animated.animations = {Animation}
 
             Animation(engine.util.graphics.Animation):
-                Animation.sprite = "../../../fvd/graphics/builder.sprite"
+                Animation.sprite = "../../../fvd/graphics/builder/builder_walk.sprite"
 
     Turn(engine.ability.type.Turn):
         Turn.turn_speed = inf

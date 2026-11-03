@@ -191,12 +191,15 @@ void fvd_scenario() {
 	auto graphics = root / "assets" / "fvd" / "graphics";
 	auto plains_graphics = renderer::resources::parser::parse_terrain_file(graphics / "grass.terrain");
 	auto builder_graphics = renderer::resources::parser::parse_sprite_file(graphics / "builder.sprite");
+	auto builder_walk = renderer::resources::parser::parse_sprite_file(
+		graphics / "builder" / "builder_walk.sprite");
 	auto foundation_graphics = renderer::resources::parser::parse_sprite_file(graphics / "foundation.sprite");
 	auto tower_graphics = renderer::resources::parser::parse_sprite_file(graphics / "tower.sprite");
 	auto tower_demolition_graphics = renderer::resources::parser::parse_sprite_file(
 		graphics / "fvd_stone_tower_demolition.sprite");
 	TESTEQUALS(plains_graphics.get_texture_count(), 1);
 	TESTEQUALS(builder_graphics.get_texture_count(), 1);
+	TESTEQUALS(builder_walk.get_texture_count(), size_t{2});
 	auto horse_idle1 = renderer::resources::parser::parse_sprite_file(
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-idle1.sprite");
 	auto horse_idle2 = renderer::resources::parser::parse_sprite_file(
@@ -213,6 +216,7 @@ void fvd_scenario() {
 	TESTEQUALS(horse_attack.get_texture_count(), size_t{1});
 	TESTEQUALS(horse_death.get_texture_count(), size_t{4});
 	const auto &builder_layer = builder_graphics.get_layer(0);
+	const auto &builder_walk_layer = builder_walk.get_layer(0);
 	const auto &horse_idle1_layer = horse_idle1.get_layer(0);
 	const auto &horse_idle2_layer = horse_idle2.get_layer(0);
 	const auto &horse_gallop_layer = horse_gallop.get_layer(0);
@@ -222,6 +226,8 @@ void fvd_scenario() {
 	const auto &tower_demolition_layer = tower_demolition_graphics.get_layer(0);
 	TESTEQUALS(builder_layer.get_display_mode(),
 	           renderer::resources::display_mode::OFF);
+	TESTEQUALS(builder_walk_layer.get_display_mode(),
+	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_idle1_layer.get_display_mode(),
 	           renderer::resources::display_mode::LOOP);
 	TESTEQUALS(horse_idle2_layer.get_display_mode(),
@@ -239,6 +245,7 @@ void fvd_scenario() {
 	TESTEQUALS(tower_demolition_layer.get_time_per_frame(), 0.125f);
 	TESTEQUALS(tower_demolition_layer.get_frame_timing()->size(), size_t{14});
 	TESTEQUALS(builder_layer.get_angle_count(), size_t{1});
+	TESTEQUALS(builder_walk_layer.get_angle_count(), size_t{16});
 	const auto &builder_angle = builder_layer.get_direction_angle(0.0f);
 	TESTEQUALS(builder_angle->get_frame_count(), size_t{1});
 	TESTEQUALS(builder_angle->get_frame(0)->get_texture_idx(), size_t{0});
@@ -250,12 +257,14 @@ void fvd_scenario() {
 	TESTEQUALS(horse_death_layer.get_angle_count(), size_t{16});
 	// A frame duration is measured in seconds, not milliseconds.
 	TESTEQUALS(horse_gallop_layer.get_time_per_frame(), 0.08f);
+	TESTEQUALS(builder_walk_layer.get_time_per_frame(), 1.0f / 60.0f);
 	TESTEQUALS(horse_idle1_layer.get_time_per_frame(), 0.15f);
 	TESTEQUALS(horse_idle2_layer.get_time_per_frame(), 0.4f);
 	TESTEQUALS(horse_attack_layer.get_time_per_frame(), 0.0375f);
 	TESTEQUALS(horse_death_layer.get_time_per_frame(), 0.05f);
 	TESTEQUALS(tower_layer.get_time_per_frame(), 0.125f);
 	TESTEQUALS(horse_gallop_layer.get_frame_timing()->size(), size_t{12});
+	TESTEQUALS(builder_walk_layer.get_frame_timing()->size(), size_t{30});
 	TESTEQUALS(horse_idle1_layer.get_frame_timing()->size(), size_t{24});
 	TESTEQUALS(horse_idle2_layer.get_frame_timing()->size(), size_t{12});
 	TESTEQUALS(horse_attack_layer.get_frame_timing()->size(), size_t{16});
@@ -267,7 +276,7 @@ void fvd_scenario() {
 		TESTEQUALS(tower_angle->get_frame(frame)->get_texture_idx(), size_t{0});
 		TESTEQUALS(tower_angle->get_frame(frame)->get_subtexture_idx(), frame);
 	}
-	const std::array<std::pair<float, size_t>, 16> horse_direction_rows{{
+	const std::array<std::pair<float, size_t>, 16> direction_rows{{
 		{0.0f, 15},
 		{22.0f, 14},
 		{45.0f, 13},
@@ -285,12 +294,23 @@ void fvd_scenario() {
 		{315.0f, 1},
 		{337.0f, 0},
 	}};
-	for (const auto &[angle, row] : horse_direction_rows) {
+	for (const auto &[angle, row] : direction_rows) {
+		const auto &builder_walk_angle = builder_walk_layer.get_direction_angle(angle);
 		const auto &idle1_angle = horse_idle1_layer.get_direction_angle(angle);
 		const auto &idle2_angle = horse_idle2_layer.get_direction_angle(angle);
 		const auto &gallop_angle = horse_gallop_layer.get_direction_angle(angle);
 		const auto &attack_angle = horse_attack_layer.get_direction_angle(angle);
 		const auto &death_angle = horse_death_layer.get_direction_angle(angle);
+		TESTEQUALS(builder_walk_angle->get_frame_count(), size_t{30});
+		const auto builder_walk_source_row = (row + 15) % 16;
+		const auto builder_walk_texture = builder_walk_source_row / 8;
+		const auto builder_walk_row = builder_walk_source_row % 8;
+		for (size_t frame = 0; frame < 30; ++frame) {
+			TESTEQUALS(builder_walk_angle->get_frame(frame)->get_texture_idx(),
+			           builder_walk_texture);
+			TESTEQUALS(builder_walk_angle->get_frame(frame)->get_subtexture_idx(),
+			           builder_walk_row * 30 + frame);
+		}
 		TESTEQUALS(idle1_angle->get_frame_count(), size_t{24});
 		TESTEQUALS(idle2_angle->get_frame_count(), size_t{12});
 		const auto idle1_texture = row < 8 ? size_t{0} : size_t{1};
@@ -334,6 +354,17 @@ void fvd_scenario() {
 	TESTEQUALS(builder_sheet.get_subtex_count(), size_t{1});
 	TESTEQUALS(builder_sheet.get_subtex_info(0).get_anchor_pos()[0], 540);
 	TESTEQUALS(builder_sheet.get_subtex_info(0).get_anchor_pos()[1], 740);
+	for (const auto &walk_name : {"builder_walk_page_00.texture",
+	                             "builder_walk_page_01.texture"}) {
+		auto walk_sheet = renderer::resources::parser::parse_texture_file(
+			graphics / "builder" / walk_name);
+		TESTEQUALS(walk_sheet.get_size(), (std::pair<int32_t, int32_t>{4096, 4096}));
+		TESTEQUALS(walk_sheet.get_subtex_count(), size_t{240});
+		TESTEQUALS(walk_sheet.get_subtex_info(0).get_anchor_pos()[0], 128);
+		TESTEQUALS(walk_sheet.get_subtex_info(0).get_anchor_pos()[1], 192);
+		TESTEQUALS(walk_sheet.get_subtex_info(239).get_anchor_pos()[0], 128);
+		TESTEQUALS(walk_sheet.get_subtex_info(239).get_anchor_pos()[1], 192);
+	}
 	auto horse_sheet = renderer::resources::parser::parse_texture_file(
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-gallop.texture");
 	TESTEQUALS(horse_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
@@ -384,11 +415,14 @@ void fvd_scenario() {
 	}
 	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);
-	TESTEQUALS(builder_graphics.get_scalefactor(), 0.125f);
+	TESTEQUALS(builder_graphics.get_scalefactor(), 0.1375f);
+	TESTEQUALS(builder_walk.get_scalefactor(), 0.55f);
 	TESTEQUALS(tower_graphics.get_scalefactor(), 0.5f);
 	TESTEQUALS(horse_death.get_scalefactor(), 2.0f);
 	for (const auto &info : {plains_graphics.get_texture(0),
 	                        builder_graphics.get_texture(0),
+	                        builder_walk.get_texture(0),
+	                        builder_walk.get_texture(1),
 	                        horse_idle1.get_texture(0),
 	                        horse_idle1.get_texture(1),
 	                        horse_idle2.get_texture(0),
@@ -436,6 +470,23 @@ void fvd_scenario() {
 		const auto parsed = renderer::resources::parser::parse_sprite_file(sprite);
 		TESTEQUALS(parsed.get_texture_count(), texture_count);
 	}
+	const auto builder_move = state->get_db_view()->get_object(
+		"fvd.data.entities.Builder.Move");
+	const auto builder_move_animated = api::APIAbility::get_property(
+		builder_move, api::ability_property_t::ANIMATED);
+	const auto builder_move_animations = api::APIAbilityProperty::get_animations(
+		builder_move_animated);
+	const auto builder_move_paths = api::APIAnimation::get_animation_paths(
+		builder_move_animations);
+	TESTEQUALS(builder_move_paths.size(), size_t{1});
+	TESTEQUALS(builder_move_paths.front().ends_with("builder_walk.sprite"), true);
+	const auto builder_move_sprite = root / "assets" / "converted" / builder_move_paths.front();
+	TESTEQUALS(builder_move_sprite.is_file(), true);
+	const auto parsed_builder_move = renderer::resources::parser::parse_sprite_file(
+		builder_move_sprite);
+	TESTEQUALS(parsed_builder_move.get_texture_count(), size_t{2});
+	TESTEQUALS(parsed_builder_move.get_layer(0).get_angle_count(), size_t{16});
+	TESTEQUALS(parsed_builder_move.get_layer(0).get_frame_timing()->size(), size_t{30});
 	const auto horse_idle = state->get_db_view()->get_object(
 		"fvd.data.entities.Horse.Idle");
 	const auto horse_idle_animated = api::APIAbility::get_property(

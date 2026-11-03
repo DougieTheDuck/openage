@@ -3,12 +3,11 @@
 This directory contains original development graphics for the FVD tower defense prototype.
 The initial set uses a fixed orthographic isometric view, neutral upper-left lighting, transparent sprite backgrounds, and a flat seamless terrain texture.
 
-Builders currently use the single-frame `builder.sprite` for both idle and movement.
-Magenta clothing in `builder.png` is recoloured for the owning player by the world sprite shader.
-The retained Orc spritesheets can be used when directional Builder animations are ready.
+Builders use the single-frame `builder.sprite` while idle and a 30-frame, 16-direction walk cycle while moving.
+Magenta clothing in the Builder graphics is recoloured for the owning player by the world sprite shader.
 
 To try it, start a solo match with `bin/run game --solo --modpacks fvd`, select your Builder and right-click around the map.
-The still Builder graphic should remain anchored to its world position while moving.
+The Builder walk cycle lasts half a second and follows its movement direction.
 Hunter Horses use a 12-frame gallop cycle for each of 16 directions at 0.08 seconds per frame.
 Every Builder constructs the same medieval tower, whose sixteen 512 by 512 idle frames advance every 0.125 seconds.
 Their 16-frame attack cycle lasts 0.6 seconds, matching the authoritative melee cooldown, and damage lands at the 75% hit frame.
