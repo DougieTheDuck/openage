@@ -68,8 +68,16 @@ presenter reduces the local snapshot to the controlled side's view with
 the same filter and conceals the hidden entities' sprites
 (`WorldRenderStage::set_concealed`), which also excludes them from
 picking. The terrain shader darkens ground through a per-tile fog texture:
-black when unexplored, 45% when explored, full brightness when visible,
-with linear filtering softening the edge. Remembered buildings are
+black when unexplored, 45% when explored, full brightness when visible.
+The texture is intentionally nearest-filtered (the renderer's default);
+the terrain fragment shader explicitly interpolates the brightness of four
+neighbouring fog texels around their tile centres. Smoothstep confines the
+transition to 0.55 tile widths (adjustable with
+`TerrainRenderStage::set_fog_edge_width`; zero restores hard edges), and
+small static, deterministic sine-wave offsets soften long straight contours.
+Texel coordinates are clamped at map boundaries, so the fog does not wrap.
+This is a *render-only* treatment: simulation, input picking, replicated
+visibility and enemy sprite filtering retain hard per-tile rules. Remembered buildings are
 drawn at the same 45% through a `brightness` uniform on the sprite
 shader (`WorldRenderStage::set_dimmed`); the local view turns hidden
 remembered buildings into the same bare `remembered` records a guest
