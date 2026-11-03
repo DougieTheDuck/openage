@@ -1604,6 +1604,32 @@ void Presenter::render() {
 		util::StallProfiler profile{"render.terrain_update"};
 		this->terrain_renderer->update();
 	}
+	// The white selection ring lives in the world pass, behind unit sprites.
+	// Only FVD's movable Builders/Horses receive it. Do this before updating
+	// world renderables so the ring uses their current interpolated positions.
+	std::vector<uint32_t> selected_unit_ids;
+	float selected_footprint_width = 0.0f;
+	if (this->fvd_hud_state and this->game_controller) {
+		const auto selection = this->game_controller->get_selection_details();
+		switch (selection.kind) {
+		case input::game::SelectionKind::BUILDER:
+			selected_footprint_width = 0.5f;
+			break;
+		case input::game::SelectionKind::HORSE:
+		case input::game::SelectionKind::GROUP_HORSES:
+			selected_footprint_width = 0.8f;
+			break;
+		default:
+			break;
+		}
+		if (selected_footprint_width > 0.0f) {
+			for (const auto id : selection.ids) {
+				selected_unit_ids.push_back(static_cast<uint32_t>(id));
+			}
+		}
+	}
+	this->world_renderer->set_selected_unit_rings(
+		selected_unit_ids, selected_footprint_width);
 	{
 		util::StallProfiler profile{"render.world_update"};
 		this->world_renderer->update(guest_time);
