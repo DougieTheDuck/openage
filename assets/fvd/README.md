@@ -77,6 +77,25 @@ scenery you want to remain magenta.
 The same image should show two different team hues without creating extra texture files.
 Full GPU compilation and visual acceptance must still be checked on Windows and Linux.
 
+## Soft fog-of-war edges
+
+FVD now blends fog boundaries directly in `assets/shaders/terrain.frag.glsl`;
+no new alpha fog images or corner sprites are needed. The same per-tile fog
+state (black unexplored / 45% explored / fully lit visible) is sent by the
+simulation and the relay. The shader interpolates only the **terrain
+brightness** across roughly **0.55 tile** with a subtle static irregularity.
+Enemy visibility, picking, remembered structures and command validation still
+use exact tile visibility, with no networking changes.
+
+To adjust softness, change the default `fog_edge_width = 0.55f` in
+`libopenage/renderer/stages/terrain/render_stage.h` or call
+`TerrainRenderStage::set_fog_edge_width(width_in_tiles)` (clamped 0–1).
+A value of `0` restores hard edges.
+
+Focused GPU test (requires graphics context and FVD assets):
+`bin/run test openage::renderer::world::tests::terrain_fog_soft_edges -a --have-assets`.
+Shader compilation and multiplayer visual acceptance are still pending.
+
 ## Playing
 
 Start the engine with `run game` (or simply `run`) to open the relay lobby menu.
