@@ -96,6 +96,28 @@ Focused GPU test (requires graphics context and FVD assets):
 `bin/run test openage::renderer::world::tests::terrain_fog_soft_edges -a --have-assets`.
 Shader compilation and multiplayer visual acceptance are still pending.
 
+## Selected-unit ground circles
+
+FVD draws a white isometric ground ring beneath selected **Builders and
+Hunter Horses**, including each Horse in a multi-selection. Rings are
+procedural GPU ellipses in the world render pass, using the *same interpolated
+unit position* as the sprite, so they follow moving units on host and guests.
+The screen-space white stroke has a one-pixel downward dark shadow underneath.
+
+Ring diameter scales with the unit's selection-box width in
+`assets/fvd/data/entities.nyan` (Builder 0.5, Horse 0.8 tiles).
+The current ring radius is `selection_footprint_width * 0.75f`
+in `libopenage/renderer/stages/world/render_stage.cpp`.
+The rings render before world sprites, so they never cover units.
+Towers, foundations, inactive units and units concealed by fog do not get rings.
+No texture atlas or network protocol changes are required.
+
+Shader files: `assets/shaders/world_selection_ring.vert.glsl` and
+`assets/shaders/world_selection_ring.frag.glsl`.
+Focused GPU test:
+`bin/run test openage::renderer::world::tests::selection_ground_rings -a --have-assets`.
+Build and manual two-client visual testing are pending.
+
 ## Playing
 
 Start the engine with `run game` (or simply `run`) to open the relay lobby menu.
