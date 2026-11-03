@@ -788,7 +788,7 @@ Item {
 		// Always the size of its tallest layout (measured: a Builder with a
 		// tower selected while placing, or the Hunter targeting with
 		// horses), so the HUD never jumps. Grows only if text wraps further.
-		height: Math.max(panelContent.implicitHeight + 24, 344)
+		height: Math.max(panelContent.implicitHeight + 24, 360)
 		radius: 6
 		color: "#ee182824"
 		border.width: 1
@@ -810,6 +810,10 @@ Item {
 			      + (root.hunter ? " — Hunter" : " — Builder")
 			}
 			Text {
+				// Long hints ("Builder — click a friendly completed tower to
+				// garrison (Esc cancels)") wrap inside the panel.
+				width: parent.width
+				wrapMode: Text.WordWrap
 				color: "#ffffff"
 				font.bold: true
 				font.pixelSize: 14
@@ -846,6 +850,8 @@ Item {
 				text: root.hud === null ? "" : root.hud.killsLabel + (!root.hud.killsAvailable ? "—" : root.hud.kills)
 			}
 			Text {
+				width: parent.width
+				wrapMode: Text.WordWrap
 				visible: root.constructionStatus.length > 0
 				color: "#b5d9c4"
 				font.pixelSize: 12
@@ -875,6 +881,8 @@ Item {
 				      + (root.lobby.pendingOrders > 0 ? " (" + root.lobby.pendingOrders + " awaiting host)" : "")
 			}
 			Text {
+				width: parent.width
+				wrapMode: Text.WordWrap
 				visible: !root.hunter && (root.placing || root.queuedTowers > 0)
 				color: root.placing && !root.placementValid ? "#ffb6a8" : "#b5d9c4"
 				font.pixelSize: 12
