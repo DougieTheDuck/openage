@@ -278,6 +278,11 @@ def tests_cpp():
         lambda env: env["has_assets"],
     )
     yield (
+        "openage::gamestate::tests::fvd_builder_delete_all_foundations",
+        "FVD Delete all foundations clears one Builder's sites and keeps construction",
+        lambda env: env["has_assets"],
+    )
+    yield (
         "openage::gamestate::tests::fvd_build_double_row",
         "FVD Builder finishes two touching rows without orphaning foundations",
         lambda env: env["has_assets"],

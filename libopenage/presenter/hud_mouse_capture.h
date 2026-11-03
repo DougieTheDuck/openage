@@ -27,6 +27,7 @@ public:
 		TOGGLE_EFFECTS,
 		FLARE,
 		TOGGLE_TOWER_LABELS,
+		DELETE_FOUNDATIONS,
 	};
 
 	struct Result {

@@ -119,7 +119,7 @@ private:
 
 bool is_known_command_kind(uint16_t value) {
 	return value >= static_cast<uint16_t>(CommandKind::MOVE)
-	    && value <= static_cast<uint16_t>(CommandKind::FLARE);
+	    && value <= static_cast<uint16_t>(CommandKind::DELETE_FOUNDATIONS);
 }
 
 bool is_known_hunter_stance(uint16_t value) {
@@ -474,6 +474,10 @@ std::vector<uint8_t> encode_command_intent(const CommandIntent &intent) {
 	    and (not intent.entity_ids.empty() or intent.target_entity)) {
 		throw Error{MSG(err) << "FVD flare carries only a position"};
 	}
+	if (intent.kind == CommandKind::DELETE_FOUNDATIONS
+	    and (intent.entity_ids.size() != 1 or intent.target_entity)) {
+		throw Error{MSG(err) << "Delete all foundations names exactly one Builder"};
+	}
 	if ((intent.kind == CommandKind::SET_STANCE) != intent.stance.has_value()
 	    or (intent.stance
 	        and not is_known_hunter_stance(static_cast<uint16_t>(*intent.stance)))) {
@@ -566,6 +570,8 @@ CommandIntent decode_command_intent(const std::vector<uint8_t> &payload) {
 	    or (intent.kind == CommandKind::SET_RALLY_POINT and intent.entity_ids.size() != 1)
 	    or (intent.kind == CommandKind::FLARE
 	        and (not intent.entity_ids.empty() or intent.target_entity))
+	    or (intent.kind == CommandKind::DELETE_FOUNDATIONS
+	        and (intent.entity_ids.size() != 1 or intent.target_entity))
 	    or (intent.kind == CommandKind::SET_UNGARRISON_POINT
 	        and intent.entity_ids.size() != 1)
 	    or (intent.kind == CommandKind::GARRISON and intent.entity_ids.size() != 1)

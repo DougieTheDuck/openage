@@ -40,6 +40,8 @@ Item {
 	readonly property bool optionsOpen: hud !== null && hud.optionsOpen === true
 	readonly property bool flaring: hud !== null && hud.flaring === true
 	readonly property bool towerLabelsOn: hud === null || hud.towerLabelsOn !== false
+	readonly property int deletableFoundations: hud === null || hud.deletableFoundations === undefined
+	                                            ? 0 : hud.deletableFoundations
 	readonly property var flareMarkers: hud === null || hud.flareMarkers === undefined ? [] : hud.flareMarkers
 	readonly property var minimapFlares: hud === null || hud.minimapFlares === undefined ? [] : hud.minimapFlares
 
@@ -969,6 +971,25 @@ Item {
 							cursorShape: Qt.PointingHandCursor
 						}
 					}
+				}
+			}
+			Rectangle {
+				objectName: "fvdDeleteFoundationsButton"
+				// Only while this Builder has foundations to remove.
+				visible: root.canBuild && root.deletableFoundations > 0
+				width: 252
+				height: 32
+				radius: 4
+				color: "#7a3b31"
+				border.width: 1
+				border.color: "#e3b0a5"
+
+				Text {
+					anchors.centerIn: parent
+					color: "#ffffff"
+					font.bold: true
+					font.pixelSize: 14
+					text: "Delete all foundations (" + root.deletableFoundations + ")"
 				}
 			}
 			Rectangle {

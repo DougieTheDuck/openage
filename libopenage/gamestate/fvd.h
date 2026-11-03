@@ -284,6 +284,19 @@ public:
 	                             player_id_t owner, entity_id_t foundation_id,
 	                             const time::time_t &time);
 
+	/**
+	 * Delete every foundation belonging to one of the player's Builders:
+	 * his queued sites, the site he is walking to, and the player's
+	 * abandoned foundations. The tower he is building, finished towers and
+	 * other players' foundations are untouched.
+	 *
+	 * @param ids Exactly the one Builder.
+	 * @return Whether anything was deleted.
+	 */
+	bool delete_builder_foundations(const std::shared_ptr<GameState> &state,
+	                                player_id_t owner, const std::vector<entity_id_t> &ids,
+	                                const time::time_t &time);
+
 	/** Destroy a tower and restore the path costs under its footprint. */
 	bool destroy_tower(const std::shared_ptr<GameState> &state,
 	                   entity_id_t tower_id,

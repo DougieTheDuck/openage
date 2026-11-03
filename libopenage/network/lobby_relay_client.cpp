@@ -55,6 +55,7 @@ const char *order_name(CommandKind kind) {
 	case CommandKind::DEMOLISH_TOWER: return "Demolish tower";
 	case CommandKind::SET_RALLY_POINT: return "Rally point";
 	case CommandKind::FLARE: return "Flare";
+	case CommandKind::DELETE_FOUNDATIONS: return "Delete all foundations";
 	}
 	return "Order";
 }

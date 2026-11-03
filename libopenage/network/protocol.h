@@ -24,7 +24,8 @@ constexpr uint32_t FRAME_MAGIC = 0x4656444e;
 // v20 attaches each private ungarrison arrow to its source tower for selection-only rendering.
 // v21 publishes occupant player-colour flags, keeps Builder IDs private to the
 // occupant, and supports independent per-player tower exit plans.
-// v22 adds the Builder FLARE command and Builder-only flares in world state.
+// v22 adds the Builder FLARE command and Builder-only flares in world state,
+// and DELETE_FOUNDATIONS (all of one Builder's foundations).
 // Refuse older clients at the handshake rather than mid-match.
 // Minor versions continue to gate compatible relay features.
 constexpr uint16_t PROTOCOL_MAJOR = 22;

@@ -1690,6 +1690,111 @@ void fvd_builder_delete_foundation() {
 	TESTEQUALS(fvd->get_build_order(builder) == nullptr, true);
 }
 
+// "Delete all foundations" for one Builder (OpenSpec builder-delete-all-foundations).
+void fvd_builder_delete_all_foundations() {
+	auto root = util::Path{std::make_shared<util::fslike::Directory>(config::buildsystem_sourcefile_dir)};
+	auto mods = std::make_shared<assets::ModManager>(root / "assets" / "converted");
+	mods->register_modpack(root / "assets" / "converted" / "engine" / "modpack.toml");
+	mods->register_modpack(root / "assets" / "fvd" / "modpack.toml");
+	mods->activate_modpacks({"engine", "fvd"});
+	auto loop = std::make_shared<openage::event::EventLoop>();
+	loop->add_event_handler(std::make_shared<event::ProcessCommandHandler>());
+	loop->add_event_handler(std::make_shared<event::WaitHandler>());
+	auto entities = std::make_shared<EntityFactory>();
+	auto terrain = std::make_shared<TerrainFactory>();
+	Game game{loop, mods, entities, terrain};
+	auto state = game.get_state();
+	auto fvd = state->get_fvd();
+	tests::use_centre_test_layout(state);
+	auto at = [](double seconds) { return time::time_t::from_double(seconds); };
+	// Entity IDs start at 0, so "not found" is an empty optional.
+	auto builder_of = [&](player_id_t player) -> std::optional<entity_id_t> {
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+				entity->get_component(component::component_t::OWNERSHIP));
+			if (entity->get_definition() == "fvd.data.entities.Builder"
+			    and ownership->get_owners().get(time::TIME_ZERO) == player) return id;
+		}
+		return std::nullopt;
+	};
+	auto count = [&](const std::string &kind, player_id_t player, const time::time_t &time) {
+		size_t result = 0;
+		for (const auto &[id, entity] : state->get_game_entities()) {
+			if (entity->get_definition() != "fvd.data.entities." + kind) continue;
+			auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+				entity->get_component(component::component_t::OWNERSHIP));
+			if (ownership->get_owners().get(time) == player) ++result;
+		}
+		return result;
+	};
+	// This scenario has the Hunter and one Builder player.
+	const auto found_builder = builder_of(2);
+	TESTEQUALS(found_builder.has_value(), true);
+	const auto builder = *found_builder;
+
+	// Walking to one site with three more queued.
+	const coord::tile first{66, 72}, second{68, 72}, third{70, 72}, fourth{72, 72};
+	TESTEQUALS(fvd->request_build(state, 2, {builder}, first.to_phys3_center(), at(0)), true);
+	for (auto site : {second, third, fourth}) {
+		TESTEQUALS(fvd->queue_build(state, 2, {builder}, site.to_phys3_center(), at(0)), true);
+	}
+	TESTEQUALS(count("Foundation", 2, at(0.01)), size_t{4});
+
+	// The Hunter, a player who isn't in the match, or no Builder: rejected.
+	TESTEQUALS(fvd->delete_builder_foundations(state, 3, {builder}, at(0.01)), false);
+	TESTEQUALS(fvd->delete_builder_foundations(state, 1, {builder}, at(0.01)), false);
+	TESTEQUALS(fvd->delete_builder_foundations(state, 2, {}, at(0.01)), false);
+	TESTEQUALS(count("Foundation", 2, at(0.01)), size_t{4});
+
+	// Queue cleared: all four go, their tiles are free, the Builder stops.
+	bool accepted = false;
+	event::SendCommandHandler command;
+	command.invoke(*loop, nullptr, state, at(0.02),
+	               {{"type", component::command::command_t::DELETE_FOUNDATIONS},
+	                {"owner", player_id_t{2}}, {"entity_ids", std::vector<entity_id_t>{builder}},
+	                {"result_cb", std::function<void(bool)>{[&](bool ok) { accepted = ok; }}}});
+	TESTEQUALS(accepted, true);
+	TESTEQUALS(count("Foundation", 2, at(0.02)), size_t{0});
+	for (auto site : {first, second, third, fourth}) {
+		TESTEQUALS(fvd->is_tile_reserved(site), false);
+	}
+	TESTEQUALS(fvd->get_build_order(builder) == nullptr, true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	loop->reach_time(at(3), state);
+	TESTEQUALS(count("Tower", 2, at(3)), size_t{0});
+
+	// Building in progress: the queued sites go, construction continues.
+	TESTEQUALS(fvd->request_build(state, 2, {builder}, first.to_phys3_center(), at(3)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, {builder}, second.to_phys3_center(), at(3)), true);
+	TESTEQUALS(fvd->queue_build(state, 2, {builder}, third.to_phys3_center(), at(3)), true);
+	// Construction is short in this scenario: step until the first site is
+	// a tower being built (he is at it, two sites still queued).
+	double now = 3.0;
+	while (now < 30.0 and count("Tower", 2, at(now)) == 0) {
+		now += 0.005;
+		loop->reach_time(at(now), state);
+	}
+	TESTEQUALS(count("Tower", 2, at(now)), size_t{1});
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{2});
+	TESTEQUALS(fvd->delete_builder_foundations(state, 2, {builder}, at(now)), true);
+	TESTEQUALS(fvd->get_queued_build_count(builder), size_t{0});
+	TESTEQUALS(count("Foundation", 2, at(now)), size_t{0});
+	TESTEQUALS(fvd->get_build_order(builder) != nullptr, true);
+	TESTEQUALS(fvd->get_build_order(builder)->get_target(), first);
+	loop->reach_time(at(now + 2), state);
+	TESTEQUALS(count("Tower", 2, at(now + 2)), size_t{1}); // it still got finished
+
+	// An abandoned foundation (in nobody's queue) is the player's: it goes too.
+	const auto later = at(now + 3);
+	TESTEQUALS(fvd->request_build(state, 2, {builder}, second.to_phys3_center(), later), true);
+	TESTEQUALS(fvd->cancel_build(state, builder, later), true);
+	TESTEQUALS(count("Foundation", 2, later), size_t{1});
+	TESTEQUALS(fvd->delete_builder_foundations(state, 2, {builder}, later), true);
+	TESTEQUALS(count("Foundation", 2, later), size_t{0});
+	// Nothing left to delete.
+	TESTEQUALS(fvd->delete_builder_foundations(state, 2, {builder}, later), false);
+}
+
 void fvd_match_outcome_rules() {
 	auto at = [](int seconds) { return time::time_t::from_int(seconds); };
 	const auto deadline = at(FVD_MATCH_DURATION_SECONDS);

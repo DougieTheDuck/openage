@@ -60,6 +60,12 @@ void world_delta_flares() {
 	TESTEQUALS(decode_command_intent(encode_command_intent(flare)).kind, CommandKind::FLARE);
 	flare.entity_ids = {3};
 	TESTTHROWS(encode_command_intent(flare));
+
+	// Delete all foundations names exactly one Builder.
+	CommandIntent wipe{6, CommandKind::DELETE_FOUNDATIONS, {13}, {0, 0, 0}};
+	TESTEQUALS(decode_command_intent(encode_command_intent(wipe)).entity_ids, wipe.entity_ids);
+	wipe.entity_ids = {};
+	TESTTHROWS(encode_command_intent(wipe));
 }
 
 void world_delta() {

@@ -352,6 +352,34 @@ void Presenter::set_fvd_flare_mode(bool on) {
 	}
 }
 
+void Presenter::send_fvd_delete_foundations() {
+	if (not this->game_controller or not this->simulation) {
+		return;
+	}
+	const auto selection = this->game_controller->get_selection_details();
+	const auto owner = static_cast<gamestate::player_id_t>(this->game_controller->get_controlled());
+	if (owner < 2 or selection.kind != input::game::SelectionKind::BUILDER
+	    or selection.ids.size() != 1) {
+		return;
+	}
+	if (this->fvd_lobby_enabled and not this->fvd_lobby_hosting) {
+		if (this->fvd_gameplay_active and this->fvd_lobby_client) {
+			this->fvd_lobby_client->send_guest_command(network::CommandIntent{
+				0, network::CommandKind::DELETE_FOUNDATIONS, selection.ids, {0, 0, 0}});
+		}
+		return;
+	}
+	event::EventHandler::param_map::map_t params{
+		{"type", gamestate::component::command::command_t::DELETE_FOUNDATIONS},
+		{"owner", owner},
+		{"entity_ids", selection.ids},
+	};
+	this->simulation->get_event_loop()->submit_event(
+		"game.send_command", this->simulation->get_commander(),
+		this->simulation->get_game()->get_state(),
+		this->time_loop->get_clock()->get_time(), params);
+}
+
 void Presenter::send_fvd_flare(const coord::phys3 &position) {
 	if (not this->game_controller or not this->simulation) {
 		return;
@@ -1511,7 +1539,8 @@ void Presenter::init_input() {
 			         std::pair{"fvdMusicToggle", HudAction::TOGGLE_MUSIC},
 			         std::pair{"fvdEffectsToggle", HudAction::TOGGLE_EFFECTS},
 			         std::pair{"fvdFlareButton", HudAction::FLARE},
-			         std::pair{"fvdTowerLabelsToggle", HudAction::TOGGLE_TOWER_LABELS}}) {
+			         std::pair{"fvdTowerLabelsToggle", HudAction::TOGGLE_TOWER_LABELS},
+			         std::pair{"fvdDeleteFoundationsButton", HudAction::DELETE_FOUNDATIONS}}) {
 				if (this->gui->contains_item(name, ev.position())) {
 					hovered_action = action;
 					break;
@@ -1558,6 +1587,9 @@ void Presenter::init_input() {
 				break;
 			case HudAction::FLARE:
 				this->set_fvd_flare_mode(not this->fvd_flare_mode);
+				break;
+			case HudAction::DELETE_FOUNDATIONS:
+				this->send_fvd_delete_foundations();
 				break;
 			case HudAction::NONE:
 			case HudAction::OPTIONS:
@@ -2585,6 +2617,9 @@ void Presenter::render() {
 				QString construction_status{};
 				int construction_percent = -1;
 				int queued_towers = 0;
+				// What "Delete all foundations" would remove: this Builder's
+				// queued and walked-to sites, and the player's abandoned ones.
+				int deletable_foundations = 0;
 				if (builder and controlled >= 2 and selected.ids.size() == 1) {
 					if (construction_world) {
 						auto builder_id = selected.ids.front();
@@ -2592,6 +2627,13 @@ void Presenter::render() {
 							if (site.phase == network::SitePresentationPhase::QUEUED
 							    and site.builder_id == builder_id
 							    and site.owner_id == controlled) ++queued_towers;
+							if (site.owner_id == controlled
+							    and ((site.builder_id == builder_id
+							          and (site.phase == network::SitePresentationPhase::QUEUED
+							               or site.phase == network::SitePresentationPhase::PLANNED))
+							         or site.phase == network::SitePresentationPhase::ORPHANED)) {
+								++deletable_foundations;
+							}
 						}
 						for (const auto &order : construction_world->constructions) {
 							if (order.builder_id != builder_id
@@ -2609,6 +2651,7 @@ void Presenter::render() {
 					}
 				}
 				this->fvd_hud_state->insert("queuedTowers", queued_towers);
+				this->fvd_hud_state->insert("deletableFoundations", deletable_foundations);
 				this->fvd_hud_state->insert("constructionStatus", construction_status);
 				this->fvd_hud_state->insert("constructionPercent", construction_percent);
 				auto countdown = replica_for_hud

@@ -73,6 +73,8 @@ enum class CommandKind : uint16_t {
 	SET_UNGARRISON_POINT = 12,
 	/** A Builder marks a map position for the other Builders. No entities. */
 	FLARE = 13,
+	/** Delete all of one selected Builder's foundations. */
+	DELETE_FOUNDATIONS = 14,
 };
 
 /** Host decision for one client command. */

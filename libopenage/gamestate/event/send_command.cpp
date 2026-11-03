@@ -207,6 +207,11 @@ void SendCommandHandler::invoke(openage::event::EventLoop & /* loop */,
 			if (result_cb) result_cb(accepted);
 			return;
 		}
+		if (command_type == component::command::command_t::DELETE_FOUNDATIONS) {
+			const bool accepted = fvd->delete_builder_foundations(gstate, owner, ids, time);
+			if (result_cb) result_cb(accepted);
+			return;
+		}
 		if (command_type == component::command::command_t::FLARE) {
 			const bool accepted = ids.empty() and params.check_type<coord::phys3>("target")
 			                  and fvd->flare(owner, params.get("target", coord::phys3{0, 0, 0}), time);

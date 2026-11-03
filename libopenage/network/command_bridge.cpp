@@ -55,6 +55,8 @@ gamestate::component::command::command_t simulation_command(CommandKind kind) {
 		return gamestate::component::command::command_t::SET_UNGARRISON_POINT;
 	case CommandKind::FLARE:
 		return gamestate::component::command::command_t::FLARE;
+	case CommandKind::DELETE_FOUNDATIONS:
+		return gamestate::component::command::command_t::DELETE_FOUNDATIONS;
 	default:
 		throw Error{MSG(err) << "Unknown authenticated FVD command kind "
 		                     << static_cast<uint16_t>(kind)};

@@ -1773,6 +1773,58 @@ bool FVD::delete_owned_foundation(const std::shared_ptr<GameState> &state,
 	return true;
 }
 
+bool FVD::delete_builder_foundations(const std::shared_ptr<GameState> &state,
+                                     player_id_t owner, const std::vector<entity_id_t> &ids,
+                                     const time::time_t &time) {
+	if (this->match_outcome or owner < 2 or owner > this->player_count or ids.size() != 1) {
+		return false;
+	}
+	const auto builder = ids.front();
+	auto found = state->get_game_entities().find(builder);
+	if (found == state->get_game_entities().end()
+	    or found->second->get_definition() != this->builder
+	    or not found->second->has_component(component::component_t::OWNERSHIP)) {
+		return false;
+	}
+	auto ownership = std::dynamic_pointer_cast<component::Ownership>(
+		found->second->get_component(component::component_t::OWNERSHIP));
+	if (not ownership or ownership->get_owners().get(time) != owner) {
+		return false;
+	}
+
+	// Queued sites first, then the walked-to site, so he never starts on a
+	// site that is about to go. Each goes through the single-site Delete.
+	std::vector<entity_id_t> doomed{};
+	if (auto queued = this->queued_builds.find(builder); queued != this->queued_builds.end()) {
+		for (const auto &site : queued->second) doomed.push_back(site.foundation_id);
+	}
+	if (auto active = this->build_orders.find(builder);
+	    active != this->build_orders.end() and not active->second.tower_id) {
+		doomed.push_back(active->second.foundation_id);
+	}
+	// Abandoned foundations are the player's, in nobody's queue or order.
+	std::unordered_set<entity_id_t> claimed{};
+	for (const auto &[other, sites] : this->queued_builds) {
+		for (const auto &site : sites) claimed.insert(site.foundation_id);
+	}
+	for (const auto &[other, build] : this->build_orders) {
+		claimed.insert(build.foundation_id);
+	}
+	for (const auto &[id, entity] : state->get_game_entities()) {
+		if (entity->get_definition() != this->foundation or claimed.contains(id)
+		    or not entity->has_component(component::component_t::OWNERSHIP)) continue;
+		auto owned = std::dynamic_pointer_cast<component::Ownership>(
+			entity->get_component(component::component_t::OWNERSHIP));
+		if (owned and owned->get_owners().get(time) == owner) doomed.push_back(id);
+	}
+
+	bool deleted = false;
+	for (auto id : doomed) {
+		deleted = this->delete_owned_foundation(state, owner, id, time) or deleted;
+	}
+	return deleted;
+}
+
 bool FVD::destroy_tower(const std::shared_ptr<GameState> &state,
                         entity_id_t tower_id,
                         const time::time_t &time) {

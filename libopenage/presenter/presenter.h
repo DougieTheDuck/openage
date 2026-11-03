@@ -254,6 +254,9 @@ protected:
 	/** Arm or disarm flare mode (Builders in a match only). */
 	void set_fvd_flare_mode(bool on);
 
+	/** Delete all foundations of the one selected own Builder (HUD button). */
+	void send_fvd_delete_foundations();
+
 	/** Send a flare at a map position through the local or guest command path. */
 	void send_fvd_flare(const coord::phys3 &position);
 
