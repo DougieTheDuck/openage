@@ -31,6 +31,7 @@ HudRenderStage::HudRenderStage(const std::shared_ptr<Window> &window,
 	drag_object{nullptr},
 	health_objects{},
 	selected_entities{},
+	health_bar_vertical_offset{0.0f},
 	clock{clock} {
 	renderer::opengl::GlContext::check_error();
 
@@ -74,11 +75,14 @@ void HudRenderStage::add_health_entity(
 	this->health_objects.push_back(std::make_shared<HudHealthObject>(render_entity));
 }
 
-void HudRenderStage::set_selected(const std::vector<gamestate::entity_id_t> &entity_ids) {
+void HudRenderStage::set_selected(
+	const std::vector<gamestate::entity_id_t> &entity_ids,
+	float health_bar_vertical_offset) {
 	std::unique_lock lock{this->mutex};
 
 	this->selected_entities.clear();
 	this->selected_entities.insert(entity_ids.begin(), entity_ids.end());
+	this->health_bar_vertical_offset = health_bar_vertical_offset;
 }
 
 void HudRenderStage::update(std::optional<time::time_t> presentation_time) {
@@ -117,7 +121,10 @@ void HudRenderStage::update(std::optional<time::time_t> presentation_time) {
 			continue;
 		}
 		auto selected = this->selected_entities.contains(health_object->get_id());
-		health_object->update_uniforms(presentation_time.value_or(current_time), selected);
+		health_object->update_uniforms(
+			presentation_time.value_or(current_time),
+			selected,
+			this->health_bar_vertical_offset);
 	}
 
 	if (this->drag_object) {

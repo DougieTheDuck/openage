@@ -223,8 +223,11 @@ public:
 	 *
 	 * @param time Current simulation time.
 	 * @param selected Whether the corresponding entity is selected.
+	 * @param vertical_offset Vertical screen-space offset in virtual pixels.
 	 */
-	void update_uniforms(const time::time_t &time, bool selected);
+	void update_uniforms(const time::time_t &time,
+	                     bool selected,
+	                     float vertical_offset);
 
 	/**
 	 * Get the ID of the corresponding game entity.

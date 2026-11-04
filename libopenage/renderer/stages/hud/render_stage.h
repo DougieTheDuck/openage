@@ -102,8 +102,10 @@ public:
 	 * Set the entities whose health bars should be visible.
 	 *
 	 * @param entity_ids Selected game entity IDs.
+	 * @param health_bar_vertical_offset Health bar height in virtual pixels.
 	 */
-	void set_selected(const std::vector<gamestate::entity_id_t> &entity_ids);
+	void set_selected(const std::vector<gamestate::entity_id_t> &entity_ids,
+	                  float health_bar_vertical_offset);
 
 	/**
 	 * Update the render entities and render positions.
@@ -175,6 +177,11 @@ private:
 	 * IDs of entities whose health bars are visible.
 	 */
 	std::unordered_set<gamestate::entity_id_t> selected_entities;
+
+	/**
+	 * Vertical offset for selected entity health bars in virtual pixels.
+	 */
+	float health_bar_vertical_offset;
 
 	/**
 	 * Shader for rendering health bars.

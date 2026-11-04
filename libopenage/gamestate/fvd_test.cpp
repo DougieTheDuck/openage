@@ -353,7 +353,7 @@ void fvd_scenario() {
 	TESTEQUALS(builder_sheet.get_size(), (std::pair<int32_t, int32_t>{1080, 1080}));
 	TESTEQUALS(builder_sheet.get_subtex_count(), size_t{1});
 	TESTEQUALS(builder_sheet.get_subtex_info(0).get_anchor_pos()[0], 540);
-	TESTEQUALS(builder_sheet.get_subtex_info(0).get_anchor_pos()[1], 740);
+	TESTEQUALS(builder_sheet.get_subtex_info(0).get_anchor_pos()[1], 712);
 	for (const auto &walk_name : {"builder_walk_page_00.texture",
 	                             "builder_walk_page_01.texture"}) {
 		auto walk_sheet = renderer::resources::parser::parse_texture_file(
@@ -361,18 +361,26 @@ void fvd_scenario() {
 		TESTEQUALS(walk_sheet.get_size(), (std::pair<int32_t, int32_t>{4096, 4096}));
 		TESTEQUALS(walk_sheet.get_subtex_count(), size_t{240});
 		TESTEQUALS(walk_sheet.get_subtex_info(0).get_anchor_pos()[0], 128);
-		TESTEQUALS(walk_sheet.get_subtex_info(0).get_anchor_pos()[1], 192);
+		TESTEQUALS(walk_sheet.get_subtex_info(0).get_anchor_pos()[1], 174);
 		TESTEQUALS(walk_sheet.get_subtex_info(239).get_anchor_pos()[0], 128);
-		TESTEQUALS(walk_sheet.get_subtex_info(239).get_anchor_pos()[1], 192);
+		TESTEQUALS(walk_sheet.get_subtex_info(239).get_anchor_pos()[1], 174);
 	}
 	auto horse_sheet = renderer::resources::parser::parse_texture_file(
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-gallop.texture");
 	TESTEQUALS(horse_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
 	TESTEQUALS(horse_sheet.get_subtex_count(), size_t{192});
+	TESTEQUALS(horse_sheet.get_subtex_info(0).get_anchor_pos()[0], 128);
+	TESTEQUALS(horse_sheet.get_subtex_info(0).get_anchor_pos()[1], 159);
+	TESTEQUALS(horse_sheet.get_subtex_info(191).get_anchor_pos()[0], 128);
+	TESTEQUALS(horse_sheet.get_subtex_info(191).get_anchor_pos()[1], 159);
 	auto horse_attack_sheet = renderer::resources::parser::parse_texture_file(
 		graphics / "ethereal-hunter-horse" / "ethereal-hunter-horse-attack.texture");
 	TESTEQUALS(horse_attack_sheet.get_size(), (std::pair<int32_t, int32_t>{4096, 4096}));
 	TESTEQUALS(horse_attack_sheet.get_subtex_count(), size_t{256});
+	TESTEQUALS(horse_attack_sheet.get_subtex_info(0).get_anchor_pos()[0], 128);
+	TESTEQUALS(horse_attack_sheet.get_subtex_info(0).get_anchor_pos()[1], 159);
+	TESTEQUALS(horse_attack_sheet.get_subtex_info(255).get_anchor_pos()[0], 128);
+	TESTEQUALS(horse_attack_sheet.get_subtex_info(255).get_anchor_pos()[1], 159);
 	for (const auto &death_name : {"ethereal-hunter-horse-death_page_00.texture",
 	                               "ethereal-hunter-horse-death_page_01.texture",
 	                               "ethereal-hunter-horse-death_page_02.texture",
@@ -382,9 +390,9 @@ void fvd_scenario() {
 		TESTEQUALS(death_sheet.get_size(), (std::pair<int32_t, int32_t>{4096, 4096}));
 		TESTEQUALS(death_sheet.get_subtex_count(), size_t{240});
 		TESTEQUALS(death_sheet.get_subtex_info(0).get_anchor_pos()[0], 128);
-		TESTEQUALS(death_sheet.get_subtex_info(0).get_anchor_pos()[1], 160);
+		TESTEQUALS(death_sheet.get_subtex_info(0).get_anchor_pos()[1], 143);
 		TESTEQUALS(death_sheet.get_subtex_info(239).get_anchor_pos()[0], 128);
-		TESTEQUALS(death_sheet.get_subtex_info(239).get_anchor_pos()[1], 160);
+		TESTEQUALS(death_sheet.get_subtex_info(239).get_anchor_pos()[1], 143);
 	}
 	auto tower_sheet = renderer::resources::parser::parse_texture_file(
 		graphics / "medieval-tower" / "medieval_tower.texture");
@@ -393,11 +401,11 @@ void fvd_scenario() {
 	TESTEQUALS(tower_sheet.get_subtex_info(0).get_size()[0], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(0).get_size()[1], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(0).get_anchor_pos()[0], 318);
-	TESTEQUALS(tower_sheet.get_subtex_info(0).get_anchor_pos()[1], 403);
+	TESTEQUALS(tower_sheet.get_subtex_info(0).get_anchor_pos()[1], 416);
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[0], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_size()[1], uint32_t{512});
 	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[0], 318);
-	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[1], 403);
+	TESTEQUALS(tower_sheet.get_subtex_info(15).get_anchor_pos()[1], 416);
 	auto tower_demolition_sheet = renderer::resources::parser::parse_texture_file(
 		graphics / "fvd_stone_tower_demolition.texture");
 	TESTEQUALS(tower_demolition_sheet.get_size(),
@@ -412,6 +420,10 @@ void fvd_scenario() {
 			graphics / "ethereal-hunter-horse" / idle_name);
 		TESTEQUALS(idle_sheet.get_size(), (std::pair<int32_t, int32_t>{3072, 4096}));
 		TESTEQUALS(idle_sheet.get_subtex_count(), size_t{192});
+		TESTEQUALS(idle_sheet.get_subtex_info(0).get_anchor_pos()[0], 128);
+		TESTEQUALS(idle_sheet.get_subtex_info(0).get_anchor_pos()[1], 159);
+		TESTEQUALS(idle_sheet.get_subtex_info(191).get_anchor_pos()[0], 128);
+		TESTEQUALS(idle_sheet.get_subtex_info(191).get_anchor_pos()[1], 159);
 	}
 	TESTEQUALS(foundation_graphics.get_texture_count(), 1);
 	TESTEQUALS(tower_graphics.get_texture_count(), 1);

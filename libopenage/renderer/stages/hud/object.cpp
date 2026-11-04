@@ -160,7 +160,9 @@ void HudHealthObject::set_uniforms(
 	this->fill_uniforms = fill;
 }
 
-void HudHealthObject::update_uniforms(const time::time_t &time, bool selected) {
+void HudHealthObject::update_uniforms(const time::time_t &time,
+                                      bool selected,
+                                      float vertical_offset) {
 	if (this->background_uniforms == nullptr or this->fill_uniforms == nullptr) [[unlikely]] {
 		return;
 	}
@@ -175,7 +177,6 @@ void HudHealthObject::update_uniforms(const time::time_t &time, bool selected) {
 	constexpr float bar_width = 52.0f;
 	constexpr float bar_height = 7.0f;
 	constexpr float fill_padding = 2.0f;
-	constexpr float vertical_offset = 264.0f;
 	const auto current_health = this->render_entity->get_health_at(time);
 	const auto health_ratio = std::clamp(
 		static_cast<float>(current_health) / static_cast<float>(max_health), 0.0f, 1.0f);

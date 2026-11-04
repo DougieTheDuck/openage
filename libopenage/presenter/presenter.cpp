@@ -1983,7 +1983,7 @@ void Presenter::render() {
 		const auto selection = this->game_controller->get_selection_details();
 		switch (selection.kind) {
 		case input::game::SelectionKind::BUILDER:
-			selected_footprint_width = 0.5f;
+			selected_footprint_width = 0.3f;
 			break;
 		case input::game::SelectionKind::HORSE:
 		case input::game::SelectionKind::GROUP_HORSES:
@@ -2049,7 +2049,22 @@ void Presenter::render() {
 				}
 			}
 		}
-		this->hud_renderer->set_selected(selected.ids);
+		constexpr float default_health_bar_offset = 200.0f;
+		constexpr float tile_height = 1.0f / renderer::camera::DEFAULT_ZOOM_RATIO;
+		float health_bar_vertical_offset = default_health_bar_offset;
+		switch (selected.kind) {
+		case input::game::SelectionKind::BUILDER:
+			health_bar_vertical_offset -= 2.0f * tile_height;
+			break;
+		case input::game::SelectionKind::TOWER:
+		case input::game::SelectionKind::GROUP_TOWERS:
+		case input::game::SelectionKind::GROUP_CONSTRUCTING_TOWERS:
+			health_bar_vertical_offset -= 0.5f * tile_height;
+			break;
+		default:
+			break;
+		}
+		this->hud_renderer->set_selected(selected.ids, health_bar_vertical_offset);
 		if (this->fvd_hud_state) {
 			auto controlled = this->game_controller->get_controlled();
 			auto tower = selected.kind == input::game::SelectionKind::TOWER;
