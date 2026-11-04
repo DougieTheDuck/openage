@@ -151,6 +151,9 @@ public:
 	static bool draw_before(const DrawKey &a, const DrawKey &b);
 
 private:
+	/** Calculate the shared draw and picking order for one world object. */
+	DrawKey make_draw_key(WorldObject &object);
+
 	/** Order sprite renderables far to near, after new sprites were added. */
 	void sort_back_to_front();
 

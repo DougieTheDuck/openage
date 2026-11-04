@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <QWindow>
@@ -355,22 +356,30 @@ void adjacent_tower_draw_order() {
 	auto stage = std::make_shared<WorldRenderStage>(
 		window, graphics_renderer, camera, root / "assets" / "shaders", assets, clock);
 
-	using tiles_t = std::vector<std::pair<int, int>>;
-	auto render = [&](const tiles_t &tiles) {
+	using positions_t = std::vector<coord::phys3>;
+	auto render_positions = [&](const positions_t &positions) {
 		stage->clear_entities();
 		uint32_t id = 1;
-		for (auto [ne, se] : tiles) {
+		for (const auto &position : positions) {
 			auto entity = std::make_shared<RenderEntity>();
-			entity->update(id++,
-			               coord::phys3{coord::phys_t::from_int(ne) + coord::phys_t{0.5},
-			                            coord::phys_t::from_int(se) + coord::phys_t{0.5}, 0},
-			               "tower.sprite", time::TIME_ZERO);
+			entity->update(id++, position, "tower.sprite", time::TIME_ZERO);
 			entity->set_occlusion_mode(occlusion_mode::OCCLUDER, 2);
 			stage->add_render_entity(entity);
 		}
 		stage->update(time::TIME_ZERO);
 		graphics_renderer->render(stage->get_render_pass());
 		return stage->get_render_pass()->get_target()->into_data();
+	};
+	using tiles_t = std::vector<std::pair<int, int>>;
+	auto render = [&](const tiles_t &tiles) {
+		positions_t positions;
+		positions.reserve(tiles.size());
+		for (auto [ne, se] : tiles) {
+			positions.emplace_back(
+				coord::phys_t::from_int(ne) + coord::phys_t{0.5},
+				coord::phys_t::from_int(se) + coord::phys_t{0.5}, 0);
+		}
+		return render_positions(positions);
 	};
 	auto same = [](const resources::Texture2dData &a, const resources::Texture2dData &b) {
 		for (size_t y = 0; y < TEST_TARGET_HEIGHT; ++y) {
@@ -408,6 +417,35 @@ void adjacent_tower_draw_order() {
 	if (covered < front_pixels * 99 / 100) {
 		TESTFAILMSG(__FILE__ << ":" << __LINE__ << ": rear tower drawn over the front one ("
 		                     << front_pixels - covered << " of " << front_pixels << " pixels)");
+	}
+
+	// Equal-depth towers are ordered left to right. Picking must use that same
+	// tie-break instead of whichever tower happened to be built last.
+	const coord::phys3 pick_rear_position{coord::phys_t{0.5}, coord::phys_t{0.5}, 0};
+	const coord::phys3 pick_front_position{coord::phys_t{0.75}, coord::phys_t{0.75}, 0};
+	const auto pick_rear = render_positions({pick_rear_position});
+	const auto pick_front = render_positions({pick_front_position});
+	std::optional<coord::input> overlap;
+	for (size_t y = 0; y < TEST_TARGET_HEIGHT and not overlap.has_value(); ++y) {
+		for (size_t x = 0; x < TEST_TARGET_WIDTH; ++x) {
+			if (pixel(pick_front, x, y)[3] >= 250 and pixel(pick_rear, x, y)[3] >= 250) {
+				overlap = coord::input{
+					static_cast<coord::pixel_t>(x),
+					static_cast<coord::pixel_t>(TEST_TARGET_HEIGHT - 1 - y)};
+				break;
+			}
+		}
+	}
+	overlap.has_value() or TESTFAILMSG("adjacent towers have no opaque overlap to pick");
+	for (const auto &positions : {positions_t{pick_front_position, pick_rear_position},
+	                              positions_t{pick_rear_position, pick_front_position}}) {
+		render_positions(positions);
+		std::optional<uint32_t> picked;
+		stage->pick_entity(*overlap, [&](std::optional<uint32_t> id) {
+			picked = id;
+		});
+		const uint32_t front_id = positions.front() == pick_front_position ? 1 : 2;
+		TESTEQUALS(picked.value_or(0), front_id);
 	}
 	window->close();
 }

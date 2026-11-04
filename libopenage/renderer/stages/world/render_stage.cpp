@@ -117,6 +117,7 @@ void WorldRenderStage::pick_entity(
 	util::StallProfiler scan_profile{"world.pick_entity.scan"};
 	std::optional<uint32_t> selected_id;
 	std::optional<WorldObject::HitTestResult> selected_hit;
+	std::optional<DrawKey> selected_key;
 	for (const auto &object : this->render_objects) {
 		if (not object->is_active() or not object->is_pickable() or object->is_concealed()) {
 			continue;
@@ -125,12 +126,16 @@ void WorldRenderStage::pick_entity(
 		if (not hit.has_value()) {
 			continue;
 		}
+		const auto key = this->make_draw_key(*object);
 		if (not selected_hit.has_value()
 		    or hit->layer_position > selected_hit->layer_position
 		    or (hit->layer_position == selected_hit->layer_position
-		        and hit->depth <= selected_hit->depth)) {
+		        and (hit->depth < selected_hit->depth
+		             or (hit->depth == selected_hit->depth
+		                 and draw_before(*selected_key, key))))) {
 			selected_id = object->get_id();
 			selected_hit = hit;
+			selected_key = key;
 		}
 	}
 	scan_profile.finish();
@@ -277,22 +282,26 @@ void WorldRenderStage::update(std::optional<time::time_t> presentation_time) {
 		SELECTION_RING_LAYER_PRIORITY, std::move(rings));
 }
 
+WorldRenderStage::DrawKey WorldRenderStage::make_draw_key(WorldObject &object) {
+	const Eigen::Matrix4f &view = this->camera->get_view_matrix();
+	const Eigen::Vector3f position = object.get_rendered_world_position();
+	const Eigen::Vector4f in_view = view * Eigen::Vector4f{position.x(), position.y(), position.z(), 1.0f};
+	// Quantised so equal depths tie exactly (a strict weak order).
+	return DrawKey{std::llround(-in_view.z() * 10000.0f),
+	               std::llround(in_view.x() * 10000.0f),
+	               object.get_id()};
+}
+
 void WorldRenderStage::sort_back_to_front() {
 	// The depth buffer settles opaque pixels, but soft sprite edges and
 	// shadows are blended and write no depth, so they still depend on draw
 	// order. Draw far to near, then left to right, so the picture never
 	// depends on spawn order. Only done when sprites are added: moving units
 	// keep their slot, and depth testing still covers their opaque pixels.
-	const Eigen::Matrix4f &view = this->camera->get_view_matrix();
 	std::unordered_map<const UniformInput *, DrawKey> keys{};
 	keys.reserve(this->render_objects.size());
 	for (const auto &obj : this->render_objects) {
-		const Eigen::Vector3f position = obj->get_rendered_world_position();
-		const Eigen::Vector4f in_view = view * Eigen::Vector4f{position.x(), position.y(), position.z(), 1.0f};
-		// Quantised so equal depths tie exactly (a strict weak order).
-		const DrawKey key{std::llround(-in_view.z() * 10000.0f),
-		                  std::llround(in_view.x() * 10000.0f),
-		                  obj->get_id()};
+		const auto key = this->make_draw_key(*obj);
 		for (const auto &uniform : obj->get_layer_uniforms()) {
 			keys.emplace(uniform.get(), key);
 		}

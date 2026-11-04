@@ -45,9 +45,7 @@ def _write(path: pathlib.Path, samples: list[float]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     peak = max([1e-9, *(abs(s) for s in samples)])
     scale = 0.8 / peak
-    frames = b"".join(
-        struct.pack("<h", int(max(-1.0, min(1.0, s * scale)) * 32767)) for s in samples
-    )
+    frames = b"".join(struct.pack("<h", int(max(-1.0, min(1.0, s * scale)) * 32767)) for s in samples)
     partial = path.with_suffix(".part")
     with wave.open(str(partial), "wb") as out:
         out.setnchannels(1)
@@ -127,28 +125,45 @@ def _sounds():
         return _mix([s * 0.6 for s in pulse], [s * 0.25 for s in drone])
 
     def unleashed():
-        horn = (_tone(146.8, 146.8, 0.5, harmonics=(1, 0.6, 0.4, 0.25), decay=0.6)
-                + _tone(110, 98, 1.1, harmonics=(1, 0.6, 0.4, 0.25), decay=0.5))
+        horn = _tone(146.8, 146.8, 0.5, harmonics=(1, 0.6, 0.4, 0.25), decay=0.6) + _tone(
+            110, 98, 1.1, harmonics=(1, 0.6, 0.4, 0.25), decay=0.5
+        )
         return _mix(horn, _silence(0.4) + _noise(1.2, 0.05, decay=0.4, seed=7))
 
     return [
-        ("hit.wav", lambda: _mix(_noise(0.12, 0.5, decay=0.025, seed=1),
-                                 _tone(180, 120, 0.12, decay=0.03))),
-        ("hit_2.wav", lambda: _mix(_noise(0.12, 0.4, decay=0.03, seed=2),
-                                   _tone(220, 140, 0.12, decay=0.03))),
-        ("death_horse.wav", lambda: _mix(_tone(520, 160, 0.6, harmonics=(1, 0.5, 0.25), decay=0.2),
-                                         _noise(0.6, 0.1, decay=0.15, seed=3))),
-        ("death_builder.wav", lambda: _mix(_tone(300, 90, 0.5, harmonics=(1, 0.4), decay=0.15),
-                                           _noise(0.3, 0.3, decay=0.05, seed=4))),
-        ("death_tower.wav", lambda: _mix(_noise(1.2, 0.04, decay=0.35, seed=5),
-                                         _tone(70, 40, 1.2, decay=0.4))),
-        ("foundation_placed.wav", lambda: _mix(_noise(0.08, 0.6, decay=0.01, seed=6),
-                                               _tone(400, 400, 0.08, decay=0.015))),
+        ("hit.wav", lambda: _mix(_noise(0.12, 0.5, decay=0.025, seed=1), _tone(180, 120, 0.12, decay=0.03))),
+        ("hit_2.wav", lambda: _mix(_noise(0.12, 0.4, decay=0.03, seed=2), _tone(220, 140, 0.12, decay=0.03))),
+        (
+            "death_horse.wav",
+            lambda: _mix(
+                _tone(520, 160, 0.6, harmonics=(1, 0.5, 0.25), decay=0.2),
+                _noise(0.6, 0.1, decay=0.15, seed=3),
+            ),
+        ),
+        (
+            "death_builder.wav",
+            lambda: _mix(
+                _tone(300, 90, 0.5, harmonics=(1, 0.4), decay=0.15), _noise(0.3, 0.3, decay=0.05, seed=4)
+            ),
+        ),
+        (
+            "death_tower.wav",
+            lambda: _mix(_noise(1.2, 0.04, decay=0.35, seed=5), _tone(70, 40, 1.2, decay=0.4)),
+        ),
+        (
+            "foundation_placed.wav",
+            lambda: _mix(_noise(0.08, 0.6, decay=0.01, seed=6), _tone(400, 400, 0.08, decay=0.015)),
+        ),
         ("tower_built.wav", lambda: _note(523, 0.15) + _note(784, 0.35)),
         ("order.wav", lambda: _tone(880, 1100, 0.07, decay=0.02)),
         ("hunter_unleashed.wav", unleashed),
-        ("flare.wav", lambda: _mix(_tone(1568, 1568, 0.6, harmonics=(1, 0.3, 0.15), decay=0.18),
-                                   _silence(0.07) + _tone(2093, 2093, 0.55, harmonics=(1, 0.3), decay=0.16))),
+        (
+            "flare.wav",
+            lambda: _mix(
+                _tone(1568, 1568, 0.6, harmonics=(1, 0.3, 0.15), decay=0.18),
+                _silence(0.07) + _tone(2093, 2093, 0.55, harmonics=(1, 0.3), decay=0.16),
+            ),
+        ),
         ("music/lobby.wav", lambda: [s * 0.5 for s in _sequence([a, c, e, g, e, c] * 4, 0.35)]),
         ("music/match.wav", match_music),
     ]
@@ -180,7 +195,7 @@ def test() -> None:
         target = pathlib.Path(tmp) / "sounds"
         ensure_placeholder_sounds(target)
         names = sorted(name for name, _ in _sounds())
-        written = sorted(str(f.relative_to(target)) for f in target.rglob("*") if f.is_file())
+        written = sorted(f.relative_to(target).as_posix() for f in target.rglob("*") if f.is_file())
         assert_value(written, names)
         with wave.open(str(target / "hit.wav"), "rb") as clip:
             assert_value(clip.getframerate(), RATE)
