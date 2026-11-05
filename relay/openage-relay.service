@@ -1,0 +1,28 @@
+# Example systemd unit for the FVD room relay.
+#
+# Extract the package to /opt/openage-relay, then:
+#   sudo cp /opt/openage-relay/openage-relay.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now openage-relay
+#   journalctl -u openage-relay -f      # view the log
+#
+# Edit ExecStart to change the port, add --player-token options, etc.
+
+[Unit]
+Description=FVD room relay (openage)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/openage-relay/openage-relay --listen 0.0.0.0 --port 32456
+Restart=on-failure
+RestartSec=5
+# Run as a throwaway unprivileged user with no access to the rest of the system.
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
