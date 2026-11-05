@@ -1,0 +1,35 @@
+#!/bin/sh
+# Copyright 2026 the openage authors. See copying.md for legal info.
+#
+# Launcher for the portable Linux package (the Linux counterpart of openage.bat).
+# Everything the game needs is bundled next to this script; only glibc, the
+# C++ runtime, GPU drivers, X11/Wayland, audio and fontconfig come from the system.
+#
+# Usage: ./run.sh [extra arguments for "openage game"]
+
+set -e
+
+# resolve the real location, so the script also works through a symlink
+INST_DIR="$(dirname "$(readlink -f "$0")")"
+
+LIB_DIR="$INST_DIR/@CMAKE_INSTALL_LIBDIR@"
+export LD_LIBRARY_PATH="$LIB_DIR:$INST_DIR/python/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export QT_PLUGIN_PATH="$LIB_DIR/qt6/plugins"
+export QML_IMPORT_PATH="$LIB_DIR/qt6/qml"
+export QML2_IMPORT_PATH="$LIB_DIR/qt6/qml"
+
+# On Wayland sessions (Hyprland, Sway, KDE, GNOME...) run through XWayland:
+# the game's OpenGL window is more reliable there, especially on Nvidia.
+# Falls back to native Wayland if XWayland isn't available. Setting
+# QT_QPA_PLATFORM yourself overrides this.
+if [ -z "$QT_QPA_PLATFORM" ] && [ -n "$WAYLAND_DISPLAY" ]; then
+	export QT_QPA_PLATFORM="xcb;wayland"
+fi
+
+# keep the host's Python environment out of the bundled interpreter
+unset PYTHONHOME PYTHONPATH
+export PYTHONNOUSERSITE=1
+
+# the asset and config dirs are relative to the package, as on Windows
+cd "$INST_DIR"
+exec "$INST_DIR/python/bin/python3" -m openage game --asset-dir "$INST_DIR/@ASSET_DIR@" "$@"

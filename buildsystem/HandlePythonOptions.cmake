@@ -54,6 +54,11 @@ set(PYEXT_INCLUDE_DIRS "${PYTHON_INCLUDE_DIRS};${NUMPY_INCLUDE_DIR}")
 if(NOT CMAKE_PY_INSTALL_PREFIX)
 	if(MSVC)
 		set(CMAKE_PY_INSTALL_PREFIX "python")
+	elseif(LINUX_BUNDLE)
+		# install into the site-packages of the interpreter bundled under
+		# python/, so `python/bin/python3 -m openage` works without PYTHONPATH
+		py_exec("import sys, sysconfig, os; print(os.path.join('python', os.path.relpath(sysconfig.get_path('purelib'), os.path.normpath(sys.prefix))))" PREFIX)
+		set(CMAKE_PY_INSTALL_PREFIX "${PREFIX}")
 	else()
 		# get site-packages directory, prepended with cmake's install prefix
 		py_exec("import sys, sysconfig, os; print(os.path.join('${CMAKE_INSTALL_PREFIX}', os.path.relpath(sysconfig.get_path('purelib'), os.path.normpath(sys.prefix))))" PREFIX)

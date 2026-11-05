@@ -310,6 +310,12 @@ install(TARGETS libopenage
 if(WIN32)
 	install(FILES $<TARGET_FILE:nyan::nyan>
 		DESTINATION ${CMAKE_INSTALL_BINDIR})
+elseif(LINUX_BUNDLE)
+	# nyan may only exist in the build tree (--download-nyan), so ship it,
+	# under the soname libopenage links against.
+	install(FILES $<TARGET_FILE:nyan::nyan>
+		DESTINATION ${CMAKE_INSTALL_LIBDIR}
+		RENAME $<TARGET_SONAME_FILE_NAME:nyan::nyan>)
 endif()
 
 

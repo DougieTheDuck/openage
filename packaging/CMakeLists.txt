@@ -58,6 +58,32 @@ if(MSVC)
 	install(FILES "${CMAKE_CURRENT_BINARY_DIR}/openage.bat" DESTINATION ".")
 
 	include(InstallRequiredSystemLibraries)
+
+elseif(LINUX_BUNDLE)
+	# Qt's location variables are directory-scoped to libopenage/, ask again.
+	find_package(Qt6 REQUIRED COMPONENTS Core)
+	set(qt_plugins_dir "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_PLUGINS}")
+	set(qt_qml_dir "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_QML}")
+	find_program(qmlimportscanner qmlimportscanner
+		HINTS "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_LIBEXECS}"
+		      "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}"
+		REQUIRED
+	)
+
+	configure_file(
+		"${BUILDSYSTEM_DIR}/templates/ForwardLinuxVariables.cmake.in"
+		"${CMAKE_CURRENT_BINARY_DIR}/ForwardLinuxVariables.cmake"
+		@ONLY
+	)
+	install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/ForwardLinuxVariables.cmake")
+	install(SCRIPT "${BUILDSYSTEM_DIR}/scripts/EmbedLinuxDependencies.cmake")
+
+	configure_file(
+		"${BUILDSYSTEM_DIR}/templates/run.sh.in"
+		"${CMAKE_CURRENT_BINARY_DIR}/run.sh"
+		@ONLY
+	)
+	install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/run.sh" DESTINATION ".")
 endif()
 
 
@@ -79,7 +105,11 @@ set(CPACK_PACKAGE_CHECKSUM "SHA256")
 ########################################################################
 # General package config
 
-set(CPACK_GENERATOR "NSIS" "7Z")
+if(LINUX_BUNDLE)
+	set(CPACK_GENERATOR "TGZ")
+else()
+	set(CPACK_GENERATOR "NSIS" "7Z")
+endif()
 
 
 include(CPack)

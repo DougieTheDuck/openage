@@ -103,10 +103,20 @@ if(NOT DEFINED WANT_IWYU)
 endif()
 
 ##################################################
+# portable Linux package
+# Produces a self-contained tarball (bundled Python, Qt and libraries, run.sh
+# launcher) instead of a system install. Paths become relative to the bundle,
+# the same way the Windows installer works.
+option(LINUX_BUNDLE "build a self-contained, relocatable Linux package (cpack -G TGZ)" OFF)
+if(LINUX_BUNDLE AND (WIN32 OR APPLE))
+	message(FATAL_ERROR "LINUX_BUNDLE is only supported on Linux")
+endif()
+
+##################################################
 # static content filesystem locations
 if(NOT DEFINED GLOBAL_ASSET_DIR)
 	set(ASSET_DIR "share/openage")
-	if(MSVC)
+	if(MSVC OR LINUX_BUNDLE)
 		set(GLOBAL_ASSET_DIR "${ASSET_DIR}")
 	else()
 		set(GLOBAL_ASSET_DIR "${CMAKE_INSTALL_PREFIX}/${ASSET_DIR}")
@@ -115,7 +125,7 @@ endif()
 
 if(NOT DEFINED GLOBAL_CONFIG_DIR)
 	set(CONFIG_DIR "etc/openage")
-	if(MSVC)
+	if(MSVC OR LINUX_BUNDLE)
 		set(GLOBAL_CONFIG_DIR "${CONFIG_DIR}")
 	else()
 		set(GLOBAL_CONFIG_DIR "${CMAKE_INSTALL_PREFIX}/${CONFIG_DIR}")

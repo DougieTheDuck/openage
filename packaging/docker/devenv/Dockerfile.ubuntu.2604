@@ -33,6 +33,9 @@ RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y sudo \
     python3-pygments \
     python3-setuptools \
     python3-tomli-w \
+    qml6-module-qtqml \
+    qml6-module-qtqml-models \
+    qml6-module-qtqml-workerscript \
     qml6-module-qtquick-controls \
     qt6-declarative-dev \
     qt6-multimedia-dev \

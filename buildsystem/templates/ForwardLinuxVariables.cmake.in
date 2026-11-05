@@ -1,0 +1,16 @@
+# Copyright 2026 the openage authors. See copying.md for legal info.
+
+# Forwards configure-time variables to EmbedLinuxDependencies.cmake, which runs
+# at install/CPack time. Never forward CMAKE_INSTALL_PREFIX (CPack sets it).
+
+set(asset_dir "@ASSET_DIR@")
+set(buildsystem_dir "@BUILDSYSTEM_DIR@")
+set(python "@PYTHON@")
+set(py_install_prefix "@CMAKE_PY_INSTALL_PREFIX@")
+set(install_libdir "@CMAKE_INSTALL_LIBDIR@")
+set(qt_plugins_dir "@qt_plugins_dir@")
+set(qt_qml_dir "@qt_qml_dir@")
+set(qmlimportscanner "@qmlimportscanner@")
+
+# the following denotes inclusion of this script.
+set(forward_linux_variables 1)
